@@ -1,5 +1,19 @@
 # 仓库精简与发布记录
 
+2026-09-11 固定 IPC 基线：把已完成 3 mm 的参数集中为 ipc_baseline.json，增加防止覆盖参数的 `--baseline` 入口，锁定 IPC 1.6.0，整理新模块和测试的格式。solver_status.md 与 prototype/README.md 改为当前基线、必要验收和旧诊断索引，删除重复的启动中描述及过期推进计划，保留失败结论和本地证据路径。旧求解器仍被回归和历史审计使用，未误删；本轮临时格式化工具清理，用户数据、原始论文和运行证据保留。174 项测试通过；121 个原状态及关键增量回放确认整理未改变模型响应。发布只包含代码、文档和允许的配置，不包含本地图片/曲线/日志/检查点或旧 master 历史。
+
+2026-09-11 简化 IPC 试验：仅新增一个求解入口和一个测试模块，方法、状态及命令整合到现有文档。删除本轮无用的旧版 PolyFEM conda 环境/下载缓存、仅 GUI 的 Windows 构建及压缩包/临时源码、GUI 生成的 imgui.ini；安装判断与版本留在 outputs/ipc_install_audit.json，实际使用的 .runtime/ipc-python 保留。删除被正式压缩验证替代的首次 patch 输出，以及未进入首次迭代、没有接受态的回调阻塞输出；阻塞原因和修复记录在状态文档。短测共享源码逐文件核对 SHA256 后去重，报告 source_paths_from_repository_root 指向保留文件，不同版本的 IPC 入口仍各自留存。保留短测/失败证据、原始资料及完整运行目录；未提交或推送 Git。
+
+2026-09-11 最后全盘核查：实际装配/前态转移审计、无摩擦短路径、320 次上限的含摩擦关口与最终决定集中到 outputs/final_solver_review；全仓回归复用 outputs/tests.log。核对 23 个源文件逐字节相同后，删除最终审查的重复源码快照，报告指向 p2_normal_baseline_polished/source_snapshot。README、运行说明及路线统一标记当前自写方案退出生产主线。保留失败证据和可复查代码，未新增生产算法或完整运行，未删除用户资料，未提交或推送 Git。
+
+2026-09-11 新停点复查：同网格求精、独立边内极值采样及单边细化对照统一保存于 p2_normal_baseline_polished/failure_audit，未新增临时脚本或完整运行。逐文件验证 23 个源文件与该运行的 source_snapshot 一致后，删除审计的重复源码目录并修正报告引用。保留必要粗/细网格试值、真实前态、日志及对照结果；未修改生产算法或宣称连续路径已修通。
+
+2026-09-11 几何停点核查：求精与 μ=0 接续并入 contact_ipm/contact_study，未新增临时执行脚本；几何失败也保存试值和未提交的物理前态。同历史对照集中于 p2_normal_geometry_audit。以 tail/source_snapshot 为保留源码，逐文件重建并核对哈希后，将早期回放的两份源码快照改为 source_versions.json 中的准确差异内容，删除两个重复源码目录；各报告记录重建索引。保留原失败状态、力/投影控制、局部间隙核查与连续接受态，未删除用户资料，未提交或推送。
+
+2026-09-11 无摩擦基线：运行入口并入 contact_study，复用原有后台启动、状态保存和真实增量历史机制，没有新增临时启动脚本。短前缀与活动基线的源码快照逐文件 SHA256 一致，删除 prefix 的重复快照并在其 provenance.json 指向活动基线的保留版本；保留短前缀独立验收和相关测试日志。活动运行目录、旧物理接受态及用户资料未删除，未提交或推送 Git。
+
+2026-09-11 内点重构：先提交代码/文档基线 `6b5419d`，未推送。新增可复用 contact_ipm 核心和独立测试，单增量运行继续复用 contact_partitioned 入口。两次已结束的真实失败增量短测合并到 `outputs/p2_ipm_warm_start`；核对全部共有 NPZ 数组相同后，保存首轮报告、日志和相对保留源码的差异，删除重复 `p2_ipm_refactor` 目录。临时压缩探针日志由独立回归取代后删除；统一全仓测试仍写 outputs/tests.log。原用户资料、旧有效状态、必要失败证据保留。
+
 2026-09-11 法向事件修复：续算和事件处理并入现有 contact_partitioned/continuation，没有新增临时脚本。三组有界对照保留各自日志、配置及必要断点；逐文件 SHA256 确认两份源码快照完全重复后，删除 p2_normal_path_tail/source 与 p2_path_accepted_seed/source，并在 result.json 指向 p2_normal_event_replay/source。原失败末点、审计和旧物理接受态保留；全仓测试复用 outputs/tests.log。后台扩展诊断使用独立目录，不清理活动文件，未提交或推送。
 
 2026-09-11 辅助路径：复用 contact_partitioned 的单增量入口和原验收，新增可独立测试的 continuation 预测—校正内核。两个已结束的普通伪弧长对照合并至 `outputs/p2_residual_path_events/controls.json` 和 controls.log，保存相对保留源码快照的准确差异后删除原目录及重复试值。保留事件路径的必要最后辅助状态和原试值；延长诊断为活动后台目录，不清理。未删除用户资料、旧接受状态或其他作业，未提交或推送。

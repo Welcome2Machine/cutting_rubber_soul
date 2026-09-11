@@ -16,7 +16,7 @@ import time
 import numpy as np
 from run_support import write_json,save_npz,source_hashes
 from .model_config import FEMConfig,FEMMesh
-from .initiation import refine_resolution, IntactProblem,InitiationOptions,ContactResolutionError,ContactSolveError
+from .initiation import refine_resolution, IntactProblem,InitiationOptions,ContactResolutionError,ContactSolveError,ContactBudgetError
 from .loading import loading_depths,recovery_targets,predictor_checkpoint,restore_predictor
 
 
@@ -74,14 +74,14 @@ def mesh_metrics(p):
         min_area_mm2=float(p.mesh.bulk_data[0].min()))
 
 
-def save_state(path,p,u,state,depth):
+def save_state(path,p,u,state,depth,**extra):
     from .macro_element import checkpoint
     save_npz(path,reference_xy=p.mesh.reference_xy,local_sn=p.mesh.local_sn,
         triangles=p.mesh.triangles,boundary_edges=p.edges,contact_nodes=p.contact_nodes,
         contact_reference_area_mm2=p.weights,contact_state_version=2,
         contact_discretization=p.options.contact_discretization,
         volumetric_discretization=p.options.volumetric_discretization,
-        displacement=u,contact_multipliers=state,indentation_mm=depth,**checkpoint(p.mesh),**predictor_checkpoint(p,depth))
+        displacement=u,contact_multipliers=state,indentation_mm=depth,**checkpoint(p.mesh),**predictor_checkpoint(p,depth),**extra)
 
 
 def mesh_fingerprint(p):
@@ -189,7 +189,7 @@ def discretization_suite(source,out,end,increment,seconds):
     write_json(out/'suite.json',summary)
 
 
-def bounded_path(p,u,state,old,targets,out,*,adaptive,refine_mesh=True,record_history=False,time_limit_s=None):
+def bounded_path(p,u,state,old,targets,out,*,adaptive,refine_mesh=True,record_history=False,time_limit_s=None,step_solver=None):
     targets=np.asarray(targets,dtype=float)
     tolerance=8*np.finfo(float).eps*max(1.,abs(old),np.max(abs(targets),initial=0.))
     if targets.ndim!=1 or not len(targets) or not np.all(np.isfinite(targets)) or np.any(np.diff(np.r_[old,targets])<=tolerance):
@@ -210,14 +210,15 @@ def bounded_path(p,u,state,old,targets,out,*,adaptive,refine_mesh=True,record_hi
         if time_limit_s is not None and time.monotonic()-started>=time_limit_s:
             raise TimeoutError('Bounded wall budget exhausted between increments')
         try:
-            new,lam,d=p.step(u,old,depth,(depth-old)/p.config.speed_mm_s,state)
+            dt=(depth-old)/p.config.speed_mm_s
+            new,lam,d=(p.step(u,old,depth,dt,state) if step_solver is None else step_solver(p,u,old,depth,dt,state))
         except ContactResolutionError as exc:
             if not adaptive or not refine_mesh or refinements>=p.config.max_adaptive_substeps:
                 raise
             u,state=refine_resolution(p,u,state,exc);refinements+=1
             print('REFINE',refinements,'boundary',len(exc.edges),'bulk',len(getattr(exc,'elements',[])),str(exc),flush=True)
             return advance(depth)
-        except TimeoutError:raise
+        except (TimeoutError,ContactBudgetError):raise
         except (RuntimeError,FloatingPointError):
             if not adaptive or (depth-old)/2 < p.config.min_adaptive_increment_mm or subdivisions>=64:
                 raise
@@ -246,21 +247,68 @@ def bounded_path(p,u,state,old,targets,out,*,adaptive,refine_mesh=True,record_hi
         except Exception as exc:
             report.update(error=str(exc),error_type=type(exc).__name__,failed_depth_mm=attempted_depth)
             print('FAILED',repr(exc),flush=True)
-            if isinstance(exc,ContactSolveError):
-                save_state(out/'failed_trial.npz',p,exc.u,exc.multipliers,attempted_depth)
+            failed_state=(exc.u,exc.multipliers) if isinstance(exc,ContactSolveError) else (
+                exc.trial[:2] if isinstance(exc,ContactResolutionError) and exc.trial is not None else None)
+            if failed_state is not None:
+                extra=getattr(exc,'inner_state',{}).copy()
+                if isinstance(exc,ContactResolutionError):
+                    extra.update(geometry_bad_edges=exc.edges,geometry_bad_elements=exc.elements)
+                save_state(out/'failed_trial.npz',p,*failed_state,attempted_depth,
+                    previous_displacement=u,previous_multipliers=state,old_depth_mm=old,
+                    dt_s=(attempted_depth-old)/p.config.speed_mm_s,**extra)
     report.update(last_depth_mm=old,elapsed_s=time.monotonic()-started,
         status='completed' if report['completed'] else 'failed',
         final_mesh=mesh_metrics(p),refinements=refinements,subdivisions=subdivisions)
     save_state(out/'last_state.npz',p,u,state,old)
-    if report.get('error_type')=='TimeoutError':report['status']='budget_exhausted'
+    if report.get('error_type') in ('TimeoutError','ContactBudgetError'):report['status']='budget_exhausted'
     write_json(out/'result.json',report)
     print(json.dumps({k:v for k,v in report.items() if k in ('completed','last_depth_mm','elapsed_s','error')}),flush=True)
     return report
 
 
+def normal_baseline(source,out,end,max_increment,seconds,*,resume=False):
+    """New frictionless finite-strain history on the saved reference mesh."""
+    from .contact_ipm import interior_step
+    p,u,state,old=load_failed_problem(source)
+    if p.options.volumetric_discretization!='quadratic_full' or p.surface_contact is None:
+        raise ValueError('Normal baseline requires the P2 full-integration surface model')
+    original=p.config.to_dict()
+    if resume:
+        provenance=json.loads((source/'provenance.json').read_text(encoding='utf-8'))
+        if provenance.get('case')!='normal_baseline' or p.config.friction_coefficient!=0.:
+            raise ValueError('Resume requires an accepted frictionless baseline history')
+        if not 0<=old<end:raise ValueError('Resume end must exceed the accepted depth')
+    else:
+        u=np.zeros(p.mesh.dof_count);state=p.initial_contact_state();old=0.
+    p.config=replace(p.config,friction_coefficient=0.)
+    p.config.validate()
+    for name in ('_accepted_velocity','_velocity_depth','_velocity_loading','_spatial_predictor'):
+        if hasattr(p,name):delattr(p,name)
+    if not 0<end<=p.config.max_indentation_mm:raise ValueError('Baseline end outside experiment range')
+    targets=[d for d,_ in loading_depths(p.config,max_increment,stop_mm=end) if d>old+1e-12]
+    if not targets or end-targets[-1]>1e-12:targets.append(end)
+    write_json(out/'provenance.json',dict(case='normal_baseline',source_run=str(source),
+        initialization='accepted baseline history' if resume else 'zero displacement and zero contact history; reference mesh only',
+        start_depth_mm=old,
+        original_config=original,control_config=p.config.to_dict(),mesh_sha256=mesh_fingerprint(p),
+        source_sha256=source_hashes(snapshot=out/'source_snapshot'),
+        solver='finite-strain affine normal IPM outer iteration',
+        max_outer_iterations=30,max_inner_iterations=80,per_increment_seconds=180.,
+        trust_radius_mm=.02,experiment_target_mm=p.config.max_indentation_mm,
+        baseline_end_mm=end,max_increment_mm=max_increment,case_seconds=seconds,
+        scope='frictionless loading baseline; no fracture prediction or dry-cutting acceptance'))
+    deadline=time.monotonic()+seconds
+    def step(problem,previous,old,depth,dt,history):
+        remaining=deadline-time.monotonic()
+        if remaining<=0:raise TimeoutError('Normal baseline wall budget')
+        return interior_step(problem,previous,old,depth,dt,history,seconds=min(180.,remaining))
+    return bounded_path(p,u,state,old,targets,out,
+        adaptive=True,refine_mesh=False,record_history=True,time_limit_s=seconds,step_solver=step)
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--case',required=True,choices=('coarse_path','fine_path','base_path','replay_suite','continuation_suite','recovery','discretization_suite'))
+    parser.add_argument('--case',required=True,choices=('coarse_path','fine_path','base_path','replay_suite','continuation_suite','recovery','discretization_suite','normal_baseline'))
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--formulation',choices=('alart_curnier','jean_moreau'))
     parser.add_argument('--source',type=Path,default=Path('outputs/current_failure'))
@@ -268,13 +316,15 @@ def main():
     parser.add_argument('--max-increment',type=float,default=.0003125,help='Maximum loading increment for recovery diagnostic')
     parser.add_argument('--detach',action='store_true',help='Run a suite or recovery in a hidden background worker')
     parser.add_argument('--fixed-mesh',action='store_true',help='Recovery: prohibit remeshing and save actual increment histories')
+    parser.add_argument('--resume-baseline',action='store_true',help='Continue an accepted frictionless baseline checkpoint with the IPM solver')
     parser.add_argument('--threads',type=int,default=4)
     parser.add_argument('--case-seconds',type=float,default=1200.,help='Per-path wall budget checked between increments')
     args=parser.parse_args();out=args.output
     if out.exists() and any(out.iterdir()):raise ValueError('Study output must be empty')
     out.mkdir(parents=True,exist_ok=True)
     if args.fixed_mesh and args.case!='recovery':parser.error('--fixed-mesh requires recovery')
-    if args.case in ('discretization_suite','recovery'):
+    if args.resume_baseline and args.case!='normal_baseline':parser.error('--resume-baseline requires normal_baseline')
+    if args.case in ('discretization_suite','recovery','normal_baseline'):
         if not 0<args.loading_end<=3 or not np.isfinite(args.max_increment) or args.max_increment<=0 or args.threads<1 or not np.isfinite(args.case_seconds) or args.case_seconds<=0:
             parser.error('Invalid suite end, increment, thread count or budget')
         if args.detach:
@@ -283,6 +333,7 @@ def main():
                 '--output',str(out.resolve()),'--loading-end',str(args.loading_end),'--max-increment',str(args.max_increment),
                 '--case-seconds',str(args.case_seconds),'--threads',str(args.threads)]
             if args.fixed_mesh:command.append('--fixed-mesh')
+            if args.resume_baseline:command.append('--resume-baseline')
             if args.formulation:command.extend(['--formulation',args.formulation])
             env=os.environ.copy()
             for name in ('OMP_NUM_THREADS','OPENBLAS_NUM_THREADS','MKL_NUM_THREADS','NUMEXPR_NUM_THREADS'):env[name]=str(args.threads)
@@ -300,7 +351,11 @@ def main():
             from threadpoolctl import threadpool_limits
             with threadpool_limits(limits=args.threads):discretization_suite(args.source,out,args.loading_end,args.max_increment,args.case_seconds)
             return
-    if args.detach:parser.error('--detach is supported for discretization_suite and recovery only')
+        if args.case=='normal_baseline':
+            from threadpoolctl import threadpool_limits
+            with threadpool_limits(limits=args.threads):normal_baseline(args.source,out,args.loading_end,args.max_increment,args.case_seconds,resume=args.resume_baseline)
+            return
+    if args.detach:parser.error('--detach is supported for discretization_suite, recovery and normal_baseline only')
     bounded_source=not (args.source/'config.json').exists()
     metadata=json.loads((args.source/('result.json' if bounded_source else 'config.json')).read_text(encoding='utf-8'))
     config=FEMConfig(**metadata['config' if bounded_source else 'material_and_experiment'])

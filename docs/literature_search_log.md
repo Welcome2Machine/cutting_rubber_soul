@@ -1,5 +1,7 @@
 # 文献检索记录
 
+2026-09-11 最后全盘核查：定向检索 IPC Toolkit 2D / convergent contact / PolyFEM friction quasi-static，并读取 ipctk.xyz 概览、Getting Started、Convergent Formulation、PolyFEM 首页及其 FrictionForm.cpp 官方源码。确认 Toolkit 非完整求解器、二维碰撞线性边适用范围及完整宿主的滞后摩擦实现。选择完整 IPC/PolyFEM 路线作为当前方案退出后的优先适配方向；未安装或宣称已验证该工具，也未下载重复论文。适用限制补入 R17，实施门槛见 modeling_roadmap.md。
+
 2026-09-11 辅助路径实现：定向检索 pseudo arclength continuation simple folds augmented Jacobian predictor corrector，核对 Dickson/Kelley/Ipsen/Kevrekidis 2007 的 SIAM 书目和作者全文第 1–4 页。使用其增广方程、切向归一化和简单折点条件指导预测—校正；不把光滑路径定理外推至当前库仑非光滑系统。摘要和项目自主残差同伦集中于 R24，原 PDF 未另建本地副本。
 
 2026-09-11 用户补充 2026 IPM-ANM 原文：读取本地 `references/solvingcontactproblemswithCoulombFriction.pdf`，25 页正式排版；首页核实在线日期 2026-07-29。核查第 4–11 页模型、Slater 条件、路径定理与 Algorithm 1；第 12 页样本拆分；第 15–22 页失败分析、ANM、表 3 和成本限制；附录 A/C 的锥代数与递推。PDF 阅读采用 pypdf 抽取和临时 pypdfium2 渲染，目视核查第 4、6、10、17–20、24 页的公式、图与表。对式 (41) 的双线性交叉项和式 (48) 的残差平移做独立代数检查；区分原文记号不一致与作者已确认勘误。R21、参考索引及路线已更新，覆盖此前仅摘要级判断；未将本地全文上传，也未启动计算。临时抽取、渲染和隔离安装的阅读依赖在核查后删除。
@@ -47,6 +49,8 @@
 2026-09-11 法向事件修复后的全局路径核查：查询 Newton homotopy continuation initial point path closed loop global convergence nonlinear equations Watson probability one。查到 Watson 全局同伦综述及作者报告，但 PDF 没有可读文本，本轮未声称阅读其定理；转而核查 [Jong 2012 作者预印本](https://optimization-online.org/wp-content/uploads/2012/08/3562.pdf) 第 2 节定理 2.1–2.2、假设 1 与 Newton–固定点同伦式。用途是区分局部可延续与目标可达性；光滑、秩和有界性要求不能直接套用当前非光滑有限应变接触。摘要及实现限制见 R25，未新增 PDF 或声称实现其算法。
 
 ## 适用边界
+
+2026-09-11 极简诊断：定向查询 frictionless contact augmented Lagrangian penalty large sliding、Abaqus quasi static explicit kinetic energy internal energy friction contact。核查 GetFEM 无摩擦/摩擦接触接口说明与 Abaqus/Explicit 准静态官方说明；前者支持分离法向接触作对照，后者说明算法替代仍有惯性/能量验收。当前只实现法向互补简化，没有调用这些软件，也未实现显式动力学；不将简化算例当作实验模型通过。
 
 2026-09-10 积分与拓扑对照实现：核对 [NumPy leggauss 官方文档](https://numpy.org/doc/stable/reference/generated/numpy.polynomial.legendre.leggauss.html) 的点数、区间和多项式精度，以及 [threadpoolctl 作者说明](https://github.com/joblib/threadpoolctl) 的 BLAS/OpenMP 线程池限制。刀具距离和法向不是一般多项式，故多项式精度阶不能直接当作接触积分误差界，仍须实际阶数对照。拓扑比较保持参考顶点、边界、单元数及角度质量，加载从零独立生成历史。
 

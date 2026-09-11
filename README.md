@@ -2,11 +2,12 @@
 
 目标：N60A 无润滑、30×5 mm 侧面、20 mm 厚度、底面固定，竖直加载至首次起裂或 3 mm 上限。以 [模型规范](docs/current_model_spec.md) 为准，实验原图仅保存在本地。
 
-**完整切割尚未实现并验证。** Python 主线提供无预裂纹的全域强度候选筛查；修正版 FEBio 独立参考验证至 0.05 mm，尚未跨过主线失效区。[当前状态](docs/solver_status.md) 集中记录结果与限制。
+**当前固定基线 `ipc-frictionless-v1` 已完成 0→3 mm 无摩擦、无断裂加载，本地约 120 秒。** 它采用官方 IPC 接触内核与本地 P1 有限应变宿主；原 0.1 mm 表面网格和 0.08 mm 圆角保持，未用后续细化对照覆盖。自由起裂、含摩擦和实验验证尚未完成。旧 P2/IPM 与 FEBio 保留作诊断参考。[当前状态](docs/solver_status.md) 集中记录证据，[建模路线](docs/modeling_roadmap.md) 说明后续恢复要求。
 
 ```sh
 python -m pip install -r requirements.txt
 python -m unittest discover -s tests -v
+python -m prototype.ipc_reference --baseline --output outputs/new_ipc_baseline --detach
 ```
 
 | 路径 | 用途 |

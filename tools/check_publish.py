@@ -8,7 +8,7 @@ from pathlib import PurePosixPath
 import subprocess
 
 
-CONFIGS={'prototype/initiation_config.json','reproductions/dammass2023/acceptance.json'}
+CONFIGS={'prototype/initiation_config.json','prototype/ipc_baseline.json','reproductions/dammass2023/acceptance.json'}
 ROOT_FILES={'.gitignore','.gitattributes','requirements.txt','run_support.py'}
 CODE_ROOTS={'prototype','mechanics','reproductions','tests','tools'}
 DOC_ROOTS=CODE_ROOTS|{'docs','references'}

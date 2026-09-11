@@ -385,7 +385,7 @@ def main():
     parser.add_argument('--depth',type=float,default=.5)
     parser.add_argument('--seconds',type=float,default=180.)
     parser.add_argument('--threads',type=int,default=4)
-    parser.add_argument('--method',choices=('partitioned','path'),default='partitioned')
+    parser.add_argument('--method',choices=('partitioned','path','ipm'),default='partitioned')
     parser.add_argument('--path-steps',type=int,default=100)
     parser.add_argument('--path-step-size',type=float,default=.05)
     parser.add_argument('--path-metric-ratio',type=float,default=.1)
@@ -432,6 +432,10 @@ def main():
                     initial_multipliers=lam,seconds=args.seconds,max_steps=args.path_steps,path_step_size=args.path_step_size,
                     path_metric_ratio=args.path_metric_ratio,auxiliary_tolerance=args.auxiliary_tolerance,
                     switch_events=not args.no_path_switch_events,resume=resume)
+            elif args.method=='ipm':
+                from .contact_ipm import interior_step
+                u,lam,d=interior_step(p,previous,old,args.depth,dt,history,initial=initial,
+                    initial_multipliers=lam,seconds=args.seconds)
             else:
                 u,lam,d=partitioned_step(p,previous,old,args.depth,dt,history,initial=initial,
                     initial_multipliers=lam,seconds=args.seconds,acceleration=not args.no_acceleration,affine_normal=args.affine_normal,
@@ -441,6 +445,7 @@ def main():
             report.update(status='budget_exhausted' if isinstance(exc,ContactBudgetError) else 'failed',error=str(exc))
             if hasattr(exc,'path_state'):
                 path_state=exc.path_state;report['path_diagnostics']=exc.path_diagnostics
+            if hasattr(exc,'inner_state'):path_state=exc.inner_state
         except ContactResolutionError as exc:
             if exc.trial is None:raise
             u,lam,_=exc.trial;report.update(status='geometry_rejected',error=str(exc))

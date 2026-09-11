@@ -139,6 +139,10 @@ Liqun Qi、Defeng Sun，*A Survey of Some Nonsmooth Equations and Smoothing Newt
 
 ## R17 — Li 等 2023：Convergent Incremental Potential Contact
 
+2026-09-11 最终核查后的用途更新：停止自写接触方案的生产推进，优先评估采用已集成 IPC 的完整 PolyFEM 流程。官方 [Toolkit 概览](https://ipctk.xyz/) 明确它本身不含物理/求解器，推荐 PolyFEM 作为完整宿主；[摩擦势源码](https://github.com/polyfem/polyfem/blob/main/src/polyfem/solver/forms/FrictionForm.cpp) 包含滞后接触集合及摩擦势导数更新。不能将其等同于精确、无平滑的库仑锥内点法。
+
+[官方几何教程](https://ipctk.xyz/tutorials/getting_started.html) 支持二维边，但所用碰撞基本元是线性的；现有 P2 曲边需兼容映射或充分细化，并单独检查碰撞近似。Convergent 形式使用面积权重及重复接触项修正，[实现说明](https://ipctk.xyz/tutorials/convergent.html) 提供启用方式。选择依据是改变局部非穿透的实施和完整求解组织；不是对当前橡胶斜切必能计算的证明。平面应变材料等价、20 mm 宽度、屏障/摩擦平滑参数趋零、准静态性及自由断裂仍是本项目的独立适配责任。
+
 R17–R20 的本地应用：已在 `prototype.contact_partitioned` 实现冻结摩擦阈值/切向框架、非线性体与法向接触、固定点消失的数值稳定化和受保护 Anderson。推导边界见 [建模路线](../docs/modeling_roadmap.md)，有界反例见 [求解状态](../docs/solver_status.md)。它尚未跨过旧失败点，也没有移植这些论文的完整算法或收敛证明。
 
 来源：*Convergent Incremental Potential Contact*，[作者预印本](https://arxiv.org/abs/2307.15908)、[全文](https://arxiv.org/html/2307.15908)。2026-09-11 核查第 3、6、7 节及第 9.3–9.4 节基准。
@@ -201,6 +205,12 @@ R17–R20 的本地应用：已在 `prototype.contact_partitioned` 实现冻结�
 - 第 21 页承认平方范数方程收敛不代表未平方摩擦方程达到同等精度。必须另验 `s≥0` 和 `s-|u_t|`；黏着处 `s=u_t=0` 会让平方方程梯度退化，不能只凭平滑多项式残差宣布成功。
 
 建议先做二维单接触开闭/黏滑解析基准、已知弧长转折基准和原残差校核，再决定是否实现完整 ANM。现已按此顺序实现独立残差同伦的伪弧长预测—校正短测，见 R24；它不是本论文的中心路径、内点法或 ANM 复现。实际运行结果集中于求解状态页，不把辅助路径点当作物理加载状态。
+
+**2026-09-11 重构实现。** 新增二维内点核心，不复现全文 ANM。按本仓库压力 p、阻止正滑移的剪力 t、侵入为正的 gap 和滑移 v，令 `r=(p−t/μ,p+t/μ)`、`s=(−gap+μ(|v|+v),−gap+μ(|v|−v))`。严格内点中解 `r*s=η`，独立 slack 方程和体平衡一起校正；η 趋零时恢复 Signorini 与库仑关系。比如 v>0 滑动时 p=t/μ、gap=0，不能删掉 μ|v| 导致剪胀。采用不可行初始等式残差、锥内比例步、预测—校正二阶交叉项，并允许中心 Newton 回退；仍含 |v| 的半光滑导数，没有普遍全局收敛保证。
+
+冻结框架后，现有积分接触满足 `B=J.T diag(weights)`，其中 J 的行是 gap/slip 位移导数；代码在每次构造时核对。单位仍是 N、mm、MPa 和参考面积。子问题使用正定体步模型，外层每次重新计算完整有限应变与移动接触，最终只验原方程。数值主元与 Gershgorin 检查处理的是子问题矩阵，不证明实际平衡稳定或 Slater 可行性。完整参考模型、旧失败增量和路径仍分别验收。
+
+极简对照采用 μ=0 的单法向互补系统 `p≥0, −gap≥0, p·(−gap)=0`；不把含 1/μ 的二维锥公式直接代入零。其法向摩擦分离可对照 [GetFEM 接触条件说明](https://getfem.org/userdoc/model_contact_friction.html)，实现仍为本项目代码。另核查 [Abaqus/Explicit 准静态说明](https://docs.software.vt.edu/abaqusv2025/English/SIMACAEGSARefMap/simagsa-m-Quasi-sb.htm)：显式时间推进是复杂接触的另一种算法组织，但转用它仍需检查惯性及能量，不能把不再进行静态 Newton 迭代当成真实准静态结果。当前未实现显式动力学。
 
 ## R22 — Gfrerer 等 2022：SCD semismooth* Newton
 

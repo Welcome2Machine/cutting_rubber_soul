@@ -12,6 +12,84 @@ from prototype.initiation import IntactProblem,InitiationOptions,ContactSolveErr
 
 
 class ContactStudyTests(unittest.TestCase):
+    def test_geometry_rejection_saves_trial_and_unchanged_physical_history(self):
+        from prototype.initiation import ContactResolutionError
+        p=IntactProblem(FEMConfig(mesh_size_mm=1.5),InitiationOptions(refinement_mm=.7,surface_spacing_mm=.2))
+        u=np.zeros(p.mesh.dof_count);lam=p.initial_contact_state()
+        def step(problem,previous,old,depth,dt,history):
+            raise ContactResolutionError('geometry rejection',[0],u=previous+.001,multipliers=history,depth=depth)
+        with tempfile.TemporaryDirectory() as folder,contextlib.redirect_stdout(io.StringIO()):
+            out=Path(folder)
+            report=bounded_path(p,u,lam,0.,[.01],out,adaptive=True,refine_mesh=False,record_history=True,step_solver=step)
+            self.assertEqual(report['error_type'],'ContactResolutionError')
+            self.assertEqual(report['last_depth_mm'],0.)
+            with np.load(out/'failed_trial.npz') as z:
+                np.testing.assert_array_equal(z['displacement'],u+.001)
+                np.testing.assert_array_equal(z['previous_displacement'],u)
+                np.testing.assert_array_equal(z['previous_multipliers'],lam)
+                np.testing.assert_array_equal(z['geometry_bad_edges'],[0])
+            with np.load(out/'last_state.npz') as z:np.testing.assert_array_equal(z['displacement'],u)
+
+    def test_normal_baseline_starts_from_zero_without_changing_experiment(self):
+        from prototype.contact_study import normal_baseline
+        from prototype.quadratic import QuadraticProblem
+        p=QuadraticProblem(FEMConfig(mesh_size_mm=1.5),InitiationOptions(refinement_mm=.7,
+            surface_spacing_mm=.2,contact_discretization='quadratic_integral',volumetric_discretization='quadratic_full'))
+        original=p.config;old_u=np.ones(p.mesh.dof_count);old_lam=p.initial_contact_state()+1
+        p._accepted_velocity=old_u.copy();p._velocity_depth=.5;p._velocity_loading=True
+        with tempfile.TemporaryDirectory() as folder,patch('prototype.contact_study.load_failed_problem',return_value=(p,old_u,old_lam,.5)),patch('prototype.contact_study.bounded_path',return_value={}) as run:
+            normal_baseline(Path('unused'),Path(folder),.013,.00625,10.)
+            call=run.call_args
+            np.testing.assert_array_equal(call.args[1],0.)
+            np.testing.assert_array_equal(call.args[2],0.)
+            self.assertEqual(call.args[3],0.)
+            self.assertAlmostEqual(call.args[4][-1],.013)
+            self.assertEqual(p.config.friction_coefficient,0.)
+            self.assertEqual(original.friction_coefficient,.35)
+            self.assertFalse(hasattr(p,'_accepted_velocity'))
+            self.assertTrue(call.kwargs['record_history']);self.assertFalse(call.kwargs['refine_mesh'])
+            self.assertEqual({k for k,v in original.to_dict().items() if p.config.to_dict()[k]!=v},{'friction_coefficient'})
+
+    def test_normal_resume_preserves_history_and_rejects_frictional_source(self):
+        from prototype.contact_study import normal_baseline
+        from prototype.quadratic import QuadraticProblem
+        from dataclasses import replace
+        p=QuadraticProblem(FEMConfig(mesh_size_mm=1.5,friction_coefficient=0.),InitiationOptions(refinement_mm=.7,
+            surface_spacing_mm=.2,contact_discretization='quadratic_integral',volumetric_discretization='quadratic_full'))
+        u=np.full(p.mesh.dof_count,.01);lam=p.initial_contact_state()+.1
+        with tempfile.TemporaryDirectory() as folder,patch('prototype.contact_study.load_failed_problem',return_value=(p,u,lam,.075)), \
+                patch('prototype.contact_study.bounded_path',return_value={}) as run:
+            source=Path(folder);out=source/'tail';out.mkdir()
+            (source/'provenance.json').write_text(json.dumps(dict(case='normal_baseline')),encoding='utf-8')
+            normal_baseline(source,out,.1,.00625,10.,resume=True)
+            args=run.call_args.args
+            np.testing.assert_array_equal(args[1],u);np.testing.assert_array_equal(args[2],lam)
+            self.assertEqual(args[3],.075)
+            np.testing.assert_allclose(args[4],[.08125,.0875,.09375,.1])
+            p.config=replace(p.config,friction_coefficient=.35)
+            with self.assertRaisesRegex(ValueError,'frictionless baseline'):
+                normal_baseline(source,out,.1,.00625,10.,resume=True)
+
+    def test_inner_budget_preserves_failed_history_without_subdividing(self):
+        from prototype.initiation import ContactBudgetError
+        p=IntactProblem(FEMConfig(mesh_size_mm=1.5),InitiationOptions(refinement_mm=.7,surface_spacing_mm=.2))
+        u=np.zeros(p.mesh.dof_count);lam=p.initial_contact_state();calls=[]
+        def step(problem,previous,old,depth,dt,history):
+            calls.append(depth)
+            error=ContactBudgetError('inner budget',previous+.01,history)
+            error.inner_state={'inner_primal':np.array([1.])}
+            raise error
+        with tempfile.TemporaryDirectory() as folder,contextlib.redirect_stdout(io.StringIO()):
+            out=Path(folder)
+            report=bounded_path(p,u,lam,0.,[.01],out,adaptive=True,refine_mesh=False,record_history=True,step_solver=step)
+            self.assertEqual(report['status'],'budget_exhausted');self.assertEqual(calls,[.01])
+            self.assertEqual(report['last_depth_mm'],0.)
+            with np.load(out/'failed_trial.npz') as z:
+                np.testing.assert_array_equal(z['previous_displacement'],u)
+                np.testing.assert_array_equal(z['previous_multipliers'],lam)
+                np.testing.assert_array_equal(z['inner_primal'],[1.])
+                self.assertAlmostEqual(float(z['dt_s']),.01/p.config.speed_mm_s)
+
     def test_switch_certificate_detects_nonroot_cusp_and_preserves_matrix(self):
         from scipy.sparse import csr_matrix,diags
         from prototype.audit_contact import row_switch_certificate

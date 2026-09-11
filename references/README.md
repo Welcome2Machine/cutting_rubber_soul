@@ -1,5 +1,7 @@
 # 参考方法索引
 
+2026-09-11 实现补充：本轮采用 [IPC Toolkit 官方 Python 接口](https://ipctk.xyz/build/python.html) 的 `ipctk==1.6.0` Windows 原生 wheel。依据 [模拟教程](https://ipctk.xyz/tutorials/simulation.html) 组织表面/体自由度映射、屏障能量和 CCD；本地静态宿主使用原有限应变材料，未加入惯性项，不是教程动力学案例的直接复现。原生 `make_static_obstacle_filter` 排除刀具内部碰撞并保留橡胶自接触，避免 Python 回调阻塞并行 CCD。API 以锁定版本的绑定签名为准，不能直接套用在线开发版。方法适用边界及参数敏感性要求见 [建模路线](../docs/modeling_roadmap.md)。
+
 论文原文件仅留在本地，不上传 GitHub。面向 AI 的结构化摘要、原文定位、来源链接、适用边界和代码映射集中在 [method_notes.md](method_notes.md)。这些笔记是自行归纳的研究说明，不是论文全文或作者认证的实现规范。
 
 | 文献编号 | 用途 |
@@ -20,11 +22,11 @@
 | R14 — Hohlfeld / Mahadevan 2011 | 局部折皱与分支问题；不能替代本实验断裂判据 |
 | R15 — Hassani / Hild 等；HiGHS | 摩擦多解与全节点有界分支可行性诊断 |
 | R16 — Qi / Sun 1998 | 半光滑 Newton 的局部条件与非光滑残差全局化 |
-| R17 — Li 等 2023 | IPC 屏障、摩擦内外迭代与几何适用边界 |
+| R17 — Li 等 2023 | 当前自写方案退出后，优先采用完整 PolyFEM/IPC 流程；二维线性碰撞几何、平滑摩擦和材料适配另验 |
 | R18 — Giacoma 等 2016 | LATIN 局部—整体摩擦耦合设计 |
 | R19 — Both 等 2022 | 借鉴软材料多孔介质的稳定化分裂 |
 | R20 — Degroote / preCICE | 流固界面加速及内层收敛要求 |
-| R21 — Acary 等 2026 | 已核查全文：IPM-ANM、正定/Slater 条件、失败统计与公式实现校核 |
+| R21 — Acary 等 2026 | 已核查全文；二维内点核心已开始实现，有限应变外层与 ANM 边界另验 |
 | R22 — Gfrerer 等 2022 | 直接处理多值接触图的 SCD Newton 候选 |
 | R23 — PETSc | 保持接触代数约束的伪瞬态延续候选 |
 | R24 — Dickson 等 2007 | 伪弧长预测—校正与简单折点；非光滑适用限制 |

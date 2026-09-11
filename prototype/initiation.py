@@ -561,7 +561,7 @@ class IntactProblem:
                 norm,contact,d,change = actual_norm,actual_contact,actual_d,actual_change
                 edge_gap,bad_edges = self.edge_penetration(u,depth,with_edges=True)
                 if edge_gap > c.contact_penetration_tolerance_mm:
-                    raise ContactResolutionError(f'Boundary mesh under-resolves contact at depth={depth:.8g}: edge penetration={edge_gap:.6g} mm exceeds {c.contact_penetration_tolerance_mm:g}; refine surface spacing',bad_edges,u=u,multipliers=lam,depth=depth)
+                    raise ContactResolutionError(f'Whole-edge contact check rejected depth={depth:.8g}: penetration={edge_gap:.6g} mm exceeds {c.contact_penetration_tolerance_mm:g}; check equilibrium accuracy and surface resolution',bad_edges,u=u,multipliers=lam,depth=depth)
                 dissipation_tolerance = float(np.sum(self.weights*np.abs(contact['shear']))*c.contact_multiplier_tolerance_n_mm2/self.options.tangential_stiffness_mpa_per_mm+1e-12)
                 if d['friction_dissipation_n_mm'] < -dissipation_tolerance:
                     raise RuntimeError('Negative Coulomb dissipation beyond projection tolerance')
