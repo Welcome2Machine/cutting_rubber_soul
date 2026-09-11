@@ -18,7 +18,7 @@ class SurfaceContact:
             boundary=np.column_stack((boundary,problem.mesh.boundary_midpoints))
         self.displacement_nodes=np.unique(boundary)
         edges = np.searchsorted(self.displacement_nodes, boundary)
-        abscissa, gauss_weights = np.polynomial.legendre.leggauss(4)
+        abscissa, gauss_weights = np.polynomial.legendre.leggauss(problem.options.contact_quadrature_order)
         if problem.options.contact_discretization=='quadratic_integral':
             abscissa=np.r_[(abscissa-1)/2,(abscissa+1)/2]
             gauss_weights=np.tile(gauss_weights/2,2)
@@ -58,19 +58,44 @@ class SurfaceContact:
                            shape=(len(ids),problem.mesh.dof_count)).tocsr()
         self.A = kron(self.Qu,eye(2),format='csr')@self.E
 
-    def evaluate(self, u, previous, depth, old_depth, lam, *, with_tangent, formulation, roundoff_guard):
+    def freeze(self, u, depth, lam, *, affine_normal=True):
+        """Affine, work-conjugate contact geometry and fixed Tresca capacity.
+
+        This is an auxiliary nonlinear subproblem, never a physical state.
+        At its outer fixed point geometry and Coulomb roots are recovered.
+        """
+        from .initiation import rounded_blade_distance
+        x = self.Qu@(self.p.mesh.reference_xy+u.reshape(-1,2))[self.displacement_nodes]
+        gap,normal = rounded_blade_distance(x,self.p.config,self.p.options,depth)
+        return dict(anchor=x.copy(),gap=gap.copy(),normal=normal.copy(),
+                    capacity=np.maximum(lam[:,0],0.).copy(),affine_normal=affine_normal)
+
+    def evaluate(self, u, previous, depth, old_depth, lam, *, with_tangent, formulation, roundoff_guard, frozen=None):
         # Import here to avoid a geometry/contact module cycle.
         from .initiation import rounded_blade_distance
         p,c = self.p,self.p.config
         x = self.Qu@(p.mesh.reference_xy+u.reshape(-1,2))[self.displacement_nodes]
         old = self.Qu@(p.mesh.reference_xy+previous.reshape(-1,2))[self.displacement_nodes]
         g,n,dn = rounded_blade_distance(x,c,p.options,depth,with_tangent=True)
+        if frozen is not None and frozen['affine_normal']:
+            n=frozen['normal']
+            g=frozen['gap']-np.einsum('qi,qi->q',x-frozen['anchor'],n)
+            dn=np.zeros_like(dn)
         t = np.column_stack((-n[:,1],n[:,0]))
         dt = np.stack((-dn[:,1,:],dn[:,0,:]),axis=1)
+        if frozen is not None:
+            t=np.column_stack((-frozen['normal'][:,1],frozen['normal'][:,0]))
+            dt=np.zeros_like(dt)
         relative = x-old-np.array([0.,old_depth-depth])
         slip = np.einsum('qi,qi->q',relative,t)
         gap,slip_bar = self.average@g,self.average@slip
         projection_gap = gap.copy()
+        projection_slip = slip_bar.copy()
+        compliance=0.
+        if frozen is not None and 'traction_reference' in frozen:
+            compliance=frozen['compliance']
+            projection_gap-=compliance*(lam[:,0]-frozen['traction_reference'][:,0])
+            projection_slip-=compliance*(lam[:,1]-frozen['traction_reference'][:,1])
         if roundoff_guard:
             guard = 32*np.finfo(float).eps*max(1.,c.length_mm,c.height_mm,abs(depth),np.abs(x).max())
             projection_gap[np.abs(projection_gap)<=guard] = 0.
@@ -79,7 +104,11 @@ class SurfaceContact:
         active = pressure>0
         independent = (formulation or p.options.coulomb_formulation)=='jean_moreau'
         capacity = np.maximum(0,lam[:,0]) if independent else pressure
-        shear,ds,dp,_,stick = coulomb_return(slip_bar,lam[:,1],capacity,c.friction_coefficient,kt,c.adhesive_shear_strength_n_mm2)
+        if frozen is not None:
+            capacity=frozen['capacity']
+        shear,ds,dp,_,stick = coulomb_return(projection_slip,lam[:,1],capacity,c.friction_coefficient,kt,c.adhesive_shear_strength_n_mm2)
+        if frozen is not None:
+            dp=np.zeros_like(dp)  # the outer normal traction is held fixed
         traction = self.Q@lam
         fq = self.w[:,None]*(traction[:,0,None]*n-traction[:,1,None]*t)
         force = self.Qu.T@fq
@@ -112,8 +141,8 @@ class SurfaceContact:
         returns[:,1,1] = ds
         q['global_C'] = blocks(returns)@averaged_derivative
         multiplier_derivative = np.zeros_like(returns)
-        multiplier_derivative[:,0,0] = active.astype(float)-1
+        multiplier_derivative[:,0,0] = active.astype(float)*(1-kn*compliance)-1
         multiplier_derivative[:,1,0] = dp*((lam[:,0]>0) if independent else active)
-        multiplier_derivative[:,1,1] = stick.astype(float)-1
+        multiplier_derivative[:,1,1] = stick.astype(float)-1-ds*compliance
         q['global_D'] = blocks(multiplier_derivative)
         return q

@@ -30,8 +30,13 @@ class InitiationOptions:
     mesh_grading: str = 'legacy'
     volumetric_discretization: str = 'element'
     volume_stabilization_shear: float = 0.
+    contact_quadrature_order: int = 4  # Gauss points per half edge for P2 contact
 
     def validate(self, config):
+        if (isinstance(self.contact_quadrature_order,bool)
+                or not isinstance(self.contact_quadrature_order,(int,np.integer))
+                or not 2<=self.contact_quadrature_order<=32):
+            raise ValueError('Contact quadrature order must be an integer from 2 to 32')
         for name,value in vars(self).items():
             if name in ('coulomb_formulation','contact_discretization','mesh_grading','volumetric_discretization','volume_stabilization_shear'):
                 continue
@@ -210,6 +215,10 @@ class ContactSolveError(RuntimeError):
         self.u,self.multipliers = u.copy(),multipliers.copy()
 
 
+class ContactBudgetError(ContactSolveError):
+    """An auxiliary diagnostic exhausted its budget, not proof of no solution."""
+
+
 def refine_resolution(problem,previous,state,error):
     kwargs={'trial':error.trial} if hasattr(problem,'_refine') else {}
     if len(error.elements):
@@ -311,7 +320,7 @@ class IntactProblem:
                     pressure=pressure,shear=shear,slip=slip,slip_derivative=dslip,stick=stick,
                     dissipation=self.weights*shear*slip,projection_u=projection_u,projection_lambda=projection_lambda)
 
-    def assemble(self,u,previous,depth,old_depth,dt,multipliers,old_shear=None,*,mixed=False,formulation=None,with_tangent=True,roundoff_guard=True,pressure_blocks=False):
+    def assemble(self,u,previous,depth,old_depth,dt,multipliers,old_shear=None,*,mixed=False,formulation=None,with_tangent=True,roundoff_guard=True,pressure_blocks=False,frozen_contact=None):
         if dt <= 0:
             raise ValueError('Physical time increment must be positive')
         mesh,c = self.mesh,self.config
@@ -329,7 +338,7 @@ class IntactProblem:
             old_shear = np.zeros(len(self.weights))
         if self.surface_contact is not None:
             contact = self.surface_contact.evaluate(u,previous,depth,old_depth,np.column_stack((multipliers,old_shear)),
-                with_tangent=with_tangent,formulation=formulation,roundoff_guard=roundoff_guard)
+                with_tangent=with_tangent,formulation=formulation,roundoff_guard=roundoff_guard,frozen=frozen_contact)
         else:
             contact = self.contact(points,old,depth,np.array([0.,old_depth-depth]),multipliers,old_shear,formulation=formulation,roundoff_guard=roundoff_guard)
             if mixed:
@@ -473,7 +482,10 @@ class IntactProblem:
         self._rebuild_boundary(np.asarray(edges,dtype=int))
         return np.asarray(displacement).ravel(),np.array([history[int(node)] for node in self.contact_nodes])
 
-    def _mixed_step(self,previous,old_depth,depth,dt,old_state,initial=None,*,initial_multipliers=None):
+    def _mixed_step(self,previous,old_depth,depth,dt,old_state,initial=None,*,initial_multipliers=None,
+                    subproblem=None,iteration_limit=None,verify_only=False):
+        if subproblem is not None and (self.surface_contact is None or verify_only):
+            raise ValueError('Auxiliary contact requires a surface and cannot certify a physical state')
         if old_state.shape != (len(self.contact_nodes),2):
             raise ValueError('Contact state must contain unique-node normal and shear history; old quadrature checkpoints are incompatible')
         u = previous.copy() if initial is None else initial.copy()
@@ -483,9 +495,19 @@ class IntactProblem:
         c = self.config
         recent = []
         regularized_steps = 0
+        cone_projected_steps = 0
+        cone_projection_attempts = 0
         damping = 1e-3
         def evaluate(state,pressure,*,with_tangent=True):
-            r,k,contact,d = self.assemble(state,previous,depth,old_depth,dt,pressure[:,0],pressure[:,1],mixed=True,with_tangent=with_tangent,pressure_blocks=self.options.volumetric_discretization in ('macro_mixed','taylor_hood'))
+            if subproblem is not None:
+                import time
+                if time.monotonic()>subproblem.get('deadline',float('inf')):
+                    raise ContactBudgetError('Auxiliary contact wall budget exhausted',state,pressure)
+            extra={} if subproblem is None else dict(frozen_contact=subproblem['contact'])
+            r,k,contact,d = self.assemble(state,previous,depth,old_depth,dt,pressure[:,0],pressure[:,1],mixed=True,with_tangent=with_tangent,pressure_blocks=self.options.volumetric_discretization in ('macro_mixed','taylor_hood'),**extra)
+            if subproblem is not None:
+                r=r+subproblem['stiffness']*(state-subproblem['anchor'])
+                if with_tangent:k=k+diags(subproblem['stiffness'])
             f = np.column_stack((contact['pressure'],contact['shear']))-pressure
             if self.surface_contact is not None:
                 # Globalization must see the errors used by acceptance. Area
@@ -496,11 +518,21 @@ class IntactProblem:
             else:
                 merit = float(np.linalg.norm(np.r_[r[self.free],(self.weights[:,None]*f).ravel()]))
             return r,k,contact,d,f,merit
-        for iteration in range(c.max_contact_iterations):
+        for iteration in range(c.max_contact_iterations if iteration_limit is None else iteration_limit):
+            if subproblem is not None:subproblem['iterations']=iteration+1
             r,k,contact,d,f,merit = evaluate(u,lam)
             norm = float(np.linalg.norm(r[self.free]))
             change = float(np.max(np.abs(f)))
             print(f"  contact={iteration+1} depth={depth:.8g} residual={norm:.3g} projection={change:.3g} stick={d['stick_nodes']} slip={d['slip_nodes']}",flush=True)
+            if subproblem is not None and norm<=c.newton_tolerance_n and change<=c.contact_multiplier_tolerance_n_mm2:
+                verifier=subproblem.get('verify_original')
+                if verifier is not None:
+                    accepted=verifier(u,lam)
+                    if accepted is not None:return accepted
+            if subproblem is not None and norm <= .1*c.newton_tolerance_n and change <= .1*c.contact_multiplier_tolerance_n_mm2:
+                # Convergence of a frozen auxiliary problem is not acceptance.
+                return u,lam,dict(inner_iterations=iteration+1,inner_residual_n=norm,
+                                  inner_projection_mpa=change)
             physically_converged = False
             admissible = lam.copy()
             # Test the corrected candidate, not prerequisites on the uncorrected
@@ -518,7 +550,7 @@ class IntactProblem:
                 candidate_r=r.copy()
                 delta_force=self.weights[:,None]*(correction[:,0,None]*n-correction[:,1,None]*t)
                 np.add.at(candidate_r,self.cdofs.ravel(),-delta_force.ravel())
-            if np.linalg.norm(candidate_r[self.free]) <= c.newton_tolerance_n:
+            if subproblem is None and np.linalg.norm(candidate_r[self.free]) <= c.newton_tolerance_n:
                 actual_r,_,actual_contact,actual_d = self.assemble(u,previous,depth,old_depth,dt,admissible[:,0],admissible[:,1],formulation='alart_curnier',with_tangent=False,roundoff_guard=False)
                 actual_norm = float(np.linalg.norm(actual_r[self.free]))
                 actual_change = float(np.max(np.abs(np.column_stack((actual_contact['pressure'],actual_contact['shear']))-admissible)))
@@ -537,9 +569,12 @@ class IntactProblem:
                 d.update(residual_n=norm,contact_multiplier_change_mpa=change,
                          max_edge_penetration_mm=edge_gap,
                          contact_regularized_steps=regularized_steps,
+                         contact_cone_projected_steps=cone_projected_steps,
                          contact_branch_predictors=0,contact_branch_combinations=0,
                          contact_solver=f'{self.options.contact_discretization} Coulomb {self.options.coulomb_formulation} Newton')
                 return u,lam,d
+            if verify_only:
+                raise ContactSolveError(f'Original equations reject candidate depth={depth:.8g}, residual={norm:.6g} N, projection={change:.6g} MPa',u,lam)
             recent.append(merit)
             stalled = False
             if len(recent) > 8:
@@ -580,22 +615,42 @@ class IntactProblem:
                 linear_jac=bmat([[k[self.free][:,self.free],B,H.T],
                                  [W@C,W@D,None],[H,None,-M]],format='csc')
                 linear_rhs=np.r_[rhs,np.zeros(H.shape[0])]
-            def backtrack(delta):
+            def backtrack(delta,*,projected=False):
+                nonlocal cone_projected_steps
                 for cut in range(c.max_line_search_iterations):
                     alpha = .5**cut
                     trial = u.copy(); trial[self.free] += alpha*delta[:len(self.free)]
                     trial_lam = lam.copy(); trial_lam[selected] += alpha*delta[len(self.free):len(self.free)+2*len(selected)].reshape(-1,2)
-                    # Intermediate multipliers need not be admissible; clipping
-                    # would invalidate the linearized residual direction.
                     trial_lam[np.abs(trial_lam) < 1e-12] = 0
+                    if projected:
+                        trial_lam[:,0] = np.maximum(trial_lam[:,0],0.)
+                        bound = c.friction_coefficient*trial_lam[:,0]
+                        trial_lam[:,1] = np.clip(trial_lam[:,1],-bound,bound)
                     try:
                         trial_merit=evaluate(trial,trial_lam,with_tangent=False)[-1]
                     except FloatingPointError:
                         continue
                     if np.isfinite(trial_merit) and trial_merit < merit*(1-1e-4*alpha):
+                        cone_projected_steps += int(projected)
                         return trial,trial_lam
                 return None
-            candidate = None if stalled else backtrack(splu(linear_jac).solve(-linear_rhs))
+            can_project = (subproblem is None and not stalled and self.surface_contact is not None
+                           and norm <= 10*c.newton_tolerance_n and cone_projection_attempts < 2)
+            delta=None
+            if not stalled:
+                try:delta=splu(linear_jac).solve(-linear_rhs)
+                except RuntimeError:print('CONTACT singular Newton matrix; try residual regularization',flush=True)
+            candidate = None if delta is None else backtrack(delta)
+            if candidate is None and can_project and delta is not None:
+                # Preserve every successful raw backtracking path. Only after
+                # failure near force equilibrium try a cone-feasible candidate;
+                # re-evaluate the original nonlinear residual, with history
+                # fixed, rather than treating clipping as a Newton solution.
+                # Bound retries so a failed auxiliary strategy cannot add
+                # another unbounded stagnation loop to the old solver.
+                cone_projection_attempts += 1
+                candidate = backtrack(delta,projected=True)
+                if candidate is not None:recent.clear()
             if candidate is None and 'pressure_mass_matrix' in contact and regularized_steps < 24:
                 # Exact condensed Jacobian ACTION, including consistent pressure
                 # mass inversion. Matrix-free least squares avoids a dense Schur

@@ -1,4 +1,5 @@
 import unittest
+from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import patch
 import numpy as np
@@ -33,6 +34,48 @@ class SurfaceContactTests(unittest.TestCase):
         with patch('prototype.initiation.rounded_blade_distance',self.plane):
             q=s.evaluate(u,u,0.,0.,lam,with_tangent=False,formulation=None,roundoff_guard=False)
         np.testing.assert_allclose(q['gap'],[-1/3,-1.,-5/3],atol=1e-13)
+
+    def test_frozen_tresca_recovers_coulomb_stick_and_slide_roots(self):
+        p,s=self.flat_boundary();old=np.zeros(6)
+        def plane(*args,**kwargs):
+            result=self.plane(*args,**kwargs)
+            return result if kwargs.get('with_tangent') else result[:2]
+        for shift,shear in ((0.,-.5),(.01,-1.05),(-.01,1.05)):
+            u=np.tile([shift,0.],3);lam=np.tile([3.,shear],(3,1))
+            with patch('prototype.initiation.rounded_blade_distance',plane):
+                frozen=s.freeze(u,0.,lam)
+                q=s.evaluate(u,old,0.,0.,lam,with_tangent=True,formulation=None,roundoff_guard=False,frozen=frozen)
+                original=s.evaluate(u,old,0.,0.,lam,with_tangent=False,formulation=None,roundoff_guard=False)
+            np.testing.assert_allclose(np.c_[q['pressure'],q['shear']],lam,atol=1e-12)
+            for key in ('pressure','shear','global_force','gap','slip','dissipation'):
+                np.testing.assert_allclose(q[key],original[key],atol=1e-12)
+
+    def test_frozen_curved_contact_derivatives_and_virtual_work(self):
+        for affine in (True,False):
+            for compliance in (0.,.004):
+                with self.subTest(affine_normal=affine,compliance=compliance):self.check_frozen_contact(affine,compliance)
+
+    def check_frozen_contact(self,affine,compliance):
+        from prototype.quadratic import QuadraticProblem
+        p=QuadraticProblem(FEMConfig(mesh_size_mm=1.5),InitiationOptions(refinement_mm=.7,
+            surface_spacing_mm=.02,mesh_grading='graded',contact_discretization='quadratic_integral',volumetric_discretization='quadratic_full'))
+        rng=np.random.default_rng(87);u=np.zeros(p.mesh.dof_count);old=u.copy()
+        lam=p.initial_contact_state();lam[:,0]=.3;lam[:,1]=.02
+        frozen=p.surface_contact.freeze(u,.0173,lam,affine_normal=affine)
+        frozen.update(traction_reference=lam.copy(),compliance=compliance)
+        u+=rng.normal(size=len(u))*1e-4
+        du=rng.normal(size=len(u))*.01;dl=rng.normal(size=lam.shape)*.02
+        def evaluate(v,l,tangent):
+            r,k,q,_=p.assemble(v,old,.0173,0.,.1,l[:,0],l[:,1],mixed=True,
+                with_tangent=tangent,roundoff_guard=False,frozen_contact=frozen)
+            return r,k,q,np.c_[q['pressure'],q['shear']]-l
+        r,k,q,f=evaluate(u,lam,True);h=1e-6
+        a=evaluate(u+h*du,lam+h*dl,False);b=evaluate(u-h*du,lam-h*dl,False)
+        np.testing.assert_allclose((a[0]-b[0])/(2*h),k@du+q['global_B']@dl.ravel(),rtol=2e-5,atol=2e-5)
+        np.testing.assert_allclose(((a[3]-b[3])/(2*h)).ravel(),q['global_C']@du+q['global_D']@dl.ravel(),rtol=2e-5,atol=2e-5)
+        # Residual work equals weighted local (gap, slip) multiplier work.
+        np.testing.assert_allclose(du@(q['global_B']@dl.ravel()),
+            (q['global_kinematic_u']@du)@(np.repeat(p.weights,2)*dl.ravel()),rtol=1e-12,atol=1e-12)
 
     def test_friction_work_and_rigid_translation(self):
         p,s=self.flat_boundary();old=np.zeros(6);u=np.tile([.01,0.],3);lam=np.tile([3.,-1.05],(3,1))
@@ -79,6 +122,21 @@ class SurfaceContactTests(unittest.TestCase):
         from prototype.quadratic import QuadraticProblem
         p=QuadraticProblem(FEMConfig(mesh_size_mm=1.5),InitiationOptions(refinement_mm=.7,surface_spacing_mm=.02,mesh_grading='graded',contact_discretization='quadratic_integral',volumetric_discretization='taylor_hood'))
         self.check_curved_derivatives(p)
+        p.options=replace(p.options,contact_quadrature_order=16)
+        p.surface_contact=SurfaceContact(p)
+        self.check_curved_derivatives(p)
+
+    def test_quadrature_orders_preserve_flat_patch_force_and_reference_area(self):
+        p,_=self.flat_boundary();u=np.zeros(6);lam=np.tile([3.,-.5],(3,1))
+        for order in (4,8,16,32):
+            p.options=replace(p.options,contact_quadrature_order=order)
+            s=SurfaceContact(p)
+            with patch('prototype.initiation.rounded_blade_distance',self.plane):
+                q=s.evaluate(u,u,0.,0.,lam,with_tangent=False,formulation=None,roundoff_guard=False)
+            np.testing.assert_allclose(q['force'].sum(axis=0),[-2.,12.],atol=1e-12)
+            np.testing.assert_allclose(np.asarray(s.Q.T@s.w).ravel(),p.weights,atol=1e-13)
+        for order in (0,1,4.5,True,33):
+            with self.assertRaises(ValueError):replace(p.options,contact_quadrature_order=order).validate(p.config)
 
     def check_curved_derivatives(self,p):
         rng=np.random.default_rng(9);u=np.zeros(p.mesh.dof_count);previous=u.copy()

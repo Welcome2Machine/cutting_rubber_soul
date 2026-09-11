@@ -1,5 +1,19 @@
 # 文献检索记录
 
+2026-09-11 辅助路径实现：定向检索 pseudo arclength continuation simple folds augmented Jacobian predictor corrector，核对 Dickson/Kelley/Ipsen/Kevrekidis 2007 的 SIAM 书目和作者全文第 1–4 页。使用其增广方程、切向归一化和简单折点条件指导预测—校正；不把光滑路径定理外推至当前库仑非光滑系统。摘要和项目自主残差同伦集中于 R24，原 PDF 未另建本地副本。
+
+2026-09-11 用户补充 2026 IPM-ANM 原文：读取本地 `references/solvingcontactproblemswithCoulombFriction.pdf`，25 页正式排版；首页核实在线日期 2026-07-29。核查第 4–11 页模型、Slater 条件、路径定理与 Algorithm 1；第 12 页样本拆分；第 15–22 页失败分析、ANM、表 3 和成本限制；附录 A/C 的锥代数与递推。PDF 阅读采用 pypdf 抽取和临时 pypdfium2 渲染，目视核查第 4、6、10、17–20、24 页的公式、图与表。对式 (41) 的双线性交叉项和式 (48) 的残差平移做独立代数检查；区分原文记号不一致与作者已确认勘误。R21、参考索引及路线已更新，覆盖此前仅摘要级判断；未将本地全文上传，也未启动计算。临时抽取、渲染和隔离安装的阅读依赖在核查后删除。
+
+2026-09-11 摩擦切换替代设计与跨问题耦合：定向检索 Coulomb friction interior point path following 2026、Convergent Incremental Potential Contact lagged friction、LATIN friction local global、SCD semismooth Newton Coulomb、fluid structure interface quasi Newton、soft material poromechanics stabilized splitting Anderson、PETSc pseudo transient DAE。阅读全文相关章节：Li 等 2023 第 3/6/7/9 节；Giacoma 等 2016 摩擦求解段；Both 等 2022 第 2–5/6.2 节及表 8–9；Gfrerer 等 2022 第 6–7 节。核查 preCICE 和 PETSc 官方文档。Degroote 2010、Acary 等 2026 只取得出版摘要级材料；后者全文未取得，不据此实现或主张有限应变适用性。Rey 2026（DOI 10.5802/crmeca.362）仅核查出版摘要，其特定高摩擦多解例不用于解释本项目 μ=0.35。
+
+自主摘要与适用边界集中于 references/method_notes.md 的 R17–R23；跨问题移植是本项目设计推演，不是论文验证过的切割算法。优先评估真正收敛的摩擦子问题与稳定化外层耦合，完整 IPC 和多值图/内点方法列为不同成本的备选。本轮只更新研究及路线文档，没有更改求解器或启动新算例。
+
+2026-09-11 单点切换收紧：检索 semismooth Newton generalized Jacobian nonsingular、coherent orientation frictional contact。读取 Qi/Defeng Sun 作者托管 1998 综述第 2–4 页，对照广义 Jacobian 凸包、B-导数集合的不同条件及非光滑残差全局化限制；适用边界与自主诊断归入 R16。未把非根点的奇异凸组合称为物理分岔或无解证明。
+
+2026-09-11 定向检索 Coulomb contact mixed integer linearization、frictional contact solution multiplicity。核对 Hassani/Hild/Ionescu/Sakki 作者托管全文的摘要、引言及问题定义，以及 SciPy milp 官方约束、时间预算、状态语义；自主摘要及有限应变适用限制归入 R15。2026 年 interior-point/path-following 接触论文只取得出版摘要，未据此声称实现其算法。没有读取用户保留的实验验证数据。
+
+2026-09-10 返回 P2 旧失效点：查询 smoothing Newton Coulomb friction contact、Siconos friction contact 2D Gauss Seidel、nested Fischer Burmeister mixed complementarity。核对 Areias 等 2019 的出版摘要、Siconos 官方二维摩擦求解器说明、Jiang 1999 出版摘要及 GAMS NLPEC 官方互补函数说明；Areias 全文访问为 403。只借鉴算法思想，不宣称全文复现或理论假设已满足。适用边界和本地反例归入 references/method_notes.md 的 R12；未下载额外第三方全文。
+
 2026-09-09 追加针对性查询：FEBio large deformation frictional contact deep indentation、GetFEM large sliding nonlinear elasticity、FEniCSx ASiMoV Coulomb hyperelastic contact。核对 Zimmerman–Ateshian 2018（DOI 10.1115/1.4040497）的书目及 [官方模型库](https://repo.febio.org/permalink/project/68)，其中包含深压入、摩擦、单/双遍及增广/罚法 patch test。阅读 [sliding-elastic 官方说明](https://febiosoftware.github.io/febio-feature-manual/features/solid_surfaceinteraction_sliding-elastic/)，核实非对称切线和增广约束；论文 PMC 全文与部分下载页遇到验证限制，未保存或声称读过本轮无法访问的全文。
 
 核对 [GetFEM 大滑移](https://getfem.org/userdoc/model_contact_friction_large_sliding.html)、非线性弹性及 Windows 安装文档。其旧节点大滑移 brick 标为不工作，后续候选应核对积分射线追踪接口，不能笼统推荐所有接口。阅读 [ASiMoV 摩擦圆柱源码](https://github.com/Wells-Group/asimov-contact/blob/main/python/demos/hertz_contact/demo_friction_cylinders.py) 和 helpers：体应力为小应变线弹性，不能作为现成有限应变摩擦实现的证据。随后已隔离构建 FEBio 并运行本项目的短基准；GetFEM、FEniCSx/PETSc 仍只是二次开发候选。
@@ -30,7 +44,13 @@
 
 用途是区分等价投影、局部 Newton、多值接触和离散问题多解性；不提供新材料参数。阻尼、非单调、锥投影、辅助刚度及方向冻结等探索没有证明持续稳健，未作为未经验证的生产后备方案。2026 interior-point/path-following 论文仅查到摘要，未据此声称实现。
 
+2026-09-11 法向事件修复后的全局路径核查：查询 Newton homotopy continuation initial point path closed loop global convergence nonlinear equations Watson probability one。查到 Watson 全局同伦综述及作者报告，但 PDF 没有可读文本，本轮未声称阅读其定理；转而核查 [Jong 2012 作者预印本](https://optimization-online.org/wp-content/uploads/2012/08/3562.pdf) 第 2 节定理 2.1–2.2、假设 1 与 Newton–固定点同伦式。用途是区分局部可延续与目标可达性；光滑、秩和有界性要求不能直接套用当前非光滑有限应变接触。摘要及实现限制见 R25，未新增 PDF 或声称实现其算法。
+
 ## 适用边界
+
+2026-09-10 积分与拓扑对照实现：核对 [NumPy leggauss 官方文档](https://numpy.org/doc/stable/reference/generated/numpy.polynomial.legendre.leggauss.html) 的点数、区间和多项式精度，以及 [threadpoolctl 作者说明](https://github.com/joblib/threadpoolctl) 的 BLAS/OpenMP 线程池限制。刀具距离和法向不是一般多项式，故多项式精度阶不能直接当作接触积分误差界，仍须实际阶数对照。拓扑比较保持参考顶点、边界、单元数及角度质量，加载从零独立生成历史。
+
+2026-09-10 实际接触约束审计：检索 PETSc error-oriented affine covariant Newton、rubber indentation surface instability crease，以及 Hohlfeld Mahadevan unfolding sulcus。读取 PETSc NLEQERR 文档与源码、SLEPc SVD 手册，以及作者托管的 PRL 2011 正文中模型、网格、分支图和法向载荷适用边界；方法笔记 R13–R14 记录自主摘要与限制。ArXiv 1808.10420 仅查看摘要，不据此声称实现其表面势摩擦算法。没有使用用户保留的实验验证数据。
 
 2026-09-09 针对 FEBio 渐变网格前缀，核对官方 v4.13 的 FETimeStepController、FESlidingInterface、DataRecord、FEBioApp 和 FEBioModel 源码，以及 feature manual 的 timecontroller/default 和 sliding-node-on-facet。检索重点是成功增量持续缩小、增广停止条件、摩擦切线、记录精度及原生重启。以保存输入的同条件对照确认时间控制器原因；Broyden 真实斜切对照未通过，未将官方选项的存在当作有效性证明。源链接集中在 references/README.md；后续网页抓取部分源码出现缓存错误，源码核对以先前下载的 v4.13 原文件为准。
 

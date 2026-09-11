@@ -10,6 +10,87 @@ from scipy.sparse import coo_matrix,bmat,diags
 from scipy.sparse.linalg import splu
 
 
+def affine_branch_milp(mobility,offset,coefficient,*,pressure_bound,
+                       kinematic_lower,kinematic_upper,time_limit=30.,fixed_modes=None):
+    """Diagnostic of ALL affine 2D Coulomb branches in explicit finite bounds.
+
+    This is not a nonlinear equilibrium solver or a physical existence test.
+    Tractions are scaled by pressure_bound, kinematics by their bounds. Four
+    binary labels per node encode open, stick and both slip signs exactly.
+    The result is independently checked, including after a MILP time limit.
+    """
+    from scipy.optimize import milp,Bounds,LinearConstraint
+    offset=np.asarray(offset,dtype=float);mobility=np.asarray(mobility,dtype=float)
+    lower=np.asarray(kinematic_lower,dtype=float);upper=np.asarray(kinematic_upper,dtype=float)
+    n=offset.size//2
+    if (offset.shape!=(2*n,) or n<1 or mobility.shape!=(2*n,2*n)
+            or lower.shape!=offset.shape or upper.shape!=offset.shape
+            or not all(np.all(np.isfinite(a)) for a in (offset,mobility,lower,upper))
+            or np.any(lower>=upper) or not np.isfinite(pressure_bound) or pressure_bound<=0
+            or not np.isfinite(coefficient) or coefficient<0 or not np.isfinite(time_limit) or time_limit<=0):
+        raise ValueError('Finite compatible affine data and positive bounds/budget required')
+    # x = [traction/P, kinematics/S, four one-hot labels per node].
+    scale=np.maximum(np.maximum(abs(lower),abs(upper)),1e-8)
+    size=8*n;lb=np.r_[np.tile([0.,-coefficient],n),lower/scale,np.zeros(4*n)]
+    ub=np.r_[np.tile([1.,coefficient],n),upper/scale,np.ones(4*n)]
+    for i,mode in (fixed_modes or {}).items():
+        if not isinstance(i,(int,np.integer)) or not 0<=i<n or mode not in (2,0,1,-1):
+            raise ValueError('Invalid fixed contact label')
+        start=4*n+4*i;lb[start:start+4]=ub[start:start+4]=0.
+        lb[start+(2,0,1,-1).index(mode)]=ub[start+(2,0,1,-1).index(mode)]=1.
+    rows=[];cols=[];values=[];lo=[];hi=[]
+    def row(entries,a=-np.inf,b=np.inf):
+        j=len(lo)
+        for i,v in entries.items():
+            if v:rows.append(j);cols.append(i);values.append(v)
+        lo.append(a);hi.append(b)
+    for j in range(2*n):
+        entries={i:float(-pressure_bound*mobility[j,i]/scale[j]) for i in range(2*n)}
+        entries[2*n+j]=1.;rhs=offset[j]/scale[j]
+        magnitude=max(1.,abs(rhs),max(abs(v) for v in entries.values()))
+        row({i:v/magnitude for i,v in entries.items()},rhs/magnitude,rhs/magnitude)
+    for i in range(n):
+        p,t=2*i,2*i+1;g,s=2*n+p,2*n+t;o,st,ps,ns=4*n+4*i+np.arange(4)
+        gl=lower[p]/scale[p];sl=lower[t]/scale[t];su=upper[t]/scale[t]
+        row({o:1,st:1,ps:1,ns:1},1,1)
+        row({p:1,o:1},b=1)                    # open => p=tau=0
+        row({t:1,p:-coefficient},b=0)          # exact 2D Coulomb cone
+        row({t:-1,p:-coefficient},b=0)
+        row({g:1},b=0)
+        row({g:1,o:-gl},a=0)                  # closed => gap=0
+        row({s:1,st:sl},a=sl)                 # stick => slip=0
+        row({s:1,st:su},b=su)
+        row({s:1,ps:sl},a=sl)                 # positive sliding
+        row({s:1,ns:su},b=su)                 # negative sliding
+        row({t:1,p:-coefficient,ps:-2*coefficient},a=-2*coefficient)
+        row({t:1,p:coefficient,ns:2*coefficient},b=2*coefficient)
+    matrix=coo_matrix((values,(rows,cols)),shape=(len(lo),size)).tocsc()
+    result=milp(np.zeros(size),integrality=np.r_[np.zeros(4*n),np.ones(4*n)],
+        bounds=Bounds(lb,ub),constraints=LinearConstraint(matrix,lo,hi),
+        options=dict(time_limit=float(time_limit),mip_rel_gap=0.))
+    report=dict(status=int(result.status),message=result.message,verified=False,
+        pressure_bound_mpa=float(pressure_bound),time_limit_s=float(time_limit),contacts=n,
+        fixed_modes_count=len(fixed_modes or {}),
+        scope='Bounded frozen affine system only; infeasibility is not nonlinear or physical nonexistence')
+    if result.x is None:return None,None,report
+    traction=(result.x[:2*n]*pressure_bound).reshape(n,2)
+    z=(offset+mobility@traction.ravel()).reshape(n,2)
+    binary=result.x[4*n:].reshape(n,4);labels=np.array([2,0,1,-1])[binary.argmax(axis=1)]
+    opened=labels==2;stick=labels==0;slide=abs(labels)==1
+    maximum=lambda a:float(np.max(a,initial=0.))
+    gap_error=max(maximum(z[:,0]),maximum(abs(z[~opened,0])))
+    slip_error=max(maximum(abs(z[stick,1])),maximum(-labels[slide]*z[slide,1]))
+    traction_error=max(maximum(-traction[:,0]),maximum(traction[:,0]-pressure_bound),
+        maximum(abs(traction[:,1])-coefficient*traction[:,0]),maximum(abs(traction[opened])),
+        maximum(abs(traction[slide,1]-labels[slide]*coefficient*traction[slide,0])))
+    bound_error=max(maximum(lower-z.ravel()),maximum(z.ravel()-upper))
+    report.update(gap_error_mm=gap_error,slip_error_mm=slip_error,traction_error_mpa=traction_error,
+        kinematic_bound_error_mm=bound_error,
+        verified=bool(max(gap_error,slip_error,bound_error)<=1e-8 and traction_error<=1e-6
+                      and maximum(abs(binary-np.round(binary)))<=1e-6))
+    return (traction,labels,report) if report['verified'] else (None,None,report)
+
+
 def nearby_modes(choices):
     """Visit label combinations by the number of changes from the warm start."""
     base=tuple(values[0] for values in choices)
@@ -21,6 +102,22 @@ def nearby_modes(choices):
                 labels=list(base)
                 for i,value in zip(changed,alternatives):labels[i]=value
                 yield tuple(labels)
+
+
+def coulomb_switch_distance(lam,gap,slip,normal_stiffness,tangent_stiffness,coefficient,*,independent=False):
+    """Absolute switching-function values in MPa for the chosen projection.
+
+    Zero slip alone is not a stick/slip switching surface. A contact may be
+    arbitrarily close to switching with nonzero slip if its current traction
+    nearly cancels that slip in the trial return map. In the open region only
+    the normal opening boundary matters; tangential clipping there is inactive.
+    """
+    normal_trial=lam[:,0]+normal_stiffness*gap
+    tangent_trial=lam[:,1]+tangent_stiffness*slip
+    capacity=np.maximum(lam[:,0] if independent else normal_trial,0)
+    tangent_distance=np.where((normal_trial>0)&(coefficient>0),
+        abs(abs(tangent_trial)-coefficient*capacity),np.inf)
+    return np.minimum(abs(normal_trial),tangent_distance)
 
 
 def admissible_branches(mobility,offset,coefficient,choices,*,budget=262144):
@@ -142,8 +239,12 @@ def integral_branch_predictors(p,previous,old_depth,depth,dt,u,lam,*,max_predict
     modes=np.where(q['stick'][selected],0,np.where(q['slip'][selected]>=0,1,-1))
     modes=np.where(q['pressure'][selected]>0,modes,2)
     defect=np.max(abs(np.column_stack((q['pressure'],q['shear']))[selected]-current),axis=1)
-    switch=np.minimum(abs(current[:,0]),abs(z[:,1])*p.options.tangential_stiffness_mpa_per_mm)
-    groups=[np.argsort(-defect,kind='stable')[:6],np.unique(np.r_[np.argsort(-defect,kind='stable')[:3],np.argsort(switch,kind='stable')[:3]])]
+    switch=coulomb_switch_distance(current,z[:,0],z[:,1],
+        p.config.contact_surface_penalty_n_mm3,p.options.tangential_stiffness_mpa_per_mm,mu,
+        independent=p.options.coulomb_formulation=='jean_moreau')
+    nearest=np.argsort(switch,kind='stable')[:6]
+    groups=[np.argsort(-defect,kind='stable')[:6],
+        np.unique(np.r_[np.argsort(-defect,kind='stable')[:3],nearest[:3]]),nearest]
     seen=set();found=0
     for uncertain in groups:
         key=tuple(sorted(uncertain))
@@ -171,7 +272,7 @@ def integral_branch_predictors(p,previous,old_depth,depth,dt,u,lam,*,max_predict
         mobility=C[ui]@response[:n]
         offset=z.ravel()[ui]+C[ui]@base[:n]-mobility@current[uncertain].ravel()
         choices=[(int(modes[i]),)+tuple(v for v in (0,1,-1,2) if v!=modes[i]) for i in uncertain]
-        print(f'INTEGRAL BRANCH SEARCH contacts={count} enumerated={len(uncertain)} budget=4096',flush=True)
+        print(f'INTEGRAL BRANCH SEARCH contacts={count} enumerated={len(uncertain)} budget=4096 nodes={p.contact_nodes[selected[uncertain]].tolist()}',flush=True)
         for traction,labels,examined in admissible_branches(mobility,offset,mu,choices,budget=4096):
             delta=base+response@(traction-current[uncertain]).ravel()
             all_lam=current.copy();all_lam[uncertain]=traction;all_lam[fixed]+=delta[n:].reshape(-1,2)

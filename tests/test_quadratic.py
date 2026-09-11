@@ -149,9 +149,17 @@ class QuadraticTests(unittest.TestCase):
         np.testing.assert_allclose(warm,np.tile([2.,.3],(len(warm),1)))
         self.assertEqual(depth,.01)
 
-    def check_finite_compression(self,contact,volume='taylor_hood',branch_probe=False):
+    def test_partitioned_finite_compression_preserves_history(self):
+        self.check_finite_compression('quadratic_integral','quadratic_full',partitioned=True)
+
+    def test_path_finite_compression_preserves_history(self):
+        self.check_finite_compression('quadratic_integral','quadratic_full',partitioned='path')
+
+    def check_finite_compression(self,contact,volume='taylor_hood',branch_probe=False,partitioned=False):
+        from dataclasses import replace
         from prototype.material import response
         c=FEMConfig(length_mm=1,height_mm=1,width_mm=1,drop_s_mm=.5,inclination_deg=0,mesh_size_mm=.25,max_indentation_mm=.3,friction_coefficient=0.,newton_tolerance_n=1e-8,contact_multiplier_tolerance_n_mm2=1e-8)
+        if partitioned:c=replace(c,newton_tolerance_n=1e-10,contact_multiplier_tolerance_n_mm2=1e-10)
         p=QuadraticProblem(c,InitiationOptions(refinement_mm=.25,surface_spacing_mm=.125,mesh_grading='graded',contact_discretization=contact,volumetric_discretization=volume))
         select=np.all(np.isclose(p.mesh.reference_xy[p.edges,1],1),axis=1)
         p.mesh.boundary_midpoints=p.mesh.boundary_midpoints[select];p.mesh.macro_boundary_edges=p.edges[select]
@@ -163,14 +171,25 @@ class QuadraticTests(unittest.TestCase):
         u=np.zeros(p.mesh.dof_count);lam=p.initial_contact_state();old=0.
         with patch('prototype.initiation.rounded_blade_distance',plane),contextlib.redirect_stdout(io.StringIO()):
             for depth in (.1,.2,.3):
-                u,lam,d=p.step(u,old,depth,.1,lam)
+                if partitioned:
+                    from prototype.contact_partitioned import partitioned_step,path_step
+                    saved=u.copy();history=lam.copy()
+                    solve=path_step if partitioned=='path' else partitioned_step
+                    # This analytic force check uses physical tolerances 1e-10;
+                    # subtracting the large scaled initial residual has a much
+                    # larger floating-point floor than the cutting probe.
+                    kwargs=dict(auxiliary_tolerance=1e-3) if partitioned=='path' else {}
+                    new,state,d=solve(p,u,old,depth,.1,lam,**kwargs)
+                    np.testing.assert_array_equal(u,saved)
+                    np.testing.assert_array_equal(lam,history)
+                    u,lam=new,state
+                else:u,lam,d=p.step(u,old,depth,.1,lam)
                 old=depth
                 expected=-response(np.array([[[1.,0.],[0.,1-depth]]]),c,tangent=False)['P'][0,1,1]
                 self.assertAlmostEqual(d['reaction_fz_n'],expected,places=9)
                 np.testing.assert_allclose(p.fields(u)['J'],1-depth,atol=1e-10)
                 np.testing.assert_allclose(u.reshape(-1,2)[:,1],-depth*p.mesh.reference_xy[:,1],atol=1e-10)
             if branch_probe:
-                from dataclasses import replace
                 from prototype.contact_branches import integral_branch_predictors
                 p.config=replace(p.config,newton_tolerance_n=.001)
                 predicted=list(integral_branch_predictors(p,u,old,old,.1,u,lam+np.array([.005,0.]),max_predictors=1))

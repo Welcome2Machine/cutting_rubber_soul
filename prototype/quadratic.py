@@ -171,14 +171,14 @@ class QuadraticProblem(IntactProblem):
         q.update(F=F,J=J,pressure=pq,cofactor=cofactor,bulk_energy=energy,min_j=minimum,max_j=float(upper.max()))
         return q
 
-    def assemble(self,u,previous,depth,old_depth,dt,multipliers,old_shear=None,*,mixed=False,formulation=None,with_tangent=True,roundoff_guard=True,pressure_blocks=False):
+    def assemble(self,u,previous,depth,old_depth,dt,multipliers,old_shear=None,*,mixed=False,formulation=None,with_tangent=True,roundoff_guard=True,pressure_blocks=False,frozen_contact=None):
         if dt<=0:raise ValueError('Physical time increment must be positive')
         q=self.bulk_response(u,with_tangent);m=self.mesh;c=self.config
         br=np.einsum('e,q,eqiJ,eqaJ->eai',self.volumes,W,q['P'],self.grad).reshape(-1,12)
         r=np.zeros(m.dof_count);np.add.at(r,self.dofs.ravel(),br.ravel())
         if old_shear is None:old_shear=np.zeros(len(multipliers))
         contact=self.surface_contact.evaluate(u,previous,depth,old_depth,np.column_stack((multipliers,old_shear)),
-            with_tangent=with_tangent,formulation=formulation,roundoff_guard=roundoff_guard)
+            with_tangent=with_tangent,formulation=formulation,roundoff_guard=roundoff_guard,frozen=frozen_contact)
         r-=contact['global_force'];matrix=None
         if with_tangent:
             bk=np.einsum('e,q,eqaJ,eqiJkL,eqbL->eaibk',self.volumes,W,self.grad,q['tangent'],self.grad,optimize=True).reshape(-1,12,12)

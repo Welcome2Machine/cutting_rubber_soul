@@ -4,14 +4,153 @@ import subprocess
 import sys
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 import xml.etree.ElementTree as ET
 import numpy as np
-from prototype.febio_reference import export,validate_patch,boundary_penetration_bounds,plane_strain_hex_forces,contact_log_audit,default_executable,solver_environment
+from prototype.febio_reference import export,validate_patch,boundary_penetration_bounds,plane_strain_hex_forces,contact_log_audit,default_executable,solver_environment,RecordTail,ObliquePathAudit,run_guarded,solver_log_text
 from prototype.model_config import FEMConfig,local_to_lab,_rotation_vectors
 from prototype.initiation import InitiationOptions,rounded_blade_distance
 
 
 class FEBioReferenceTests(unittest.TestCase):
+    def test_balanced_profile_changes_numerics_but_preserves_material_and_force_gate(self):
+        c=FEMConfig();o=InitiationOptions()
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder)/'model.feb'
+            meta=export(path,c,o,case='oblique',depth=.025,speed_profile='balanced',spacing=.5)
+            root=ET.parse(path).getroot()
+            self.assertEqual(meta['surface_spacing_mm'],.0025)
+            self.assertEqual(root.findtext('Control/time_steps'),'10')
+            self.assertEqual(root.findtext('Control/solver/qn_method/max_ups'),'0')
+            self.assertEqual(root.findtext('Contact/contact/tolerance'),'1e-05')
+            self.assertEqual(meta['config']['newton_tolerance_n'],c.newton_tolerance_n)
+            self.assertEqual(meta['config']['contact_multiplier_tolerance_n_mm2'],c.contact_multiplier_tolerance_n_mm2)
+            self.assertEqual(meta['config']['contact_penetration_tolerance_mm'],2e-4)
+            self.assertEqual(c.contact_penetration_tolerance_mm,1e-4)
+            for name,value in c.to_dict().items():
+                if name!='contact_penetration_tolerance_mm':self.assertEqual(meta['config'][name],value)
+            self.assertIsNotNone(root.find('Output/logfile/node_data'))
+            self.assertIsNotNone(root.find('Output/logfile/rigid_body_data'))
+            self.assertIsNone(root.find('Output/logfile/element_data'))
+            self.assertEqual(root.findtext('Control/plot_level'),'PLOT_FINAL')
+
+    @unittest.skipUnless(default_executable('corrected').exists(),'Optional corrected FEBio binary absent')
+    def test_balanced_actual_patch_keeps_independent_force_accuracy(self):
+        with tempfile.TemporaryDirectory() as folder:
+            out=Path(folder)/'patch'
+            subprocess.run([sys.executable,'-m','prototype.febio_reference','--case','patch',
+                '--speed-profile','balanced','--contact-variant','corrected','--output',str(out),
+                '--execute','--timeout','30'],check=True,capture_output=True)
+            self.assertTrue(json.loads((out/'status.json').read_text())['patch_verified'])
+
+    def test_audit_cache_does_not_reuse_deformed_geometry(self):
+        from prototype.febio_reference import audit_oblique_state
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder)/'model.feb';meta=export(path,FEMConfig(),InitiationOptions(),case='oblique',spacing=1.)
+            root=ET.parse(path).getroot();count=meta['body_nodes'];cache={}
+            for step,dx in enumerate((0.,.001)):
+                data=np.zeros((count,10));data[:,0]=np.arange(1,count+1);data[:,4]=dx
+                tool=np.array([[2,0,0,0,0,0,0.]])
+                expected=audit_oblique_state(root,meta,(step,0.,data),tool)
+                actual=audit_oblique_state(root,meta,(step,0.,data),tool,cache=cache)
+                self.assertEqual(actual,expected)
+            self.assertEqual(len(cache),4)
+
+    def test_fine_mesh_covers_lab_downward_motion_and_failed_material_edge(self):
+        c=FEMConfig();o=InitiationOptions();h=.00125
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder)/'model.feb'
+            meta=export(path,c,o,case='oblique',depth=.2,spacing=.5,surface_spacing=h)
+            root=ET.parse(path).getroot()
+            xy=np.array([np.fromstring(v.text,sep=',')[:2] for v in root.findall('Mesh/Nodes/node')])[:meta['body_nodes']//2]
+            # Invert the actual coordinate map, not the mesh-window formula.
+            basis=local_to_lab(np.eye(2),c)
+            material=xy@np.linalg.inv(basis)
+            top=material[np.isclose(material[:,1],c.height_mm),0];top.sort()
+            origin=local_to_lab(np.array([[c.drop_s_mm,c.height_mm]]),c)[0]
+            trajectory=(origin+np.column_stack((np.zeros(31),-np.linspace(0,.2,31))))@np.linalg.inv(basis)
+            for s in [*trajectory[:,0],7.127125,7.13168125]:
+                j=np.searchsorted(top,s)
+                self.assertGreater(j,0);self.assertLess(j,len(top))
+                self.assertLessEqual(top[j]-top[j-1],h*(1+1e-9))
+            self.assertAlmostEqual(trajectory[-1,0],7+.2*np.sin(np.pi/3))
+            self.assertEqual(meta['config'],c.to_dict())
+            self.assertEqual(meta['options']['tip_radius_mm'],.02)
+
+    def test_finer_blade_reduces_chord_error_without_changing_physical_radius(self):
+        c=FEMConfig();o=InitiationOptions()
+        with tempfile.TemporaryDirectory() as folder:
+            old=export(Path(folder)/'old.feb',c,o,case='oblique',depth=.01,spacing=1.,blade_arc_segments=64)
+            new=export(Path(folder)/'new.feb',c,o,case='oblique',depth=.01,spacing=1.,blade_arc_segments=256)
+            self.assertLess(new['blade_faceting_error_mm'],old['blade_faceting_error_mm']/15)
+            self.assertLess(new['blade_faceting_error_mm'],c.contact_penetration_tolerance_mm/100)
+            self.assertEqual(new['options'],old['options']);self.assertEqual(new['config'],old['config'])
+            # At twice the refined reference spacing, a circular chord still
+            # has geometric budget left. This is not a bound on actual strain.
+            r=o.tip_radius_mm;length=2*.00125
+            sagitta=r-np.sqrt(r*r-length*length/4)
+            self.assertLess(sagitta+new['blade_faceting_error_mm'],c.contact_penetration_tolerance_mm/2)
+            for invalid in (0,1.5,True):
+                with self.assertRaises(ValueError):export(Path(folder)/'bad.feb',c,o,blade_arc_segments=invalid)
+
+    def test_log_selection_preserves_accepted_event_when_file_buffer_is_truncated(self):
+        with tempfile.TemporaryDirectory() as folder:
+            out=Path(folder)
+            first='augmentation # 5\nCONTACT_AUDIT t=.874038461538 aug=5 dn=1e-7 dt=1e-12 slip=.003\nconverged at time : .874038\n'
+            second='augmentation # 5\nCONTACT_AUDIT t=.886538461538 aug=5 dn=7.128e-6 dt=4.66e-13 slip=.003\nconverged at time : .886538\n'
+            (out/'model.log').write_text(first+second[:-35])
+            (out/'stdout.log').write_text(first+second+'beginning next step\n')
+            text,source=solver_log_text(out);audit=contact_log_audit(text)
+            self.assertEqual(source,'stdout.log');self.assertEqual(len(audit['accepted_steps']),2)
+            self.assertEqual(audit['accepted_steps'][-1]['time_s'],.886538461538)
+
+    def test_buffered_history_and_malformed_tail(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder)/'nodes.txt';tail=RecordTail(path,2,3)
+            path.write_bytes(b'*Step = 0\n*Time = 0\n*Data = x;y\n1 0 0\n2 0')
+            self.assertEqual(tail.poll(),[])
+            with path.open('ab') as stream:stream.write(b' 0\n')
+            result=tail.poll();self.assertEqual(len(result),1)
+            np.testing.assert_array_equal(result[0][2],[[1,0,0],[2,0,0]])
+            self.assertEqual(tail.poll(final=True),[])
+            with path.open('ab') as stream:stream.write(b'*Step = 1\n*Time = 1\n1 0 0\n')
+            with self.assertRaisesRegex(ValueError,'Incomplete'):tail.poll(final=True)
+
+    def test_path_failure_survives_valid_final_state_and_mismatch_is_rejected(self):
+        with tempfile.TemporaryDirectory() as folder:
+            out=Path(folder);(out/'model.feb').write_text('<febio_spec/>')
+            for name,row in [('nodes.txt','1 0 0 0 0 0 0 0 0 0'),('cutter.txt','2 0 0 0 0 0 0')]:
+                (out/name).write_text(''.join(f'*Step = {i}\n*Time = {i}\n{row}\n' for i in range(3)))
+            def state(root,metadata,node,tool,cache=None):
+                return dict(step=node[0],time_s=node[1],last_depth_mm=node[1],
+                    geometry_passed=node[0]!=1,necessary_force_checks_passed=True,
+                    whole_boundary_penetration_upper_mm=.01 if node[0]==1 else 0.,min_corner_J=1.)
+            with patch('prototype.febio_reference.audit_oblique_state',side_effect=state):
+                audit=ObliquePathAudit(out,{'body_nodes':1});audit.poll(final=True)
+                self.assertFalse(audit.summary['geometry_passed'])
+                self.assertEqual(audit.summary['first_failed_depth_mm'],1.)
+                audit.verify_coverage([{'time_s':1},{'time_s':2}])
+                with self.assertRaisesRegex(ValueError,'every accepted'):audit.verify_coverage([{'time_s':2}])
+                path=out/'cutter.txt';path.write_text(path.read_text().replace('*Time = 2','*Time = 3'))
+                with self.assertRaisesRegex(ValueError,'different times'):
+                    ObliquePathAudit(out,{'body_nodes':1}).poll(final=True)
+
+    def test_guard_terminates_only_owned_child_on_invalid_state(self):
+        from unittest.mock import Mock
+        audit=Mock();audit.poll.return_value=[]
+        audit.summary={'geometry_passed':False,'first_failed_depth_mm':.2}
+        process=Mock();process.poll.return_value=None;process.pid=123
+        with tempfile.TemporaryDirectory() as folder, patch('prototype.febio_reference.subprocess.Popen',return_value=process):
+            with self.assertRaisesRegex(RuntimeError,'0.2'):
+                run_guarded(Path('solver'),Path(folder),{},None,audit,{})
+        process.terminate.assert_called_once();process.wait.assert_called_once()
+
+    def test_contact_time_rounding_at_large_depth_does_not_drop_projection(self):
+        log='augmentation # 3\nCONTACT_AUDIT t=12.3456789123 aug=3 dn=1e-7 dt=1e-8 slip=.001\nconverged at time : 12.3457\n'
+        row=contact_log_audit(log)['accepted_steps'][0]
+        self.assertEqual(row['normal_projection_mpa'],1e-7)
+        self.assertEqual(row['time_s'],12.3456789123)
+
     def test_linux_build_paths_and_position_independent_static_dependencies(self):
         from tools.build_febio import build_settings
         root=Path('/build/febio')
