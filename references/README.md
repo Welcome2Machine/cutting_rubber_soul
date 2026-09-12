@@ -1,5 +1,14 @@
 # 参考方法索引
 
+2026-09-12 伪瞬态延续：[PETSc：Solving Steady-State Problems with Pseudo-Timestepping](https://petsc.org/release/manual/ts/#solving-steady-state-problems-with-pseudo-timestepping)，以辅助演化求原方程零点，支持 B 度量和残差比伪时间步更新；[Gee 等，Pseudo-transient continuation for nonlinear transient elasticity，2009](https://doi.org/10.1002/nme.2527) 给出非线性弹性中的相关应用。用于处理本地含摩擦耦合矩阵近奇异、单调残差搜索停滞，不能据此声称橡胶切割全程稳定或实验动态响应正确。代码用投影 Hessian 作为辅助度量，保留未移位力验收；详情见 modeling_roadmap。
+
+2026-09-12 摩擦外层：[Li 等 2020 IPC 技术补充第 9 节](https://ipc-sim.github.io/file/IPC-supplement-A-technical.pdf) 与 [Physics-Based Simulation：Fixed-Point Iteration](https://phys-sim-book.github.io/boundary-treatments/frictional-contact/fixed_point_iter.html)。可参考冻结法向力/切向基底的摩擦势与外层刷新流程；内层收敛不保证外层固定点收敛。本地依据失败日志增加重新组装力残差的外层回溯，不改变摩擦系数，也不把冻结摩擦残差作为最终验收。详见建模路线及 solver_status。
+
+2026-09-12 能量差精度：[ANSYS Newton-Raphson 理论手册 14.10.5](https://ansyshelp.ansys.com/public/Views/Secured/corp/v242/en/ans_thry/thy_tool10.html) 描述沿步方向的势能导数线搜索；[A Noise-Tolerant Quasi-Newton Algorithm for Unconstrained Optimization](https://arxiv.org/abs/2010.04352) 讨论数值噪声对线搜索的影响。用于理解近收敛处总能量相减不可靠的原因；本地采用带原力/微小位移/方向功多重门槛的精度保护，不是上述算法复现，不放宽力平衡门限。
+2026-09-11 接触非凸方向补充：[Gast 等，Optimization Integrator for Large Time Steps，2015](https://math.ucdavis.edu/~jteran/papers/GSSJT15.pdf)，DOI 10.1109/TVCG.2015.2459687，第 3.1 节关于不定 Newton 方向、截断 CG 和下降角度；[Cornell CS4220，2026-04-20](https://www.cs.cornell.edu/courses/cs4220/2026sp/lec/2026-04-20.html) 关于非凸二次模型、移位 Hessian 与信赖域。用于理解 0.77 mm 接触主导的负曲率；本地 `regularized` 为 PN 度量下的全局曲率移位，不是上述动力学或完整信赖域方法复现，尚无完整路径稳定性保证。
+
+2026-09-11 求解器核查：[Fernández-Fernández、Löschner、Bender，Progressively Projected Newton's Method](https://arxiv.org/abs/2505.21013v2)，初版 2025、修订 2026。可借鉴结论是逐单元正定投影可能过度改变全局切线；论文同时报告准静态下 PN 可能更优，因此必须做本问题的同前态对照。本地 `--hessian-mode hybrid` 只试验未投影 Newton 方向加 PSD 回退，不声称复现 PPN。切线接口依据 [IPC Toolkit 官方 API](https://ipctk.xyz/python-api/potentials.html)，沿用锁定 ipctk 1.6.0，并以有限差分核对。
+
 2026-09-11 实现补充：本轮采用 [IPC Toolkit 官方 Python 接口](https://ipctk.xyz/build/python.html) 的 `ipctk==1.6.0` Windows 原生 wheel。依据 [模拟教程](https://ipctk.xyz/tutorials/simulation.html) 组织表面/体自由度映射、屏障能量和 CCD；本地静态宿主使用原有限应变材料，未加入惯性项，不是教程动力学案例的直接复现。原生 `make_static_obstacle_filter` 排除刀具内部碰撞并保留橡胶自接触，避免 Python 回调阻塞并行 CCD。API 以锁定版本的绑定签名为准，不能直接套用在线开发版。方法适用边界及参数敏感性要求见 [建模路线](../docs/modeling_roadmap.md)。
 
 论文原文件仅留在本地，不上传 GitHub。面向 AI 的结构化摘要、原文定位、来源链接、适用边界和代码映射集中在 [method_notes.md](method_notes.md)。这些笔记是自行归纳的研究说明，不是论文全文或作者认证的实现规范。

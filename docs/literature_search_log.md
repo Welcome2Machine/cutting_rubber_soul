@@ -1,5 +1,8 @@
 # 文献检索记录
 
+2026-09-12：查询 finite precision / Armijo line search / cancellation near Newton convergence。核对 ANSYS 2024R2 理论手册 Newton-Raphson 的收敛与线搜索段，以及 arXiv:2010.04352 的函数误差/噪声容忍线搜索摘要。结合 0.91 mm 原失败试值的能量差与梯度路径功审计，采用自主近收敛保护；未把文献的拟 Newton 全局收敛结论转用为本模型保证。原始 PDF 不另存重复副本。
+2026-09-11 核查 0.77 mm：查询 projected Newton tiny line-search steps / indefinite Hessian / modified Newton eigenvalue shift。读取作者托管 Gast 等 2015《Optimization Integrator for Large Time Steps》第 3.1 节（方向、截断 CG、下降角与 Wolfe），以及 Cornell CS4220 2026-04-20 的非凸二次/信赖域讲义。核对逐单元 PN 与全局修正的不同；当前自主实现以 PN 刚度为度量作全局曲率移位，仅修改步矩阵。资料不是橡胶斜切验证，不将动力学收益直接迁移；同前态对照及适用边界记入 solver_status/modeling_roadmap。
+
 2026-09-11 最后全盘核查：定向检索 IPC Toolkit 2D / convergent contact / PolyFEM friction quasi-static，并读取 ipctk.xyz 概览、Getting Started、Convergent Formulation、PolyFEM 首页及其 FrictionForm.cpp 官方源码。确认 Toolkit 非完整求解器、二维碰撞线性边适用范围及完整宿主的滞后摩擦实现。选择完整 IPC/PolyFEM 路线作为当前方案退出后的优先适配方向；未安装或宣称已验证该工具，也未下载重复论文。适用限制补入 R17，实施门槛见 modeling_roadmap.md。
 
 2026-09-11 辅助路径实现：定向检索 pseudo arclength continuation simple folds augmented Jacobian predictor corrector，核对 Dickson/Kelley/Ipsen/Kevrekidis 2007 的 SIAM 书目和作者全文第 1–4 页。使用其增广方程、切向归一化和简单折点条件指导预测—校正；不把光滑路径定理外推至当前库仑非光滑系统。摘要和项目自主残差同伦集中于 R24，原 PDF 未另建本地副本。
