@@ -41,13 +41,18 @@
 
 ## 当前实现与任务约束
 
-持续要求见 [当前任务要求](task_requirements.md)。上述两节中的旧实现措辞不构成预设裂纹路径的约束；用户已明确要求自由预测起裂位置和后续裂纹。
+2026-09-28 更新：`feature/czm-cutting` 已转入预设初始完整潜在界面的开发准备，服务器接手见 [server_handoff.md](server_handoff.md)。本次发布没有实现或运行 CZM；上方历史 cohesive 初值保留来源，不表示当前程序已经启用。下面 2026-09-23 的描述用于区分已实现的完整材料入口与计划开发。
+
+持续要求见 [当前任务要求](task_requirements.md)。截至 2026-09-23，本轮只全域预测首次起裂候选的位置、深度与时间区间，之后仍按完整无损伤材料继续至 3 mm。上述两节保留实验输入及其来源；其中历史 cohesive、滑移提取措辞不表示当前启用了预设裂纹或裂后模型。
 
 - `prototype/model_config.py`：共用实验参数和参考网格结构；旧预设裂面求解器已删除，历史参数字段仅为输入/检查点兼容保留，不启用 cohesive 断裂。
-- `prototype/run_initiation.py`：完整连通试样、真实外边界接触、全域应力/伸长及强度候选筛查；尚未实现裂纹扩展。
+- `prototype/ipc_reference.py`：当前完整体有限应变、刀具 IPC 接触与摩擦主入口，保存表面材料点、网格及原生 Fx/Fz；候选之后不改变材料刚度、连接或接触方程。
+- `prototype/ipc_initiation.py`：在线/离线全域首次候选诊断，主判据为校准方向松弛 AT1 在 d=0 的单边稳定性，名义强度/主伸长分列；这是条件性起始判据，不是已验证的可见裂口。
+- `prototype/interface_conditions.py`：记录干态/硅油界面情景及油品、温度元数据。硅油 μ_eff=0.10 未标定，未启用油膜流动、溶胀或温度本构。
+- `tools/run_ipc_queue.py --study lubrication`：冻结源码后依次运行干态 60°、硅油 60°、硅油 30°，各自从零至 3 mm，成功或失败均进入下一组。这些是本轮扩展情景，不改写上文 N60A 实验记录；三组共同名义 25°C 仅作元数据，15–35°C 影响尚无法量化，也未证明可以忽略。
 - `prototype/fracture_criteria.py`：客观应力度量转换与显式标定的多轴强度接口；缺失多轴标定时不自动补造参数。
-- `prototype/febio_reference.py`：有限应变接触独立参考，支持可配置 CPU 线程，尚无起裂停止或自由断裂。
+- `prototype/run_initiation.py`、`prototype/febio_reference.py` 及已有裂后组件：历史诊断/独立研究入口，不作为本轮生产主线或完整裂后预测的证据。
 
-数值方法与输出字段见 [起裂模型说明](initiation_model.md)，文献选型和分阶段验收见 [建模路线](modeling_roadmap.md)，早期失败与修订证据见 [历史审查](solver_status.md)。保留的刀厚 0.245 mm、全楔角 23°、速度 0.2 mm/s、保持 0.1 s 和同速回撤仍来自原仓库设置，不声称已从实验示意图独立确认。
+当前数值方法、参数与输出字段见 [无断裂仿真说明](intact_simulation_spec.md)，文献决策见 [建模路线](modeling_roadmap.md) 和 [润滑/温度证据](../references/lubrication_temperature.md)，实际完成和失败证据见 [求解状态](solver_status.md)。保留的刀厚 0.245 mm、全楔角 23°、速度 0.2 mm/s、保持 0.1 s 和同速回撤仍来自原仓库设置，不声称已从实验示意图独立确认；本轮仅向下加载，模型时间由名义速度换算。
 
 完整算例以后台日志和状态文件记录；启动检查之后无需 agent 持续轮询或等待结束。不得将启动成功、优化器成功或单元测试通过等同于实验预测已经验证。

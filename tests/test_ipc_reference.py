@@ -7,7 +7,8 @@ from pathlib import Path
 import tempfile
 import time
 import unittest
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import patch, Mock
 import numpy as np
 from threadpoolctl import threadpool_limits
 from prototype.ipc_reference import (
@@ -95,6 +96,89 @@ class BaselineCommandTests(unittest.TestCase):
             self.assertTrue(saved["completed"])
             self.assertEqual(saved["status"], "completed")
             self.assertEqual(saved["visualization"]["status"], "failed")
+
+
+class LoadingPredictorTests(unittest.TestCase):
+    def problem(self):
+        p = object.__new__(IPCProblem)
+        p.n = 3; p.free = np.array([2, 3, 5])
+        p.mesh = SimpleNamespace(local_sn=np.array([[0., 0.], [0., .5], [0., 1.]]))
+        p.config = SimpleNamespace(height_mm=1., friction_coefficient=.35)
+        p.work_counters = {}; p.previous = np.arange(8, dtype=float).reshape(4, 2)
+        p.safe_step = Mock(return_value=1.); p.lag = Mock(return_value=None)
+        p.evaluate = Mock(side_effect=[(0., np.ones(8)*2, None, 1.),
+                                       (0., np.ones(8), None, 1.)])
+        return p, p.previous.copy()
+
+    def test_secant_preserves_constraints_and_physical_history(self):
+        p,x = self.problem(); older = x-.002; original = older.copy()
+        with contextlib.redirect_stdout(io.StringIO()):
+            guess = p.loading_predictor(x,.02,.03,float('inf'),(.01,older))
+        np.testing.assert_allclose(guess.ravel()[p.free],x.ravel()[p.free]+.002)
+        np.testing.assert_array_equal(guess.ravel()[[0,1,4]],x.ravel()[[0,1,4]])
+        np.testing.assert_array_equal(guess[3],x[3]-[0.,.01])
+        np.testing.assert_array_equal(p.previous,x)
+        np.testing.assert_array_equal(older,original)
+        self.assertEqual(p.last_predictor['selected'],'secant')
+        self.assertEqual(p.work_counters['predictor_evaluations'],2)
+
+    def test_unsafe_or_worse_secant_falls_back_without_committing(self):
+        for safety,force in ((.5,1.),(1.,3.),(1.,float('nan'))):
+            p,x = self.problem(); p.safe_step.side_effect = [1.,safety]
+            p.evaluate.side_effect = [(0.,np.ones(8)*2,None,1.),(0.,np.ones(8)*force,None,1.)]
+            with contextlib.redirect_stdout(io.StringIO()):
+                guess = p.loading_predictor(x,.02,.03,float('inf'),(.01,x-.002))
+            np.testing.assert_allclose(guess-x,[[0.,0.],[0.,-.005],[0.,-.01],[0.,-.01]],atol=1e-15)
+            np.testing.assert_array_equal(p.previous,x)
+            self.assertEqual(p.last_predictor['selected'],'affine')
+            self.assertEqual(p.evaluate.call_count,0 if safety < 1 else 2)
+
+    def test_safe_secant_can_replace_unsafe_affine_but_both_unsafe_reject(self):
+        p,x = self.problem(); p.safe_step.side_effect = [.5,1.]
+        with contextlib.redirect_stdout(io.StringIO()):
+            p.loading_predictor(x,.02,.03,float('inf'),(.01,x-.002))
+        self.assertEqual(p.last_predictor['selected'],'secant')
+        self.assertIsNone(p.last_predictor['affine_residual_n'])
+        p,x = self.problem(); p.safe_step.return_value = .5
+        with contextlib.redirect_stdout(io.StringIO()),self.assertRaisesRegex(RuntimeError,'collision free'):
+            p.loading_predictor(x,.02,.03,float('inf'),(.01,x-.002))
+        np.testing.assert_array_equal(p.previous,x)
+
+    def test_no_valid_history_has_no_force_evaluation_and_secant_is_bounded(self):
+        for history in (None,(.02,np.zeros((4,2))),(.01,np.zeros((3,2)))):
+            p,x = self.problem()
+            with contextlib.redirect_stdout(io.StringIO()):
+                p.loading_predictor(x,.02,.03,float('inf'),history)
+            p.evaluate.assert_not_called()
+        p,x = self.problem()
+        with contextlib.redirect_stdout(io.StringIO()):
+            guess = p.loading_predictor(x,.02,.03,float('inf'),(.019,x-.001))
+        np.testing.assert_allclose(guess.ravel()[p.free]-x.ravel()[p.free],.002)
+        self.assertEqual(p.last_predictor['extrapolation_ratio'],2.)
+
+    def test_predictor_honors_deadline(self):
+        p,x = self.problem()
+        with self.assertRaises(TimeoutError):
+            p.loading_predictor(x,.02,.03,0.,(.01,x-.002))
+        p.evaluate.assert_not_called()
+        np.testing.assert_array_equal(p.previous,x)
+
+    def test_optional_numerical_failures_fall_back_and_nan_affine_does_not_hide_secant(self):
+        p,x = self.problem()
+        p.evaluate.side_effect = [(0.,np.full(8,np.nan),None,1.),(0.,np.ones(8),None,1.)]
+        with contextlib.redirect_stdout(io.StringIO()):
+            p.loading_predictor(x,.02,.03,float('inf'),(.01,x-.002))
+        self.assertEqual(p.last_predictor['selected'],'secant')
+        for location in ('geometry','force'):
+            p,x = self.problem()
+            if location == 'geometry':
+                p.safe_step.side_effect = [1.,RuntimeError('CCD numerical failure')]
+            else:
+                p.evaluate.side_effect = [(0.,np.ones(8),None,1.),RuntimeError('force numerical failure')]
+            with contextlib.redirect_stdout(io.StringIO()):
+                guess=p.loading_predictor(x,.02,.03,float('inf'),(.01,x-.002))
+            self.assertEqual(p.last_predictor['selected'],'affine')
+            np.testing.assert_allclose(guess-x,[[0.,0.],[0.,-.005],[0.,-.01],[0.,-.01]],atol=1e-15)
 
 
 class NativeIPCTests(unittest.TestCase):
@@ -293,6 +377,30 @@ class NativeIPCTests(unittest.TestCase):
                 np.testing.assert_allclose(x[p.n:, 0], p.rest[p.n:, 0], atol=1e-14)
                 self.assertLessEqual(info['residual_n'], 1e-4)
                 self.assertGreater(info['min_j'], 0.)
+                self.assertEqual(info['reaction_force_convention'], 'rubber_on_knife_lab_xz')
+                # Independent saved-stress recovery, using only NumPy and
+                # reference triangles. Here ONLY the bottom is fixed and it
+                # has no contact, unlike the laterally confined patch case.
+                reference = p.mesh.reference_xy[p.mesh.triangles]
+                current = x[p.mesh.triangles]
+                Dm = np.stack((reference[:, 1]-reference[:, 0],
+                               reference[:, 2]-reference[:, 0]), axis=2)
+                Ds = np.stack((current[:, 1]-current[:, 0],
+                               current[:, 2]-current[:, 0]), axis=2)
+                F = Ds@np.linalg.inv(Dm)
+                J = np.linalg.det(F)
+                sigma = p.bulk_fields(x)['cauchy'][:, :2, :2]
+                P = J[:, None, None]*sigma@np.linalg.inv(F).transpose(0, 2, 1)
+                grad = np.array([[-1., -1.], [1., 0.], [0., 1.]])[None]@np.linalg.inv(Dm)
+                local = np.einsum('e,eiJ,eaJ->eai',
+                                  np.linalg.det(Dm)*p.config.width_mm/2, P, grad)
+                support = np.zeros((p.n, 2))
+                np.add.at(support, p.mesh.triangles.ravel(), local.reshape(-1, 2))
+                recovered = support[p.mesh.bottom_nodes].sum(axis=0)
+                direct = np.array([info['reaction_fx_n'], info['reaction_fz_n']])
+                # Sum of free-node force residuals bounds support recovery.
+                bound = np.sqrt(len(p.free))*info['residual_n']+1e-9
+                self.assertLessEqual(np.linalg.norm(recovered-direct), bound)
 
     def test_compression_force_geometry_and_material(self):
         p = IPCProblem("patch")
@@ -338,6 +446,21 @@ class NativeIPCTests(unittest.TestCase):
             - p.evaluate(x - eps * v, lag, tangent=False)[0]
         ) / (2 * eps)
         self.assertAlmostEqual(fd, float(g @ v.ravel()), delta=1e-5 * max(1.0, abs(fd)))
+        # Translational invariance gives exact action/reaction, independent of
+        # equilibrium. Positive knife slip produces negative material Fx;
+        # compressive normal contact produces positive material Fz.
+        gradient = g.reshape(-1, 2)
+        knife_force = -gradient[p.n:].sum(axis=0)
+        np.testing.assert_allclose(gradient[:p.n].sum(axis=0), knife_force, atol=1e-10)
+        self.assertLess(knife_force[0], 0.)
+        self.assertGreater(knife_force[1], 0.)
+        for component in range(2):
+            translation = np.zeros_like(x)
+            translation[p.n:, component] = 1.
+            work_derivative = (p.evaluate(x+eps*translation, lag, tangent=False)[0]
+                               -p.evaluate(x-eps*translation, lag, tangent=False)[0])/(2*eps)
+            self.assertAlmostEqual(work_derivative, -knife_force[component],
+                                   delta=1e-5*max(1., abs(knife_force[component])))
         from dataclasses import replace
 
         p.config = replace(p.config, width_mm=40.0)
@@ -416,12 +539,15 @@ class NativeIPCTests(unittest.TestCase):
                 result = json.loads((out / "result.json").read_text())
                 self.assertEqual(result["completed"], expected)
                 self.assertIsNone(result["baseline_id"])
+                self.assertEqual(result['reaction_force_convention']['force_on'], 'knife')
+                self.assertEqual(result['reaction_force_convention']['positive_z'], 'up')
                 self.assertEqual(
                     (out / "baseline_config.json").read_bytes(), BASELINE_PATH.read_bytes()
                 )
                 if expected:
                     self.assertEqual(result["last_depth_mm"], 0.025)
                     self.assertTrue((out / result["last_checkpoint"]).is_file())
+                    self.assertIn('reaction_fx_n', result['steps'][-1])
                 else:
                     self.assertEqual(result["status"], "failed")
                     self.assertEqual(result["steps"], [])

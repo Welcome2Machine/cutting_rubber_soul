@@ -1,12 +1,14 @@
 # 超算运行准备
 
+2026-09-28 CZM 分支接手以 [server_handoff.md](server_handoff.md) 为入口。CZM 尚未实现，本次不启动计算；原始媒体/论文、已有接受态和本机二进制不随 Git 提供。下文 FEBio 为独立参考，**不是 IPC/CZM 环境准备的必需依赖**。处理器、操作系统和调度器仍需在服务器核实。
+
 当前固定基线是 IPC，实际在本地 Windows 验证。若以后迁移到计算节点，先安装 requirements.txt 并运行 IPC 短测试；固定基线在作业内以前台运行：`python -m prototype.ipc_reference --baseline --output outputs/hpc_ipc_baseline`，至少分配 4 个 CPU。不要在 Slurm 作业内使用 `--detach`。改变线程或其他配置时需省略 `--baseline`，作为单独的平台诊断记录。下方 `tools/run_hpc.sh` 是保留的 **FEBio 参考模板**，不是 IPC 默认入口。
 
 处理器、操作系统和调度器尚未知。当前按 Linux 单节点共享内存 CPU 准备，不指定学校账户、分区或厂商指令集。FEBio/OpenMP 和 SuperLU_MT 可使用多线程；大内存支持更细网格和直接分解，但不能自动解决非线性失收敛。Python 主线的 SciPy 稀疏 LU 不会因增加 OpenMP 线程而全面并行。
 
 ## 准备
 
-按集群说明加载 Python 3.10+、GCC/G++、CMake、OpenMP 环境，在仓库根目录执行：
+若需要单独验证 FEBio 参考，按集群说明加载 Python 3.10+、GCC/G++、CMake、OpenMP 环境，在仓库根目录执行以下步骤。仅准备 IPC/CZM 时改用交接文档的安装与分阶段检查，不执行这里的 FEBio 构建：
 
 ```sh
 python3 -m venv .venv
@@ -45,6 +47,6 @@ sbatch --cpus-per-task=8 --mem=32G --time=24:00:00 tools/run_hpc.sh
 
 脚本保存 driver.log、Python 包版本、Git 提交/工作树状态、退出码；算例保存输入、线程/体系结构、源码/二进制哈希、日志和状态。调度器强杀可能留下 running 或不完整转储，应结合调度器最终状态判断。restart.dmp 读取后接续等价尚未验证。
 
-Python 主线单独排队时使用 `python -u -m prototype.run_initiation --config prototype/initiation_config.json --output outputs/new_mainline --mode to_candidate`，由调度器记录日志。它仍存在连续失效，候选阈值及材料保持原定义。
+`prototype.run_initiation` 是保留的历史求解入口，存在连续失效，不再作为服务器主线推荐。当前完整材料使用 `prototype.ipc_reference`；未来 CZM 入口需实现和验收后再提供运行命令，不能把上述 FEBio 作业改名冒充 CZM。
 
 依据：[FEBio CMake](https://github.com/febiosoftware/FEBio/blob/v4.13/CMakeLists.txt)、[SuperLU_MT](https://github.com/xiaoyeli/superlu_mt/tree/8324379)、[Slurm sbatch](https://slurm.schedmd.com/sbatch.html)。

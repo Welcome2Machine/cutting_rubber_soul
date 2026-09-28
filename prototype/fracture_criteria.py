@@ -28,6 +28,33 @@ def stress_measures(F, cauchy):
     return P,(second+np.swapaxes(second,-1,-2))/2
 
 
+def principal_tensile_measures(F, cauchy):
+    """Nominal normal traction on Cauchy principal planes, not a strength law.
+
+    Nanson: N=F.T@n/|F.T@n|, so force per reference area is
+    J*sigma_principal/|F.T@n|. This equals engineering stress in uniaxial
+    tension. A catalogue uniaxial strength is only a screening assumption in
+    multiaxial loading. Directions are plane normals, not propagation vectors.
+    """
+    F, cauchy = np.asarray(F, float), np.asarray(cauchy, float)
+    P, S = stress_measures(F, cauchy)
+    stress, directions = np.linalg.eigh(cauchy)
+    pulled = np.swapaxes(F, -1, -2) @ directions
+    lengths = np.linalg.norm(pulled, axis=-2)
+    nominal = np.maximum(0., np.linalg.det(F)[..., None]*stress/lengths)
+    index = nominal.argmax(axis=-1)
+    pick = index[..., None, None]
+    current_normal = np.take_along_axis(directions, pick, axis=-1)[..., 0]
+    reference_normal = np.take_along_axis(pulled/lengths[..., None, :], pick, axis=-1)[..., 0]
+    ordered = np.sort(nominal, axis=-1)
+    unique = ordered[..., -1]-ordered[..., -2] > 1e-8*np.maximum(1., ordered[..., -1])
+    return dict(cauchy_principal_mpa=stress, principal_stretches=np.linalg.svd(F, compute_uv=False),
+                principal_plane_area_factors=lengths,
+                nominal_principal_mpa=nominal, nominal_tensile_mpa=nominal.max(axis=-1),
+                current_normal=current_normal, reference_normal=reference_normal,
+                direction_unique=unique, first_piola_mpa=P, second_piola_mpa=S)
+
+
 @dataclass(frozen=True)
 class StrengthSurface:
     uniaxial_second_pk_mpa: float

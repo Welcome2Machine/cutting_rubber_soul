@@ -1,5 +1,87 @@
 # 文献检索记录
 
+## 2026-09-28：Cutting soft materials 的模型与实施核查
+
+定向核查而非系统综述。搜索原文：`"Cutting soft materials" "01869" model cohesive`、`site.nature.com/articles/s41524-025-01869-y "Code availability"`、`site.bleyerj.github.io comet fenicsx cohesive zone submesh interface`。沿结果阅读作者版 arXiv:2507.13565v1、正式版 DOI 10.1038/s41524-025-01869-y 的 PDF、Glasgow 机构书目与 Bleyer 界面专用 CZM 官方教程；核对 Zenodo 15873110 是 DIC 数据而非求解器。
+
+正式版为 2026-01-06 发表，不再统一称 2025 论文。Nature HTML/DOI 和 PMC 页面直开分别出现重定向/验证码；出版 PDF 文本可读，网页截图入口失败。没有把搜索摘要当成逐式排版核验。方程权重/开口因子疑点来自作者 HTML 与势能独立求导；论文程序未公开核验，不能据此声称作者实现错误。
+
+本地仅执行指数包络的标量求导、数值积分和参数兼容性核算：积分 2.15 N/mm、导数相对误差约 3.8e-11；这不是 FEM 验证或 CB245NE 校准。结论和链接集中在 references/method_notes.md 的 R04，实施方案在 docs/fracture_route.md。未下载实验数据包、未改材料与求解代码、未新建计算输出。
+
+## 2026-09-26：正向成核、压闭增长与新面接触
+
+针对性查询：`rubber cutting fracture initiation indentation blade crack growth compression phase field finite strain`；`phase field fracture rubber nucleation strength finite deformation contact crack closure Hakimzadeh Kamarei`；`hyperelastic cohesive phase field Mandal 2020 107196`；`Poluektov Figiel 114234 fracture contact`。另核查已有 Han 2023 和 Moreno-Mateos / Steinmann 作者全文。为方法选型与实现核查，非穷尽/系统综述。
+
+读取 Hakimzadeh arXiv:2206.15386v1、Kamarei arXiv:2506.16479v1、Moreno-Mateos / Steinmann arXiv:2507.13565v1 作者 HTML 原文，以及 Han DOI 10.1002/nme.7169 正文（含 §5.2 接触适用边界）；Poluektov / Figiel 只核实机构摘要/书目。Zhao 2025 Nature Communications 摘要/正文通过出版方搜索索引可读，直开触发重定向；Mandal DOI 本次直开失败，保留已有核查，不冒称本轮重读全文。结论及原文链接见 references/README.md、docs/fracture_route.md。
+
+本地方程核查与论文结论分开：现有 RationalAT1 在 d=0 的梯度项一阶导为零，触发比中的 ell/Gc 消去，是本地代码推导；它不否定有限演化相场的正则化作用。没有新增论文 PDF、数值算例或实验反演。
+
+## 2026-09-23：硅油润滑与 15–35°C 的定向核查
+
+检索目标为决定当前完整橡胶压入/旁路起裂诊断采用何种润滑近似，以及是否有足够证据增加温度物理。渠道为普通网页检索后的原始出版页面、arXiv 作者全文、作者机构库、Maxell/Shin-Etsu 官方资料和一项制造方原始专利；本轮不是多数据库系统综述，不声称穷尽筛选。
+
+主要查询原文：`CB245NE Maxell Kureha rubber 0.66 chloroprene`；`silicone oil rubber steel friction boundary lubrication chloroprene cutting silicone oil`；`Shin Etsu silicone fluid viscosity temperature KF-96 20 25 40 cSt`；`chloroprene rubber temperature mechanical properties 20 40 glass transition tensile modulus original research`；`rubber cutting silicone oil lubrication friction fracture neoprene blade puncture`；`polychloroprene crystallization room temperature time hours days strain induced crystallization 20 35`；`rubber lubrication silicone oil steel Stribeck mixed lubrication Persson 2021 paper`。
+
+已核查 Maxell 2025-06-30 CB245NE SDS 第 1–2 页、Shin-Etsu KF-96 温黏与材料相容性章节、Son 等 2022 CR 温度拉伸正文和表 2、Xu–Persson arXiv:2505.16943v1 §2–3、Moreno-Mateos/Steinmann 2026 接触与界面段。Liu 等 2024 PMC 直接页遇验证，核查其被索引的原文实验/结论；Le Gac 2018/2019 出版摘要和亮点可读，作者机构 PDF 直接访问为 403，不称阅读全文。Triki 2015 刀刺研究找到原始机构书目但出版社正文为 403，未据二手摘要提取系数。Bridgestone JP2024119615A 实施例仅用于分清静置起晶与应变结晶，非 CB245NE 标定。网页截图接口未返回可供本轮目视检查的图像，所以未从扫描目录/曲线目测取值或采用未完整辨读的公式。
+
+结论和原始 URL 集中在 [润滑/温度证据笔记](../references/lubrication_temperature.md)：μ_eff=0.10 只表示本项目的低摩擦假设；不把硅油等同无摩擦，不把温黏比直接转成 μ(T)。CB245NE 属于 CR，不是硅橡胶。15–35°C 的变化不能由其他 CR 配方定量移植；本轮共同名义 25°C 下保持原材料参数，温度、黏弹、结晶和溶胀效应明确记为未建模，而非已证明很小。约 15 s 的加载只限定时间尺度，不能排除较快的应变诱导结晶。未下载新 PDF，未读取独立验证数据，也没有新增本轮三组之外的长算例。
+
+2026-09-16 应用实现定向复核：直接打开 Hakimzadeh arXiv:2206.15386v1 §2.C–2.D 与 Mandal 2020 作者上传全文，核对方向释放能和有限变形能量标定范围；本轮没有重新开展全面文献综述。重点是核验当前方程是否能按声明强度首次触发，发现旧轴法向校准与全方向搜索不一致并修正。来源和适用边界见 references/README.md，数值证据见 solver_status.md。
+
+2026-09-16 用户提出简化相场并研究创新：定向检索 `phase field fracture third medium contact finite deformation cutting rubber 2026`、`finite strain phase field cohesive fracture contact strong compression`、Lammen 2023 题名。阅读 Kim 2026 v1 §2.2/3.4、Han 2023 DOI 10.1002/nme.7169 开放正文、Mandal 2020 作者上传全文的阈值/软化段，复查 Hakimzadeh 与 PF-MPM 适用边界。部分 Elsevier 直开返回 403；Lammen 只据出版摘要评价，不冒称读完推导。此轮是三种表示候选的定向取舍，非全面新颖性检索；未新增求解器/长算例。结论集中于 fracture_route.md 与 references/README.md。
+
+2026-09-16 成熟路线实现核查：直接复查 Kamarei arXiv:2506.16479v1 式 (30)–(35) 与 §4，核验作者代码目录及公开 README；查询 `P1 iso P2 P1 mixed finite element incompressible elasticity stable pressure finite strain`，阅读 Guermond Chapter 54 的空间定义和 Lemma 54.12；再次核对 Tian arXiv:2112.00294 摘要。仅作方程/离散依据的定向核查，不称全面综述或 Tian 全文复现。来源、实现映射和局限集中见 references/README.md；无新论文 PDF 或实验数据发布。
+
+2026-09-16 相场选型定向复核：直接打开 Dammaß 2023 Springer 正式全文、Kamarei 2025 与 Hakimzadeh 2022 作者 HTML、Tian arXiv:2112.00294 作者摘要；核查相场与显式裂面的区别、独立强度、压闭裂纹和近不可压缩性。Hussein 2020 DOI 页面本次直接访问失败，未扩大其证据等级。该工作是对已有候选的范围审查，不是新增全面综述；结论和适用限制见 fracture_route.md 与 references/README.md。无新 PDF、无模型修改或计算。
+
+2026-09-16 闭合组件实施复核：重新打开 Moreno-Mateos / Steinmann 作者 HTML §5.6，核查法向间隙符号、互补条件与增广拉格朗日；这是实现核查，非新增全面综述。出版方 `S0045782503005802` 直接访问未成功，未据未读正文声称本地两遍节点接触具有 mortar 性质。来源与自主实现限制见 references/README.md；未新增 PDF。
+
+2026-09-16 真实开裂/强挤压定向核查（非全面综述）：查询 `Kamarei elastomers fracture nucleation compressive stress strength surface cutting 2025`、`rubber cutting fracture initiation compression crack tip indentation nucleation energy finite fracture mechanics`、`extrinsic cohesive crack nucleation compression large deformation hyperelastic contact augmented Lagrangian finite element cutting`、`discontinuous material point method fracture contact DFGMPM zero gap 2022`。打开 Kamarei 2025 作者 HTML 并核对强度/参数/驱动力章节，Hakimzadeh 2022 作者 HTML 的有限变形开闭及无摩擦限制；核对 Poluektov / Figiel 的 Warwick 作者书目和摘要，未将其当作已复现全文。补充独立核查 IPC 初始化非零距离、软切割预设分离面/增广拉格朗日、DFG-MPM 的多场接触边界；具体适用性放在 references/README.md 与 fracture_route.md，不重复生成论文清单/PDF或宣称穷尽检索。未启动算例或修改物理模型。
+
+2026-09-16 停止后提速评估：定向核查 SciPy GMRES 真实残差与预条件接口、Intel oneMKL PARDISO 非对称矩阵/求解阶段和直接—迭代回退接口、PETSc SNES 的全局化候选及 IPC 摩擦更新限制。只作软件/算法适用性核查，不声称完成新的全面文献综述。局部性能实测、失败反例及未安装/未验证边界见 references/README.md、solver_status.md，原始探针留本地 outputs/run_review_20260916。
+
+2026-09-15 定向核查：查询 IPC friction lagged normal force / dissipative potential，打开官方 IPC 2020 技术补充（§9 摩擦实现）及 IPC Toolkit v1.2.0 getting_started 摩擦势部分；同时核对本地 v1.6.0 运行及摩擦梯度定义。用于审计端点耗散与梯形外功的离散一致性，非新一轮全面综述。来源、适用性及本地推导边界见 references/README.md 和 docs/fracture_route.md。
+
+2026-09-13 framework 实施复核：打开 arXiv:2206.15386v1 全文，复核 QR 参考裂面基底、剪切松弛、单边法向松弛和数值实现限制；重新查询 `phase field cohesive AT1 rational degradation (1-d) 1 a d strength hyperelastic`。Mandal 2020 正文直接访问 403，仅采用已核对出版摘要/可见检索片段作 PF-CZM 背景；有理函数结构另核对 PhaFiDyn 2025 DOI 10.1016/j.softx.2025.102227 的公开式 (12)。本地 AT1 密度＋方向相关松弛能＋单轴标定为自主推导；通过有限差分、客观性及开闭子基准核查实现，不能宣称得到原论文所有性质。没有加入或发布新 PDF。
+
+## 2026-09-13：三阶段断裂可行性范围检索
+
+按用户要求先研究能否做到，再决定实施；未修改求解器或运行模型。本轮共整理 37 项不同研究，证据矩阵和停止条件集中于 [fracture_feasibility_review.md](fracture_feasibility_review.md)。不是穷尽检索、双人筛选或 PRISMA 综述，不声称全部全文精读。
+
+实际检索通道：Crossref、OpenAlex、arXiv；用出版商、作者机构网页和作者公开实现核查关键条件。首选 parallel-cli 在本环境不可用，改用网页工具及数据库 API。Crossref/OpenAlex 三组完整字符串均为 `finite strain phase field fracture rubber contact`、`soft material cutting crack nucleation friction`、`phase field cohesive fracture hyperelastic strength`，每组前 10 条。Crossref 第三组限流，其他五组共 50 条原始返回记录。Crossref 另查 Tian 的 Mixed displacement-pressure-phase field 题名、Fei/Choo 的 A phase-field method for modeling cracks with frictional contact 题名，各返回 3 条；CRESSim-MPM 题名查询限流。原始 API 地址、响应及 32 项 DOI 解析/书目核查结果仅本地保存在 `outputs/literature_feasibility_20260913/`。DOI 身份核验不代替方法正确性评审。
+
+网页检索围绕 finite strain cohesive phase field、rubber cutting nucleation、crack contact friction、nearly incompressible phase field、third-medium fracture、adaptive MPM fracture 及文章题名展开；再沿作者/参考文献追踪。已保留的网页返回批次存于同一本地目录的 `web_searches.json`，不声称它覆盖本轮全部查询。已记录的完整定向字符串包括：
+
+- `finite strain cutting soft materials adaptive phase field discrete crack contact Hussein Hudobivnik Wriggers 2020 113329`
+- `phase field fracture finite deformation crack face contact friction incompressible 2024 2025`
+- `incremental potential contact fracture cutting topology changes zero distance 2024 2025`
+- `soft material cutting material point method fracture blade contact 2024 2025 2026`
+- `"cutting" "fracture" "IPC" simulation`
+- `"soft" "cutting" "material point" fracture`
+- `"phase-field" "cohesive" "finite strain" "strength" elastomers 2024 2025`
+- `"finite fracture mechanics" rubber indentation crack nucleation cutting`
+- `"phase field" "cohesive" "hyperelastic" fracture strength`
+- `"rubber" "phase field" "length scale" "strength" 2025`
+- `"DFGMPM" fracture frictional contact`（未取得可纳入的相关来源，不将名称作为方法证据）
+- `"Bridging crack nucleation and contact"`
+
+- `Tanne Li Bourdin Marigo Maurini 2018 Crack nucleation variational phase-field models characteristic length strength`
+- `Fei Choo phase-field method modeling cracks frictional contact 10.1002/nme.6242 2020`
+- `Bourdin Marigo Maurini Zolesi 2025 phase field strength degradation arbitrary convex strength surface 2506.22558`
+- `"Cohesive phase-field fracture with an explicit strength surface" eigenstrain 2026`
+- `"2026" "106424" strength phase field`
+- `"10.1016/j.jmps.2025.106424"`
+- `"2506.22558" "small" strain`
+
+重点正文核查：Kamarei 2025 强度驱动力；2026 constrained energy 的时间离散和试探裂纹族限制；Hakimzadeh 2022 裂面有效能量、循环剪切方向约束与无摩擦边界；Moreno-Mateos 2025 作者版 §5 中预设 S0 分离面；Kim 2026 §3.4 Remark 2 的小应变断裂基体及无摩擦假设；Zhao 2025 的切割/撕裂过程区证据；CRESSim-MPM §III-C、§IV-B 的几何切割与迭代相关刚度；Bourdin 2025 和 Bourdin/Maurini 2026 强度退化框架/反平面限制；Hageman 2026 §2 的小应变线弹性假设及局部返回映射。其他条目的摘要级范围逐项标注于证据矩阵。
+
+关键修正：有限变形 cohesive 相场和新强度面方法不能被“经典相场不能起裂”的结论一并排除；第三介质新论文也不能仅凭标题列为有限应变橡胶完整解法。公开代码入口仅作迁移线索，本轮未安装或运行。文献原文、用户媒体及计算输出不发布；研究路径图使用 Markdown Mermaid 保持可读文本，不生成论文图片或额外 PDF。
+
+2026-09-13 双向耦合实施前直接复核 Bleyer 约束 AT1 教程和 arXiv:2506.16479v1 全文中的 external driving force / staggered 段。核查式 (21)、(31)、强度依赖说明和交替求解段，区分本轮经典 AT1 耦合控制与尚未实现的独立强度理论；没有新增重复论文文件。
+2026-09-13 后续查询 AT1 phase field fixed displacement bound constrained damage / 3Gc 8 ell critical energy。直接核查 Bleyer FEniCSx 教程式 (28) 及固定 u 的不可逆约束；采用 P1 一致积分与独立 KKT 验收做局部能量对照，不用其 1D 中点损伤边界预设切割裂口，不把经典 AT1 的 ell 依赖萌生当作已标定强度。未将检索到的其他方法摘要当作已实现算法。
+
+2026-09-13：定向查询 rubber fracture nucleation strength phase field / finite strain phase field crack contact incompressibility / adaptive phase field discrete cutting。复核 Dammaß 2023 正式全文材料和求解段、Kamarei 等 arXiv:2506.16479v1 §3.4–3.5 的强度驱动力、arXiv:2608.28326v1 §4.2 的假设和未完备边界。arXiv:2112.00294 的 HTML 不可用，核查作者摘要；arXiv:2206.15386 核查作者摘要；Hussein 等 DOI 10.1016/j.cma.2020.113329 核查出版检索摘要，直接打开全文未成功。没有将摘要核查说成全文阅读或方法复现。技术路线和实现范围集中于 fracture_route.md。
+
 2026-09-12：查询 finite precision / Armijo line search / cancellation near Newton convergence。核对 ANSYS 2024R2 理论手册 Newton-Raphson 的收敛与线搜索段，以及 arXiv:2010.04352 的函数误差/噪声容忍线搜索摘要。结合 0.91 mm 原失败试值的能量差与梯度路径功审计，采用自主近收敛保护；未把文献的拟 Newton 全局收敛结论转用为本模型保证。原始 PDF 不另存重复副本。
 2026-09-11 核查 0.77 mm：查询 projected Newton tiny line-search steps / indefinite Hessian / modified Newton eigenvalue shift。读取作者托管 Gast 等 2015《Optimization Integrator for Large Time Steps》第 3.1 节（方向、截断 CG、下降角与 Wolfe），以及 Cornell CS4220 2026-04-20 的非凸二次/信赖域讲义。核对逐单元 PN 与全局修正的不同；当前自主实现以 PN 刚度为度量作全局曲率移位，仅修改步矩阵。资料不是橡胶斜切验证，不将动力学收益直接迁移；同前态对照及适用边界记入 solver_status/modeling_roadmap。
 

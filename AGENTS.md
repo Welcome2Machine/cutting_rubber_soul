@@ -4,9 +4,13 @@ Read `docs/task_requirements.md` before changing the model. The experimental
 target is `docs/image.png` and the experiment/material/interface sections of
 `docs/current_model_spec.md`; implementation details elsewhere are not ground truth.
 
-- Predict crack nucleation location and time without prescribing a crack under
-  the blade. Full-domain stress/strain screening is an intermediate diagnostic,
-  not the completed cutting/fracture model.
+- Current research branch: `feature/czm-cutting`. The user now permits a prescribed
+  potential fracture path that is initially fully bonded. Predict onset and growth
+  conditional on that path; do not insert an initially open crack or force the
+  crack tip to follow the blade. Full-domain screening remains a diagnostic.
+- Read `docs/server_handoff.md` before server work. CZM is a planned implementation,
+  not an existing cutting solver. This handoff/push task must not launch tests or
+  simulations locally; server execution is a separate subsequent task.
 - Use verified research to justify changes; record assumptions and evidence in
   `docs/modeling_roadmap.md` and `references/README.md`.
 - Promptly remove demonstrably redundant or obsolete files and repair their
@@ -21,7 +25,11 @@ target is `docs/image.png` and the experiment/material/interface sections of
 - Publish code and documentation only. PDFs, media, numerical/experimental data,
   fixtures, digitized curves and video-derived observations stay local. Summarize
   useful papers in original Markdown with sources and applicability limits.
-- Public main has independent history. Audit all reachable commits using
-  `python tools/check_publish.py --ref main`; push only main:main. Never push the
-  local legacy master, tags, --all or --mirror, which may disclose local data.
+- Public main has independent history. The 2026-09-28 user instruction explicitly
+  authorizes creating and pushing `feature/czm-cutting` from that clean lineage;
+  publish only `feature/czm-cutting:feature/czm-cutting` for this handoff, leaving
+  remote main unchanged. Audit all reachable commits of both main and the exact
+  branch with `python tools/check_publish.py --ref REF` before pushing. Future
+  main releases remain main:main. Never push/merge the local legacy master, tags,
+  --all or --mirror, which may disclose local data.
 - Missing local fixtures must be reported as skipped tests, not passed tests.

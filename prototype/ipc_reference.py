@@ -2,8 +2,9 @@
 
 This is NOT PolyFEM and does not restore the retired multiplier/IPM solver.
 The host uses energy Newton for frictionless contact and coupled pseudo-transient
-force balance with friction, with CCD and a determinant step bound. No fracture
-or mesh adaptation.
+force balance with friction, with CCD and a determinant step bound. An opt-in
+intact P1-iso-P2/P1 pressure discretization replaces elementwise volume penalty.
+No fracture or mesh adaptation.
 """
 
 from pathlib import Path
@@ -19,17 +20,20 @@ import sys
 import time
 import shutil
 import numpy as np
-from scipy.sparse import coo_matrix, diags
-from scipy.sparse.linalg import spsolve, splu, eigsh, LinearOperator, ArpackNoConvergence
+from scipy.sparse import coo_matrix, csc_matrix, diags
+from scipy.sparse.linalg import spsolve, splu, gmres, eigsh, LinearOperator, ArpackNoConvergence
 from threadpoolctl import threadpool_limits
 from run_support import write_json, save_npz, source_hashes
 from .model_config import FEMConfig, local_to_lab, _rotation_vectors
 from .initiation import InitiationOptions, intact_mesh, _blade_boundary_vertices
-from .material import bulk
+from .material import bulk, response, NodalVolume
+from .macro_element import checkpoint as macro_checkpoint
+from .interface_conditions import interface_condition
 
 ROOT = Path(__file__).resolve().parents[1]
 BASELINE_PATH = Path(__file__).with_name("ipc_baseline.json")
 BASELINE = json.loads(BASELINE_PATH.read_text(encoding="utf-8"))
+REACTION_CONVENTION = "rubber_on_knife_lab_xz"
 
 
 def toolkit():
@@ -72,6 +76,171 @@ def determinant_step(F, D):
     return min(1.0, BASELINE["determinant_step_safety"] * minimum)
 
 
+def new_work_counters():
+    """Cumulative work, including rejected trials and failed mechanics solves."""
+    return dict.fromkeys((
+        "mechanical_solves", "mechanical_iterations", "mechanical_evaluations",
+        "factorizations", "krylov_attempts", "krylov_iterations", "krylov_accepted",
+        "linear_fallbacks", "model_rejections", "linear_solve_seconds",
+        "factorization_seconds", "krylov_seconds", "mechanical_seconds",
+    ), 0)
+
+
+class FixedElementAssembly:
+    """Scatter changing element values through one fixed, canonical CSC graph.
+
+    Only topology is cached, never a constitutive value or contact contribution.
+    Stable sorting retains the element order within each global matrix entry.
+    Returned matrices own their data so exact and projected tangents coexist.
+    """
+
+    def __init__(self, dofs, size):
+        self.dofs = np.array(dofs, dtype=np.int64, copy=True)
+        self.size = size
+        nlocal = self.dofs.shape[1]
+        rows = np.repeat(self.dofs, nlocal, axis=1).ravel()
+        cols = np.tile(self.dofs, (1, nlocal)).ravel()
+        keys = cols * np.int64(size) + rows
+        self.order = np.argsort(keys, kind="stable")
+        sorted_keys = keys[self.order]
+        self.starts = np.r_[0, 1 + np.flatnonzero(np.diff(sorted_keys))]
+        unique = sorted_keys[self.starts]
+        self.indices = (unique % size).astype(np.int32)
+        columns = unique // size
+        self.indptr = np.r_[0, np.cumsum(np.bincount(columns, minlength=size))].astype(np.int32)
+
+    def matrix(self, values):
+        if values.shape != (len(self.dofs), self.dofs.shape[1], self.dofs.shape[1]):
+            raise ValueError("Element tangent shape does not match cached topology")
+        data = np.add.reduceat(values.ravel()[self.order], self.starts)
+        # Sparse in-place operations (e.g. eliminate_zeros) may rewrite the
+        # graph arrays. A returned matrix must not corrupt later assemblies.
+        return csc_matrix((data, self.indices.copy(), self.indptr.copy()),
+                          shape=(self.size, self.size), copy=False)
+
+
+class ShiftRetryLinearSolver:
+    """Reuse LU only across shift retries at ONE fixed nonlinear state.
+
+    Construct a new instance for every nonlinear iteration. No factor survives a
+    displacement, contact geometry, damage, or crack orientation update. GMRES
+    is optional and bounded; its actual unpreconditioned residual is checked
+    before returning. A failed attempt immediately performs a fresh direct solve.
+    """
+
+    def __init__(self, counters, mode="direct"):
+        if mode not in ("direct", "retry-gmres"):
+            raise ValueError("Unknown friction linear solver")
+        self.counters = counters
+        self.mode = mode
+        self.factor = None
+        self.factor_seconds = 0.
+
+    def _add(self, key, value=1):
+        self.counters[key] = self.counters.get(key, 0) + value
+
+    def _direct(self, matrix, rhs):
+        self._add("factorizations")
+        started = time.perf_counter()
+        try:
+            if self.mode == "direct":
+                # Keep the original baseline's numerical backend unchanged.
+                return spsolve(matrix, rhs)
+            self.factor = None
+            self.factor_seconds = 0.
+            try:
+                self.factor = splu(matrix.tocsc())
+            except RuntimeError:
+                # SuperLU raises on an exactly singular shift. The original
+                # spsolve path instead commonly returns NaNs with a rank warning,
+                # allowing PTC to increase its shift. Preserve that recovery.
+                self._add("factorizations")
+                return spsolve(matrix, rhs)
+            self.factor_seconds = time.perf_counter() - started
+        finally:
+            self._add("factorization_seconds", time.perf_counter() - started)
+        return self.factor.solve(rhs)
+
+    def solve(self, matrix, rhs, *, deadline=float("inf")):
+        started = time.perf_counter()
+
+        def check_global_budget():
+            if self.mode != "direct" and time.monotonic() >= deadline:
+                raise TimeoutError("IPC friction linear solve wall budget")
+
+        def direct():
+            check_global_budget()
+            result = self._direct(matrix, rhs)
+            check_global_budget()
+            return result
+
+        try:
+            check_global_budget()
+            if self.mode == "direct" or self.factor is None:
+                return direct()
+            self._add("krylov_attempts")
+            krylov_started = time.perf_counter()
+            # Check between sparse products/triangular solves: no native call is
+            # forcibly interrupted, so one such operation may overrun this cap.
+            krylov_deadline = krylov_started + .5 * self.factor_seconds
+
+            def check_budget():
+                check_global_budget()
+                if time.perf_counter() >= krylov_deadline:
+                    raise TimeoutError("Shift-retry Krylov budget")
+
+            def product(vector):
+                check_budget()
+                result = matrix @ vector
+                check_budget()
+                return result
+
+            def precondition(vector):
+                check_budget()
+                result = self.factor.solve(vector)
+                if not np.all(np.isfinite(result)):
+                    raise FloatingPointError("Nonfinite LU preconditioner")
+                check_budget()
+                return result
+
+            def callback(_):
+                self._add("krylov_iterations")
+                check_budget()
+
+            candidate = None
+            try:
+                operator = LinearOperator(matrix.shape, matvec=product, dtype=matrix.dtype)
+                inverse = LinearOperator(matrix.shape, matvec=precondition, dtype=matrix.dtype)
+                # With a callback and callback_type='legacy', maxiter counts
+                # actual inner iterations, NOT restart cycles (SciPy API).
+                candidate, info = gmres(operator, rhs, M=inverse, rtol=1e-8, atol=1e-12,
+                                        restart=8, maxiter=8, callback=callback,
+                                        callback_type="legacy")
+                check_budget()
+                residual = float(np.linalg.norm(matrix @ candidate - rhs))
+                limit = max(1e-12, 1e-8 * float(np.linalg.norm(rhs)))
+                check_budget()
+                if (info != 0 or not np.all(np.isfinite(candidate))
+                        or not np.isfinite(residual) or residual > limit):
+                    candidate = None
+            except Exception:
+                # This optional optimization must never suppress the original
+                # direct solve because of a timeout, breakdown or API failure.
+                candidate = None
+            finally:
+                self._add("krylov_seconds", time.perf_counter() - krylov_started)
+            # A local Krylov timeout falls back. An expired overall mechanics
+            # budget must not start another expensive direct factorization.
+            check_global_budget()
+            if candidate is not None:
+                self._add("krylov_accepted")
+                return candidate
+            self._add("linear_fallbacks")
+            return direct()
+        finally:
+            self._add("linear_solve_seconds", time.perf_counter() - started)
+
+
 class IPCProblem:
     def __init__(
         self,
@@ -88,7 +257,18 @@ class IPCProblem:
         tip_radius=BASELINE["mesh"]["tip_radius_mm"],
         fine_halfwidth=BASELINE["fine_halfwidth_mm"],
         hessian_mode="projected",
+        friction_linear_solver="direct",
+        volumetric_discretization="element",
     ):
+        if volumetric_discretization not in ("element", "macro_mixed"):
+            raise ValueError("IPC volumetric discretization must be element or macro_mixed")
+        if volumetric_discretization == "macro_mixed" and type(self).bulk_terms is not IPCProblem.bulk_terms:
+            raise ValueError("macro_mixed currently supports intact IPC bulk only; damage/pressure coupling is not implemented")
+        self.volumetric_discretization = volumetric_discretization
+        if friction_linear_solver not in ("direct", "retry-gmres"):
+            raise ValueError("Unknown friction linear solver")
+        self.friction_linear_solver = friction_linear_solver
+        self.work_counters = new_work_counters()
         self.ipc = toolkit()
         self.case = case
         self.dhat = dhat
@@ -122,10 +302,13 @@ class IPCProblem:
             refinement_mm=local_spacing,
             surface_spacing_mm=surface_spacing,
             tip_radius_mm=tip_radius,
+            volumetric_discretization=volumetric_discretization,
         )
         self.mesh, _ = intact_mesh(
             self.config, self.options, fine_halfwidth_mm=self.fine_halfwidth
         )
+        self.nodal_volume = (NodalVolume(self.mesh, self.config)
+                             if volumetric_discretization == "macro_mixed" else None)
         tri = self.mesh.triangles
         edges = np.sort(np.vstack((tri[:, [0, 1]], tri[:, [1, 2]], tri[:, [2, 0]])), axis=1)
         edges, counts = np.unique(edges, axis=0, return_counts=True)
@@ -182,6 +365,7 @@ class IPCProblem:
         self.friction = self.ipc.FrictionPotential(BASELINE["friction_smoothing_mm"])
         self.grad = self.mesh.bulk_data[1]
         self.dofs = self.mesh.bulk_data[2]
+        self._element_assembly = None
 
     def collisions(self, x):
         c = self.ipc.NormalCollisions()
@@ -198,9 +382,80 @@ class IPCProblem:
         f.build(self.cmesh, x[self.surface], c, self.barrier, self.config.friction_coefficient)
         return f
 
-    def evaluate(self, x, lag=None, tangent=True, projected=True):
+    def bulk_terms(self, x, tangent):
+        """Raw local material terms; bulk_assembly adds mixed pressure terms."""
         u = (x[: self.n] - self.mesh.reference_xy).ravel()
-        r, k, dofs, energy, minj = bulk(self.mesh, u, self.config, with_tangent=tangent)
+        return bulk(self.mesh, u, self.config, with_tangent=tangent)
+
+    def bulk_assembly(self, x, tangent):
+        """Local terms plus the condensed, nonlocal pressure tangent.
+
+        Preserve the five-item bulk_terms interface used by legacy damage
+        adapters. Mixed intact energy uses the existing P1-iso-P2/P1 pressure
+        space and lumped pressure mass. The positive pressure Gram term must
+        enter BOTH the exact Hessian and its projected search metric.
+        """
+        r, k, dofs, energy, minj = self.bulk_terms(x, tangent)
+        nonlocal_k = None
+        if self.nodal_volume is not None:
+            u = (x[:self.n]-self.mesh.reference_xy).ravel()
+            r, k, nonlocal_k, energy = self.nodal_volume.correct(u, r, k, energy)
+        return r, k, dofs, energy, minj, nonlocal_k
+
+    def bulk_fields(self, x):
+        """Intact stress consistent with the selected discrete volume energy.
+
+        Mixed pressure is an element projection of the parent P1 pressure.
+        Energy density distributes nodal pressure energy through its reference
+        incidence weights; only its integral is physical discrete energy.
+        The mixed tangent is nonlocal and is supplied by bulk_assembly, never
+        represented as an independent per-element material tangent here.
+        """
+        if type(self).bulk_terms is not IPCProblem.bulk_terms:
+            raise ValueError("bulk_fields is for intact IPC; damage adapters must provide their own fields")
+        u = x[:self.n]-self.mesh.reference_xy
+        F = np.eye(2)+np.einsum('eai,eaJ->eiJ', u[self.mesh.triangles], self.grad)
+        q = response(F, self.config, tangent=False)
+        K = self.config.bulk_modulus_n_mm2
+        pressure = K*(q['J']-1)
+        if self.nodal_volume is not None:
+            nv = self.nodal_volume
+            projected = nv.pressure(q['J'])
+            difference = projected-pressure
+            cofactor = q['J'][:, None, None]*np.linalg.inv(F).transpose(0, 2, 1)
+            q['P'] += difference[:, None, None]*cofactor
+            q['cauchy'] += difference[:, None, None]*np.eye(3)
+            q['plane_stress_residual'] = q['cauchy'][:, 2, 2]*q['J']
+            # This diagnostic was normalized using the element material
+            # tangent, which is not the tangent of projected pressure.
+            q.pop('plane_stress_scaled_residual', None)
+            density = np.asarray(nv.incidence.T@(.5*K*(nv.S@q['J']-1)**2)).ravel()/nv.volumes
+            q['energy'] += density-.5*K*(q['J']-1)**2
+            pressure = projected
+            q['nodal_pressure_mpa'] = K*(nv.S@q['J']-1)
+        q['volumetric_pressure_mpa'] = pressure
+        q['F'] = F
+        return q
+
+    def discretization_checkpoint(self):
+        return dict(volumetric_discretization=np.array(self.volumetric_discretization),
+                    **macro_checkpoint(self.mesh))
+
+    def field_checkpoint(self, x):
+        if self.nodal_volume is None:
+            return {}
+        q = self.bulk_fields(x)
+        return dict(cauchy=q['cauchy'], J=q['J'], pressure_mpa=q['volumetric_pressure_mpa'])
+
+    def evaluate(self, x, lag=None, tangent=True, projected=True, *, with_metric=False):
+        """Optionally assemble exact/PSD matrices from one constitutive evaluation.
+
+        No cache crosses a displacement or damage update. The usual four-value
+        result is unchanged; with_metric adds the PSD matrix as the fifth value.
+        """
+        if with_metric and (not tangent or projected):
+            raise ValueError('Paired metric requires an exact tangent evaluation')
+        r, k, dofs, energy, minj, nonlocal_k = self.bulk_assembly(x, tangent)
         g = np.zeros(self.total)
         np.add.at(g, dofs.ravel(), r.ravel())
         c = self.collisions(x)
@@ -214,25 +469,34 @@ class IPCProblem:
         g[self.surface_dofs] += cg
         h = None
         if tangent:
-            if projected:
-                eigen, v = np.linalg.eigh(k)
-                k = np.einsum("eik,ek,ejk->eij", v, np.maximum(eigen, 0), v)
-            projection = self.ipc.PSDProjectionMethod.CLAMP if projected else self.ipc.PSDProjectionMethod.NONE
-            rows = np.broadcast_to(dofs[:, :, None], k.shape).ravel()
-            cols = np.broadcast_to(dofs[:, None, :], k.shape).ravel()
-            h = coo_matrix((k.ravel(), (rows, cols)), shape=(self.total, self.total)).tocsc()
-            ch = self.barrier.hessian(c, self.cmesh, sx, projection)
-            if lag is not None:
-                ch += self.friction.hessian(
-                    lag,
-                    self.cmesh,
-                    (x - self.previous)[self.surface],
-                    projection,
-                )
-            ch = ch.tocoo()
-            h += coo_matrix(
-                (ch.data, (self.surface_dofs[ch.row], self.surface_dofs[ch.col])), shape=h.shape
-            ).tocsc()
+            graph = self._element_assembly
+            if graph is None or not np.array_equal(graph.dofs, dofs):
+                # Alternative bulk adapters may supply a different local map.
+                # Rebuild on that change rather than silently scattering wrong.
+                graph = self._element_assembly = FixedElementAssembly(dofs, self.total)
+            def assemble(use_projection):
+                local_k = k
+                if use_projection:
+                    eigen, v = np.linalg.eigh(k)
+                    local_k = np.einsum("eik,ek,ejk->eij", v, np.maximum(eigen, 0), v)
+                projection = self.ipc.PSDProjectionMethod.CLAMP if use_projection else self.ipc.PSDProjectionMethod.NONE
+                matrix = graph.matrix(local_k)
+                if nonlocal_k is not None:
+                    pressure_k = nonlocal_k.tocoo()
+                    matrix += coo_matrix((pressure_k.data, (pressure_k.row, pressure_k.col)),
+                                         shape=matrix.shape).tocsc()
+                ch = self.barrier.hessian(c, self.cmesh, sx, projection)
+                if lag is not None:
+                    ch += self.friction.hessian(
+                        lag, self.cmesh, (x-self.previous)[self.surface], projection)
+                ch = ch.tocoo()
+                matrix += coo_matrix(
+                    (ch.data, (self.surface_dofs[ch.row], self.surface_dofs[ch.col])), shape=matrix.shape).tocsc()
+                return matrix
+
+            h = assemble(projected)
+            if with_metric:
+                return float(energy), g, h, minj, assemble(True)
         return float(energy), g, h, minj
 
     def safe_step(self, x, direction):
@@ -264,6 +528,15 @@ class IPCProblem:
         ).tocsc()
 
     def solve_friction(self, x, depth, deadline):
+        """Count all mechanical work, including solves ending in an exception."""
+        self.work_counters["mechanical_solves"] += 1
+        started = time.perf_counter()
+        try:
+            return self._solve_friction_iterations(x, depth, deadline)
+        finally:
+            self.work_counters["mechanical_seconds"] += time.perf_counter() - started
+
+    def _solve_friction_iterations(self, x, depth, deadline):
         """Preconditioned pseudo-transient continuation of fresh force balance.
 
         The shift is a solver parameter, not physical viscosity. Intermediate
@@ -277,7 +550,8 @@ class IPCProblem:
                 raise TimeoutError("IPC friction pseudo-transient wall budget")
             self.trial = x.copy()
             lag = self.lag(x)
-            _, g, H, _ = self.evaluate(x, lag, projected=False)
+            self.work_counters["mechanical_evaluations"] += 1
+            _, g, H, _, metric = self.evaluate(x, lag, projected=False, with_metric=True)
             r = g[self.free]
             norm = float(np.linalg.norm(r))
             print(f"FRICTION_PTC depth_mm={depth:.6f} iteration={iteration} "
@@ -286,15 +560,19 @@ class IPCProblem:
                 return x, iteration
             if iteration == self.max_iterations:
                 break
+            self.work_counters["mechanical_iterations"] += 1
             A = self.coupled_friction_tangent(x, lag, H)[self.free][:, self.free]
-            M = self.evaluate(x, lag, projected=True)[2][self.free][:, self.free]
+            M = metric[self.free][:, self.free]
             M += diags(np.full(len(self.free), BASELINE["hessian_regularization_n_mm"]))
+            # Cache scope ends before the next nonlinear displacement evaluation.
+            linear = ShiftRetryLinearSolver(self.work_counters, self.friction_linear_solver)
             for retry in range(18):
                 if time.monotonic() > deadline:
                     raise TimeoutError("IPC friction pseudo-transient wall budget")
-                du = spsolve(A+shift*M, -r)
+                du = linear.solve(A+shift*M, -r, deadline=deadline)
                 maximum = float(np.max(np.abs(du)))
                 if not np.all(np.isfinite(du)) or maximum == 0:
+                    self.work_counters["model_rejections"] += 1
                     shift = max(initial_shift, 2*shift)
                     continue
                 direction = np.zeros(self.total)
@@ -303,6 +581,7 @@ class IPCProblem:
                 alpha = min(1., .5*self.options.tip_radius_mm/maximum,
                             self.safe_step(x, direction))
                 trial = x+alpha*direction
+                self.work_counters["mechanical_evaluations"] += 1
                 gt = self.evaluate(trial, self.lag(trial), tangent=False)[1][self.free]
                 nt = float(np.linalg.norm(gt))
                 # Safeguard the local force model, rather than requiring each
@@ -315,11 +594,19 @@ class IPCProblem:
                     print(f"FRICTION_PTC_UPDATE alpha={alpha:.9g} residual_N={nt:.9g} "
                           f"model_error_N={error:.9g} retries={retry}", flush=True)
                     shift = max(1e-10, min(1e6, shift*nt/max(norm, 1e-15)/1.2))
+                    if nt <= BASELINE["force_tolerance_n"]:
+                        # This force used a freshly built trial contact/lag. The
+                        # caller still independently re-evaluates force, geometry
+                        # and friction work in acceptance(). No need to assemble
+                        # two Hessians for a state needing no further direction.
+                        self.work_counters["converged_tangent_skips"] = self.work_counters.get("converged_tangent_skips", 0)+1
+                        return x, iteration+1
                     break
                 print(f"FRICTION_PTC_REJECT retry={retry} metric_shift={shift:.9g} "
                       f"alpha={alpha:.9g} residual_N={nt:.9g} "
                       f"model_error_N={error:.9g} "
                       f"model_limit_N={.25*max(norm, nt):.9g}", flush=True)
+                self.work_counters["model_rejections"] += 1
                 # Successful Newton-like steps can make shift arbitrarily small.
                 # On rejection recover the initial stabilization scale immediately;
                 # otherwise a fixed retry budget may expire before reaching it.
@@ -331,6 +618,13 @@ class IPCProblem:
                            f"depth={depth:g} mm, residual={norm:.6g} N, limit={self.max_iterations}")
 
     def acceptance(self, x, depth, iterations, outer_iterations):
+        """Accept balance and report signed rubber force on the rigid knife.
+
+        The assembled g is the energy/friction-potential gradient. Therefore
+        -sum(g_knife) is the material force on the knife in laboratory +x,+z.
+        The actuator force required to hold that knife is its negative. In
+        downward indentation the reported Fz is ordinarily positive (upward).
+        """
         lag = self.lag(x)
         E, g, _, minj = self.evaluate(x, lag, tangent=False)
         norm = float(np.linalg.norm(g[self.free]))
@@ -346,7 +640,10 @@ class IPCProblem:
             dissipation = float(self.friction.gradient(lag, self.cmesh, delta) @ delta.ravel())
             if not np.isfinite(dissipation) or dissipation < -1e-12:
                 raise RuntimeError("Negative IPC friction incremental work")
-        return dict(depth_mm=depth, reaction_fz_n=float(-g.reshape(-1, 2)[self.n:, 1].sum()),
+        knife_force = -g.reshape(-1, 2)[self.n:].sum(axis=0)
+        return dict(depth_mm=depth, reaction_fx_n=float(knife_force[0]),
+                    reaction_fz_n=float(knife_force[1]),
+                    reaction_force_convention=REACTION_CONVENTION,
                     residual_n=norm, min_j=minj,
                     minimum_distance_mm=distance if np.isfinite(distance) else None,
                     iterations=iterations, friction_outer_iterations=outer_iterations,
@@ -383,17 +680,77 @@ class IPCProblem:
               f"energy_resolution={resolution:.9g} residual_N={final_norm:.9g}", flush=True)
         return True
 
-    def step(self, x, old, depth, deadline):
-        self.previous = x.copy()
-        candidate = x.copy()
+    def loading_predictor(self, x, old, depth, deadline, previous_accepted=None):
+        """Choose an initial guess; never advance physical/friction history.
+
+        The optional pair is (older accepted depth, older accepted positions).
+        Extrapolation only affects free body DOFs, and is discarded unless its
+        entire motion is safe and its fresh-force residual improves by 5%.
+        """
+        started = time.perf_counter()
         delta = depth - old
-        candidate[: self.n, 1] -= delta * self.mesh.local_sn[:, 1] / self.config.height_mm
-        candidate[self.n :, 1] -= delta
+        motion = np.zeros_like(x)
+        motion[:self.n, 1] = -delta * self.mesh.local_sn[:, 1] / self.config.height_mm
+        affine = x.copy()
+        affine.ravel()[self.free] += motion.ravel()[self.free]
+        affine[self.n:, 1] -= delta
+        self.trial = affine.copy()
+        self.last_predictor = dict(selected='affine', reason='no_accepted_history')
+        try:
+            affine_safe = self.safe_step(x, affine-x) >= 1.-1e-10
+            candidate = affine if affine_safe else None
+            if previous_accepted is not None:
+                older_depth, older = previous_accepted
+                valid = (np.isfinite(older_depth) and older_depth < old and delta > 0
+                         and older.shape == x.shape and np.all(np.isfinite(older)))
+                self.last_predictor['reason'] = 'invalid_history'
+                if valid:
+                    # Prevent a tiny adaptive step from causing unbounded extrapolation.
+                    ratio = min(2., delta/(old-older_depth))
+                    secant = x.copy()
+                    secant.ravel()[self.free] += ratio*(x-older).ravel()[self.free]
+                    secant[self.n:] = affine[self.n:]
+                    self.last_predictor.update(reason='unsafe_secant', extrapolation_ratio=float(ratio))
+                    try:
+                        secant_safe = self.safe_step(x, secant-x) >= 1.-1e-10
+                    except (RuntimeError, FloatingPointError, ValueError):
+                        # This optional guess must not suppress a valid affine path.
+                        secant_safe = False
+                        self.last_predictor['reason'] = 'secant_geometry_error'
+                    if secant_safe:
+                        norms = {}
+                        for label, guess in [('affine', candidate), ('secant', secant)]:
+                            if time.monotonic() >= deadline:
+                                raise TimeoutError('Loading predictor wall budget')
+                            norm = float('inf')
+                            if guess is not None:
+                                self.trial = guess.copy()
+                                self.work_counters['predictor_evaluations'] = self.work_counters.get('predictor_evaluations', 0)+1
+                                try:
+                                    lag = self.lag(guess) if self.config.friction_coefficient > 0 else None
+                                    force = self.evaluate(guess, lag, tangent=False)[1]
+                                    norm = float(np.linalg.norm(force[self.free]))
+                                except (RuntimeError, FloatingPointError, ValueError):
+                                    pass
+                            if not np.isfinite(norm): norm = float('inf')
+                            norms[label] = norm
+                            self.last_predictor[label+'_residual_n'] = norm if np.isfinite(norm) else None
+                        self.last_predictor['reason'] = 'secant_did_not_improve'
+                        if np.isfinite(norms['secant']) and norms['secant'] < .95*norms['affine']:
+                            candidate = secant
+                            self.last_predictor.update(selected='secant', reason='lower_fresh_residual')
+                print('PREDICTOR '+json.dumps(dict(depth_mm=depth, **self.last_predictor)), flush=True)
+            if candidate is None:
+                self.trial = affine.copy()
+                raise RuntimeError('Prescribed-motion predictor is not collision free; reduce loading step')
+            return candidate
+        finally:
+            self.work_counters['predictor_seconds'] = self.work_counters.get('predictor_seconds', 0.)+time.perf_counter()-started
+
+    def step(self, x, old, depth, deadline, *, previous_accepted=None):
+        self.previous = x.copy()
+        candidate = self.loading_predictor(x, old, depth, deadline, previous_accepted)
         self.trial = candidate.copy()
-        if self.safe_step(x, candidate - x) < 1.0 - 1e-10:
-            raise RuntimeError(
-                "Prescribed-motion predictor is not collision free; reduce loading step"
-            )
         x = candidate
         if self.config.friction_coefficient > 0:
             x, iterations = self.solve_friction(x, depth, deadline)
@@ -509,6 +866,8 @@ def run(args):
         inclination=args.inclination, tip_radius=args.tip_radius,
         fine_halfwidth=args.fine_halfwidth,
         hessian_mode=args.hessian_mode,
+        volumetric_discretization=args.volumetric_discretization,
+        friction_linear_solver=args.friction_linear_solver,
     )
     active_config = {
         k: v
@@ -533,6 +892,16 @@ def run(args):
         case=args.case,
         target_mm=args.depth,
         config=active_config,
+        interface_condition=args.interface_condition,
+        initiation_policy=('diagnostic_only_continue_intact' if args.initiation else 'disabled'),
+        prediction_scope='intact response; after conditional initiation this is a counterfactual continuation',
+        predictor=args.predictor,
+        friction_linear_solver=args.friction_linear_solver,
+        volumetric_discretization=p.volumetric_discretization,
+        reaction_force_convention=dict(
+            id=REACTION_CONVENTION, force_on='knife', force_by='rubber',
+            coordinates='laboratory x,z', positive_x='right', positive_z='up',
+            actuator_force='negative of reported reaction_fx_n and reaction_fz_n'),
         simplifications=dict(
             displacement_element="P1, fixed mesh",
             tip_radius_mm=p.options.tip_radius_mm,
@@ -579,6 +948,12 @@ def run(args):
         pid=os.getpid(),
         steps=[],
     )
+    if p.nodal_volume is not None:
+        report['simplifications'].update(
+            displacement_element='P1-iso-P2/P1, fixed macro mesh',
+            pressure_mass='row-sum lumped',
+            pressure_sign='tension positive volumetric Cauchy stress',
+            phase_coupling='not implemented for this intact comparison')
     shutil.copyfile(BASELINE_PATH, out / "baseline_config.json")
     visual_source = ROOT / "tools/visualize_ipc.py"
     visual_snapshot = out / "source/tools/visualize_ipc.py"
@@ -590,6 +965,36 @@ def run(args):
     start = time.monotonic()
     (out / "states").mkdir()
     targets = np.r_[0.0, np.arange(args.increment, args.depth - 1e-12, args.increment), args.depth]
+    monitor = None
+    monitor_failed = False
+    def diagnostic_failed(exc):
+        # Reporting/calibration failures must remain separate from mechanics,
+        # including failures before the first observation or during finalization.
+        nonlocal monitor_failed
+        monitor_failed = True
+        error = f'{type(exc).__name__}: {exc}'
+        summary = dict(report.get('initiation', {}))
+        if monitor is not None:
+            try:
+                summary = monitor.finish('failed', error=error)
+            except Exception as secondary:
+                summary['diagnostic_persistence_error'] = f'{type(secondary).__name__}: {secondary}'
+        summary.update(status='failed', source_error=error, mechanics_feedback=False,
+                       physical_nucleation_validated=False, post_onset_policy='continue_intact')
+        report['initiation'] = summary
+        print(f'INITIATION_DIAGNOSTIC_FAILED {error}', flush=True)
+
+    if args.initiation:
+        try:
+            from .ipc_initiation import IntactInitiationMonitor
+            monitor = IntactInitiationMonitor(
+                p.rest[:p.n], p.mesh.triangles, p.config, out / 'initiation',
+                ell_mm=args.initiation_length, orientation_samples=args.initiation_directions,
+                volumetric_discretization=p.volumetric_discretization,
+            )
+            report['initiation'] = monitor.summary()
+        except Exception as exc:
+            diagnostic_failed(exc)
     if args.resume is not None:
         x, old = restore_accepted_prefix(args.resume, out, report, p, targets)
         targets = targets[targets > old + 1e-12]
@@ -600,10 +1005,20 @@ def run(args):
         threadpool_limits(limits=args.threads),
     ):
         try:
+            previous_accepted = None
             for depth in targets:
                 previous = x.copy()
+                work_before = dict(p.work_counters)
+                step_started = time.perf_counter()
                 deadline = start+args.seconds if args.seconds > 0 else float("inf")
-                x, d = p.step(x, old, float(depth), deadline)
+                if args.predictor == 'secant':
+                    x, d = p.step(x, old, float(depth), deadline, previous_accepted=previous_accepted)
+                else:
+                    x, d = p.step(x, old, float(depth), deadline)
+                previous_accepted = (old, previous)
+                d['mechanical_seconds'] = time.perf_counter() - step_started
+                d['work'] = {k: v-work_before.get(k, 0) for k, v in p.work_counters.items()}
+                d['predictor'] = dict(p.last_predictor)
                 report["steps"].append(d)
                 old = float(depth)
                 checkpoint = out / "states" / f'{len(report["steps"])-1:04d}.npz'
@@ -615,12 +1030,26 @@ def run(args):
                     previous_positions=previous,
                     depth_mm=depth,
                     body_nodes=p.n,
+                    **p.discretization_checkpoint(),
+                    **p.field_checkpoint(x),
                 )
                 report["last_checkpoint"] = checkpoint.relative_to(out).as_posix()
                 report["last_depth_mm"] = old
+                if monitor is not None and not monitor_failed:
+                    try:
+                        diagnostic = monitor.observe(old, x, p.n, checkpoint=report['last_checkpoint'])
+                        d['initiation'] = {k: diagnostic[k] for k in (
+                            'branch', 'new_event_keys', 'directional_evaluation_performed',
+                            'directional_search_retired', 'model_time_s')}
+                        report['initiation'] = monitor.summary()
+                    except Exception as exc:
+                        # This read-only observer must never alter or terminate
+                        # valid intact mechanics. Its failure is recorded separately.
+                        diagnostic_failed(exc)
+                report['work_totals'] = dict(p.work_counters)
                 write_json(out / "result.json", report)
                 print(
-                    f'ACCEPT depth_mm={old:.6f} Fz_N={d["reaction_fz_n"]:.6g} residual_N={d["residual_n"]:.3g} gap_mm={d["minimum_distance_mm"]}',
+                    f'ACCEPT depth_mm={old:.6f} Fx_N={d["reaction_fx_n"]:.6g} Fz_N={d["reaction_fz_n"]:.6g} residual_N={d["residual_n"]:.3g} gap_mm={d["minimum_distance_mm"]}',
                     flush=True,
                 )
             report.update(status="completed", completed=True)
@@ -633,15 +1062,21 @@ def run(args):
                 previous_positions=p.previous,
                 depth_mm=depth,
                 body_nodes=p.n,
+                **p.discretization_checkpoint(),
             )
             report.update(
                 status="failed", attempted_depth_mm=float(depth), error=f"{type(e).__name__}: {e}"
             )
             print(report["error"], flush=True)
     report["elapsed_s"] = time.monotonic() - start
+    if monitor is not None and not monitor_failed:
+        try:
+            report['initiation'] = monitor.finish(report['status'], error=report.get('error'))
+        except Exception as exc:
+            diagnostic_failed(exc)
     write_json(out / "result.json", report)
     print(json.dumps({k: report.get(k) for k in ("status", "last_depth_mm", "elapsed_s", "error")}))
-    if report["completed"] and args.case == "oblique" and not args.no_visualize:
+    if report['steps'] and args.case == "oblique" and not args.no_visualize:
         export_visualization(out, report)
     return report["completed"]
 
@@ -649,6 +1084,11 @@ def run(args):
 def restore_accepted_prefix(source, out, report, p, targets):
     """Resume only accepted physical history, retaining its distinct provenance."""
     previous = json.loads((source / "result.json").read_text(encoding="utf-8"))
+    if (previous.get('interface_condition') is not None and
+            previous['interface_condition'] != report.get('interface_condition')):
+        raise ValueError('Resume mismatch: interface_condition')
+    if previous.get('volumetric_discretization', 'element') != report.get('volumetric_discretization', 'element'):
+        raise ValueError('Resume mismatch: volumetric_discretization')
     for key in ("case", "config", "mesh_settings", "simplifications", "dhat_mm",
                 "barrier_stiffness_mpa", "ipc_binary_sha256", "loading_increment_mm",
                 "force_tolerance_n", "baseline_config_sha256"):
@@ -680,6 +1120,15 @@ def restore_accepted_prefix(source, out, report, p, targets):
             raise ValueError("Resume prefix includes an unaccepted state")
         relative = Path("states") / f"{i:04d}.npz"
         with np.load(source / relative) as state:
+            recorded_kind = str(state['volumetric_discretization']) if 'volumetric_discretization' in state else 'element'
+            if recorded_kind != p.volumetric_discretization:
+                raise ValueError('Resume checkpoint mismatch: volumetric_discretization')
+            expected_macro = macro_checkpoint(p.mesh)
+            for name in ('macro_triangles', 'macro_node_count', 'macro_boundary_edges', 'macro_parents'):
+                if (name in state) != (name in expected_macro):
+                    raise ValueError(f'Resume checkpoint mismatch: {name}')
+                if name in expected_macro:
+                    np.testing.assert_array_equal(state[name], expected_macro[name])
             np.testing.assert_array_equal(state["reference_xy"], p.rest)
             np.testing.assert_array_equal(state["triangles"], p.mesh.triangles)
             np.testing.assert_allclose(float(state["depth_mm"]), step["depth_mm"], rtol=0, atol=1e-12)
@@ -691,6 +1140,11 @@ def restore_accepted_prefix(source, out, report, p, targets):
             x = state["positions"].copy()
             if x.shape != p.rest.shape or not np.isfinite(x).all():
                 raise ValueError("Invalid resume positions")
+            if p.nodal_volume is not None:
+                for name, actual in p.field_checkpoint(x).items():
+                    if name not in state:
+                        raise ValueError(f'Resume mixed checkpoint lacks {name}')
+                    np.testing.assert_allclose(state[name], actual, rtol=1e-11, atol=1e-11)
             prior_x = x
         fingerprints[relative.as_posix()] = hashlib.sha256((source / relative).read_bytes()).hexdigest()
     # Friction must be reassembled using the slip of the last accepted increment.
@@ -718,9 +1172,12 @@ def export_visualization(out, report):
     try:
         # Run against the saved source so later workspace edits cannot change this export.
         with (out / "visualization.log").open("w", encoding="utf-8") as log:
+            command = [sys.executable, "-u", str(out / "source/tools/visualize_ipc.py"),
+                       "--source", str(out), "--output", str(out / "visualization")]
+            if not report.get('completed'):
+                command += ['--allow-failed-prefix']
             subprocess.run(
-                [sys.executable, "-u", str(out / "source/tools/visualize_ipc.py"),
-                 "--source", str(out), "--output", str(out / "visualization")],
+                command,
                 stdout=log, stderr=subprocess.STDOUT, check=True,
             )
         report["visualization"]["status"] = "completed"
@@ -741,6 +1198,20 @@ def parse_args(argv=None):
     parser.add_argument("--depth", type=float)
     parser.add_argument("--increment", type=float)
     parser.add_argument("--friction", type=float)
+    parser.add_argument('--interface', choices=('custom', 'dry', 'silicone_oil'), default='custom',
+                        help='Oil uses an uncalibrated effective coefficient .10; dry uses .35')
+    parser.add_argument('--temperature-c', type=float, default=25.,
+                        help='Declared ambient temperature only; thermal material/interface laws are not calibrated')
+    parser.add_argument('--oil-viscosity-cst', type=float, help='Oil descriptor only, not converted to friction')
+    parser.add_argument('--oil-grade', help='Declared oil product, saved without inventing properties')
+    parser.add_argument('--oil-wait-minutes', type=float, help='Declared time between oil application and loading')
+    parser.add_argument('--initiation', action='store_true',
+                        help='Record full-domain first initiation candidates, then keep solving intact to target')
+    parser.add_argument('--initiation-length', type=float, default=.04,
+                        help='Conditional directional onset length (mm); no damage evolution')
+    parser.add_argument('--initiation-directions', type=int, default=16)
+    parser.add_argument('--predictor', choices=('affine', 'secant'))
+    parser.add_argument('--friction-linear-solver', choices=('direct', 'retry-gmres'))
     parser.add_argument("--dhat", type=float)
     parser.add_argument("--threads", type=int)
     parser.add_argument("--seconds", type=float, help="Wall-clock budget; 0 disables the time limit")
@@ -752,19 +1223,34 @@ def parse_args(argv=None):
     parser.add_argument("--inclination", type=float, help="Workpiece angle to horizontal in degrees")
     parser.add_argument("--tip-radius", type=float, help="Blade nose radius in mm; not inferred from thickness")
     parser.add_argument("--fine-halfwidth", type=float, help="Fine surface region halfwidth in reference s, mm")
+    parser.add_argument("--volumetric-discretization", choices=('element', 'macro_mixed'),
+                        help='Opt-in intact P1-iso-P2/P1 pressure comparison; defaults to element')
     parser.add_argument("--no-visualize", action="store_true", help="Skip automatic postprocessing")
     parser.add_argument("--detach", action="store_true")
     parser.add_argument("--hessian-mode", choices=("projected", "hybrid", "regularized"),
                         help="Frictionless Hessian mode; friction uses the coupled pseudo-transient solver")
     parser.add_argument("--resume", type=Path, help="Copy and verify accepted prefix from an earlier run")
     args = parser.parse_args(argv)
+    if args.baseline and (args.interface != 'custom' or args.initiation):
+        parser.error('Interface and initiation scenarios require a separate variant, not --baseline')
+    try:
+        args.interface_condition = interface_condition(
+            args.interface, args.friction, args.temperature_c,
+            oil_viscosity_cst=args.oil_viscosity_cst, oil_grade=args.oil_grade,
+            oil_wait_minutes=args.oil_wait_minutes)
+    except ValueError as exc:
+        parser.error(str(exc))
+    if args.friction is None and args.interface != 'custom':
+        args.friction = args.interface_condition['friction_coefficient']
     defaults = BASELINE["run"] if args.baseline else dict(BASELINE["run"], depth=0.5, seconds=180.0)
     defaults = dict(defaults, local_spacing=BASELINE["mesh"]["refinement_mm"],
                     surface_spacing=BASELINE["mesh"]["surface_spacing_mm"],
                     nose_facets=BASELINE["nose_facets"],
                     inclination=BASELINE["model"]["inclination_deg"],
                     tip_radius=BASELINE["mesh"]["tip_radius_mm"],
-                    fine_halfwidth=BASELINE["fine_halfwidth_mm"], hessian_mode="projected")
+                    fine_halfwidth=BASELINE["fine_halfwidth_mm"], hessian_mode="projected",
+                    volumetric_discretization='element', predictor='affine',
+                    friction_linear_solver='direct')
     for name, value in defaults.items():
         supplied = getattr(args, name)
         if args.baseline and supplied is not None and supplied != value:
@@ -789,12 +1275,16 @@ def parse_args(argv=None):
         or not np.isfinite(args.inclination) or not 0 <= args.inclination < 90
         or not np.isfinite(args.tip_radius) or not 0 < args.tip_radius < BASELINE["model"]["blade_thickness_mm"] / 2
         or not np.isfinite(args.fine_halfwidth) or args.fine_halfwidth <= 0
+        or not np.isfinite(args.initiation_length) or args.initiation_length <= 0
+        or args.initiation_directions < 4
     ):
         parser.error("Invalid experiment or budget")
     if args.case == "patch" and args.depth > 0.3:
         parser.error("Patch depth must not exceed 0.3 mm")
     if args.resume is not None and args.baseline:
         parser.error("Resume requires a diagnostic variant, not the frozen baseline")
+    if args.initiation and (args.resume is not None or args.volumetric_discretization != 'element'):
+        parser.error('Online initiation currently requires a fresh element-volume run; analyze legacy/mixed history separately')
     if args.output.exists() and any(args.output.iterdir()):
         parser.error("Output must be empty")
     return args

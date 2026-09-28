@@ -11,6 +11,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from run_support import source_hashes, write_json
+from prototype.interface_conditions import DRY_FRICTION, OIL_FRICTION
 
 CASES = ((30, 0.), (0, 0.), (60, .35), (30, .35), (0, .35))
 
@@ -60,9 +61,17 @@ def run_jobs(output, state, env):
             job['mechanics_completed'] = bool(report.get('completed'))
             job['last_depth_mm'] = report.get('last_depth_mm')
             job['visualization'] = report.get('visualization')
+            job['initiation'] = report.get('initiation')
+            job['interface_condition'] = report.get('interface_condition')
+            job['initiation_diagnostic_completed'] = (
+                report.get('initiation', {}).get('status') == 'completed'
+                if report.get('initiation_policy') == 'diagnostic_only_continue_intact' else None)
             if job['status'] != 'timed_out':
                 job['status'] = ('completed' if job['exit_code'] == 0 and report.get('completed')
                                  and report.get('status') == 'completed' else 'failed')
+                if job['initiation_diagnostic_completed'] is False:
+                    job['status'] = 'failed'
+                    job['diagnostic_error'] = 'Initiation diagnostic did not complete; inspect initiation/result.json'
             if report.get('error'):
                 job['error'] = report['error']
         except Exception as exc:
@@ -76,7 +85,14 @@ def run_jobs(output, state, env):
     write_json(output/'queue.json', state)
 
 
-def prepare(output, threads, seconds, *, friction_only=False, resume_first=None):
+def prepare(output, threads, seconds, *, friction_only=False, resume_first=None,
+            study='legacy', oil_friction=OIL_FRICTION, temperature_c=25.,
+            oil_grade=None, oil_viscosity_cst=None, oil_wait_minutes=None):
+    output = Path(output).resolve()
+    if study not in ('legacy', 'lubrication'):
+        raise ValueError('Unknown queue study')
+    if study == 'lubrication' and (friction_only or resume_first is not None):
+        raise ValueError('Lubrication study starts all three cases fresh; legacy resume flags are incompatible')
     if resume_first is not None and not friction_only:
         raise ValueError('First-case continuation requires --friction-only')
     if output.exists() and any(output.iterdir()):
@@ -97,18 +113,36 @@ def prepare(output, threads, seconds, *, friction_only=False, resume_first=None)
               '--increment', '.01', '--depth', '3',
               '--threads', str(threads), '--seconds', str(seconds)]
     jobs = []
-    selected = [(a, mu) for a, mu in CASES if mu > 0] if friction_only else CASES
-    for index, (angle, friction) in enumerate(selected, 1):
-        name = f'{index:02d}_angle{angle}_mu{friction:g}'
+    selected = ([(60, DRY_FRICTION, 'dry'), (60, oil_friction, 'silicone_oil'),
+                 (30, oil_friction, 'silicone_oil')] if study == 'lubrication' else
+                [(a, mu, 'custom') for a, mu in CASES if not friction_only or mu > 0])
+    if study == 'lubrication':
+        common += ['--initiation', '--initiation-length', '.04', '--initiation-directions', '16',
+                   '--predictor', 'secant', '--friction-linear-solver', 'retry-gmres',
+                   '--temperature-c', str(temperature_c)]
+    for index, (angle, friction, interface) in enumerate(selected, 1):
+        name = (f'{index:02d}_{interface}_angle{angle}' if study == 'lubrication'
+                else f'{index:02d}_angle{angle}_mu{friction:g}')
         folder = output/name
         command = [sys.executable, '-u', '-m', 'prototype.ipc_reference', '--output', str(folder),
                    '--inclination', str(angle), '--friction', str(friction),
                    '--max-iterations', '500' if friction > 0 else '200', *common]
+        if study == 'lubrication':
+            command += ['--interface', interface]
+            if interface == 'silicone_oil':
+                for flag, value in (('--oil-grade', oil_grade), ('--oil-viscosity-cst', oil_viscosity_cst),
+                                    ('--oil-wait-minutes', oil_wait_minutes)):
+                    if value is not None:
+                        command += [flag, str(value)]
         if index == 1 and resume_first is not None:
             command += ['--resume', str(Path(resume_first).resolve())]
-        jobs.append(dict(name=name, angle=angle, friction=friction, output=str(folder),
+        jobs.append(dict(name=name, angle=angle, friction=friction, interface=interface, output=str(folder),
                          command=command, status='pending'))
     state = dict(status='pending', created=now(), source_root=str(frozen),
+                 study=study, target_mm=3., fracture_evolution=False,
+                 post_initiation_policy='continue_intact',
+                 temperature_c=temperature_c if study == 'lubrication' else None,
+                 temperature_effects_modeled=False,
                  source_sha256=fingerprints, python=sys.executable, threads=threads,
                  solve_budget_s=seconds, process_timeout_s=seconds+1800 if seconds > 0 else None,
                  native_python_path=str(ROOT/'.runtime/ipc-python'), jobs=jobs)
@@ -128,15 +162,37 @@ def main():
                         help='Run 60, 30, 0 degrees at mu=0.35; retain completed mu=0 results')
     parser.add_argument('--resume-first', type=Path,
                         help='Continue the 60-degree case from an accepted prefix; later cases start fresh')
+    parser.add_argument('--study', choices=('legacy', 'lubrication'), default='legacy',
+                        help='Lubrication: dry 60, silicone-oil 60, silicone-oil 30; diagnostic onset only')
+    parser.add_argument('--oil-friction', type=float, default=OIL_FRICTION,
+                        help='Uncalibrated effective oil friction scenario; not derived from viscosity')
+    parser.add_argument('--temperature-c', type=float, default=25.,
+                        help='Declared ambient temperature; no calibrated thermal coupling')
+    parser.add_argument('--oil-grade')
+    parser.add_argument('--oil-viscosity-cst', type=float)
+    parser.add_argument('--oil-wait-minutes', type=float)
     args = parser.parse_args()
     if args.threads < 1 or not 0 <= args.seconds < float('inf'):
         parser.error('Nonnegative finite budget and positive threads required')
     if args.resume_first is not None and not args.friction_only:
         parser.error('--resume-first requires --friction-only')
+    if args.study == 'lubrication':
+        from prototype.interface_conditions import interface_condition
+        try:
+            interface_condition('silicone_oil', args.oil_friction, args.temperature_c,
+                oil_grade=args.oil_grade, oil_viscosity_cst=args.oil_viscosity_cst,
+                oil_wait_minutes=args.oil_wait_minutes)
+        except ValueError as exc:
+            parser.error(str(exc))
+        if args.friction_only or args.resume_first is not None:
+            parser.error('--study lubrication cannot use legacy resume flags')
     output = args.output.resolve()
     state = (json.loads((output/'queue.json').read_text(encoding='utf-8')) if args.worker
              else prepare(output, args.threads, args.seconds, friction_only=args.friction_only,
-                          resume_first=args.resume_first))
+                          resume_first=args.resume_first, study=args.study,
+                          oil_friction=args.oil_friction, temperature_c=args.temperature_c,
+                          oil_grade=args.oil_grade, oil_viscosity_cst=args.oil_viscosity_cst,
+                          oil_wait_minutes=args.oil_wait_minutes))
     if args.worker and state['status'] != 'pending':
         parser.error('This queue has already started; refusing duplicate execution')
     env = os.environ.copy()
