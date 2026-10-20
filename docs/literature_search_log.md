@@ -1,5 +1,25 @@
 # 文献检索记录
 
+2026-10-20实现阶段：核对本机GCP局部原语顺序、原生局部／全局导数散装和二维势尺度。阅读Abide等2022开放全文的接触固定点／半光滑Newton／PDAS框架（DOI10.1186/s13663-022-00729-4）；核对Grippo等1986非单调搜索的出版社书目与后续官方描述（DOI10.1137/0723046），后者未声称阅读全文。采用的是项目分层活动集／有限窗口搜索原型，不继承未验证的全局收敛保证。GCP纯接入及两种全局化在57°原增量均未通过，33°通过；文献存在不是可计算性证明。详见[实现与失败限制](../references/geometric_self_contact_assessment.md)。
+
+2026-10-20接触几何：定向检索Geometric Contact Potential二维、friction、IPC1.5/1.6实现。阅读官方GCP教程的几何作用集合、二维指数、参考自适应dhat、最近特征平滑与接口说明；核对v1.6.0的二维builder、Point2/Edge2、势和官方C1/C2测试。作者全文PDF超出网页工具提取大小，未声称逐页读完；本轮未另存PDF。上游发布说明的完整能力不等于当前Python绑定，本机实测缺adaptive-dhat/smooth-friction接口。固定几何/导数证据与书目集中于[评估文档](../references/geometric_self_contact_assessment.md)，不将库方法存在等同于主线可计算。
+
+2026-10-18角度机理：定向检索“slicing soft materials slice/push ratio normal velocity”“rubber indentation tangential loading normal force coupling”“finite deformation contact area Lengiewicz”“bonded layer geometric coupling friction”。核查Reyssat2012作者托管原文（PDF第4–6页）、Atkins–Xu2005出版社索引提供的摘要/引言、Lengiewicz2020及Menga2021作者接受稿摘要和DOI。2023 angled adhesive indentation页面未取得足够可核查正文，未用其片段支撑核心判断。非系统综述，未声称全文阅读全部来源；采用范围和受控对照见[角度机理](history/topics/angle_force_mechanism.md)。未上传本地实验数据或下载重复PDF。
+
+2026-10-18共同材料/约束/体积/离散验证：重读[Abaqus 2025超弹性官方文档](https://docs.software.vt.edu/abaqusv2025/English/SIMACAEMATRefMap/simamat-c-hyperelastic.htm)的可压缩性、瞬时/长期参数及平面试验段落；重开[Ahmadi等平面应力有限应变作者摘要](https://arxiv.org/abs/2410.22562)。用途是区分受限体积响应、偏量松弛和面外自由度，不引入论文的材料参数，不声称复现其算法或采用了Abaqus求解。实测材料仍未经跨模式标定；详见[执行报告](history/topics/cross_mode_verification.md)。没有新增论文PDF或外传实验数据。
+
+2026-10-13近线性验证链：定向检索“plane strain wedge indentation hyperelastic rubber load indentation depth linear finite element thickness effect”和“MINI element finite strain local volume error bubble pressure nearly incompressible”。复核Karabelas等2020出版全文§4.3的J分布与边界波动；核读Tan等2016出版PDF文本摘要、§1、§4.1，新增R52。两篇PDF网页截图请求缓存失败，不声称目视检查图像。复核Kojima等2020§3.3：其前裂推动段斜率几乎不随速度变化，故不能凭橡胶有黏性就断言本项目近线性由松弛导致。三维压入、球形压入及塑性楔入的搜索结果未用于本项目公式或参数。此次采用的是同接触迹空间细化、全场J/位移与总力曲率联合判据，不增加物理参数。
+
+2026-10-13重构实施：直接复核已选Karabelas等的[出版全文](https://link.springer.com/article/10.1007/s00466-019-01760-w)和Fu等的[作者全文v2](https://arxiv.org/html/2503.00989v2)，针对MINI内部自由度、局部消元与有限应变稳定性限制，不开展新的泛化检索。采用标准二维气泡/P1空间；文献的三维性能和四场主方法未移植。实施映射及本地验证记录在[重构说明](history/topics/mini_redesign.md)。
+
+## 2026-10-13：位移—压力配对之后的定向补查与历史整理
+
+本轮先实际执行配对、弯曲与已接受刀尖场的局部平衡检查。由于这些检查尚不能解释整体Fz曲率，补查如下关键词：`Taylor Hood finite elasticity incompressible contact quadratic displacement linear pressure boundary constraint inf sup`、`P2 P1 nearly incompressible finite elasticity quadrature pressure mass lumping Taylor Hood`、`Versatile stabilized finite element formulations`、`Taylor-Hood finite elasticity pressure robust`。另按DOI、作者和题名核对既往Koko、Bercovier–Pironneau、Gee、Zimmerman等记录。
+
+实际采用出版方原文、arXiv作者版本、作者/机构资料及官方软件文档；这次是定向复核，不是完成了跨库穷尽检索的系统综述。新读[Karabelas等出版全文](https://link.springer.com/article/10.1007/s00466-019-01760-w)的空间、凝聚与有限应变限制（卷年2020，在线2019）；复核[Fu等作者原文](https://arxiv.org/html/2503.00989v2)§3–5；新读[Lederer等出版摘要](https://epubs.siam.org/doi/10.1137/16M1089964)。[Tian既往预印本](https://arxiv.org/abs/2112.00294)本轮只核查摘要，HTML失败；Karabelas的PMC入口出现验证码，转用出版社可访问全文。未绕过访问限制，未把搜索摘要冒充全文。
+
+历史资料按主题汇总到[统一目录](../references/catalog.md)，旧R01–R25不改号；原README的详细记录迁入research_history，所有可恢复链接与位置收录source_index。references内12份PDF逐份首页身份核查，页数/哈希记录只留本地。论文参数不覆盖当前材料，不因文献有速度或稳定性结果就自动启动新生产任务。针对性判断见[配对笔记](../references/pairing_review.md)。
+
 2026-09-12：查询 finite precision / Armijo line search / cancellation near Newton convergence。核对 ANSYS 2024R2 理论手册 Newton-Raphson 的收敛与线搜索段，以及 arXiv:2010.04352 的函数误差/噪声容忍线搜索摘要。结合 0.91 mm 原失败试值的能量差与梯度路径功审计，采用自主近收敛保护；未把文献的拟 Newton 全局收敛结论转用为本模型保证。原始 PDF 不另存重复副本。
 2026-09-11 核查 0.77 mm：查询 projected Newton tiny line-search steps / indefinite Hessian / modified Newton eigenvalue shift。读取作者托管 Gast 等 2015《Optimization Integrator for Large Time Steps》第 3.1 节（方向、截断 CG、下降角与 Wolfe），以及 Cornell CS4220 2026-04-20 的非凸二次/信赖域讲义。核对逐单元 PN 与全局修正的不同；当前自主实现以 PN 刚度为度量作全局曲率移位，仅修改步矩阵。资料不是橡胶斜切验证，不将动力学收益直接迁移；同前态对照及适用边界记入 solver_status/modeling_roadmap。
 
@@ -66,3 +86,10 @@
 求解方向参考 [SciPy 非线性最小二乘文档](https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.least_squares.html) 中的 Jacobian 列缩放及阻尼/正则化原则。当前采用自主实现的稀疏阻尼方向与原残差回溯，并非调用该求解器或复现 SCD 算法；没有普遍收敛保证。PMC 全文页面本次访问受到机器人验证限制，未把搜索摘要当作读过新的全文。
 
 论文复现是独立 EPDM 平面应力拉伸；主线是 CB245NE 平面应变斜切。当前只复用已验证的材料内核，强度筛查尚未与自由裂纹、新裂面接触耦合。后续优先核验接触和近不可压缩离散，再验证无预裂纹起裂。
+
+
+## 2026-10-20 理论路线记录
+
+本节原文字存在编码损坏，整理时不猜测补写丢失的阅读结论。可核对的具体讨论保留在[理论HTML](../outputs/angle_history_review_20261020/theory.html)，当前适用边界见[理论审查](theoretical_model_audit.md)。
+
+原记录保留了以下来源链接：Kojima（2020）的[J-STAGE原文](https://www.jstage.jst.go.jp/article/sosei/61/708/61_1/_pdf)、Lubarda与Lubarda的[文章](https://arxiv.org/html/2309.02361v1)、Moreno-Mateos与Steinmann的[文章](https://arxiv.org/html/2507.13565v1)，以及[Lengiewicz等的摘要](https://arxiv.org/abs/2005.02107)和[Menga等的摘要](https://arxiv.org/abs/2006.16133)。这些是历史来源索引，不代表本次清理重新阅读全文或完成新验证。

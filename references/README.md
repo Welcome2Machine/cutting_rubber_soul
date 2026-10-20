@@ -1,46 +1,46 @@
-# 参考方法索引
+# 项目文献库
 
-2026-09-12 伪瞬态延续：[PETSc：Solving Steady-State Problems with Pseudo-Timestepping](https://petsc.org/release/manual/ts/#solving-steady-state-problems-with-pseudo-timestepping)，以辅助演化求原方程零点，支持 B 度量和残差比伪时间步更新；[Gee 等，Pseudo-transient continuation for nonlinear transient elasticity，2009](https://doi.org/10.1002/nme.2527) 给出非线性弹性中的相关应用。用于处理本地含摩擦耦合矩阵近奇异、单调残差搜索停滞，不能据此声称橡胶切割全程稳定或实验动态响应正确。代码用投影 Hessian 作为辅助度量，保留未移位力验收；详情见 modeling_roadmap。
+2026-10-20：[接触候选几何、GCP实现和资格限制](geometric_self_contact_assessment.md)。官方公式／源码与本地导数检查后，已接入显式GCP法向势和项目自摩擦；参考自适应采用经过证书的统一上限特例。补充Abide等2022活动集和Grippo等1986非单调搜索依据。33°原失败增量与新预检通过并启动独立长线；57°三次有界资格均未通过，不宣称完整路线已经解决或实验已验证。
 
-2026-09-12 摩擦外层：[Li 等 2020 IPC 技术补充第 9 节](https://ipc-sim.github.io/file/IPC-supplement-A-technical.pdf) 与 [Physics-Based Simulation：Fixed-Point Iteration](https://phys-sim-book.github.io/boundary-treatments/frictional-contact/fixed_point_iter.html)。可参考冻结法向力/切向基底的摩擦势与外层刷新流程；内层收敛不保证外层固定点收敛。本地依据失败日志增加重新组装力残差的外层回溯，不改变摩擦系数，也不把冻结摩擦残差作为最终验收。详见建模路线及 solver_status。
+2026-10-19：[相邻表面节点伪自接触](adjacent_self_contact_20261019.md)。核对GCP作者论文、补充材料和工具库对dhat/边长及相邻顶点排斥的讨论；结合本地准确失败场1177项全部相邻VV的证据，设计仅限未自接触区间的有界对照。未宣称实现GCP，未改变原生默认。
 
-2026-09-12 能量差精度：[ANSYS Newton-Raphson 理论手册 14.10.5](https://ansyshelp.ansys.com/public/Views/Secured/corp/v242/en/ans_thry/thy_tool10.html) 描述沿步方向的势能导数线搜索；[A Noise-Tolerant Quasi-Newton Algorithm for Unconstrained Optimization](https://arxiv.org/abs/2010.04352) 讨论数值噪声对线搜索的影响。用于理解近收敛处总能量相减不可靠的原因；本地采用带原力/微小位移/方向功多重门槛的精度保护，不是上述算法复现，不放宽力平衡门限。
-2026-09-11 接触非凸方向补充：[Gast 等，Optimization Integrator for Large Time Steps，2015](https://math.ucdavis.edu/~jteran/papers/GSSJT15.pdf)，DOI 10.1109/TVCG.2015.2459687，第 3.1 节关于不定 Newton 方向、截断 CG 和下降角度；[Cornell CS4220，2026-04-20](https://www.cs.cornell.edu/courses/cs4220/2026sp/lec/2026-04-20.html) 关于非凸二次模型、移位 Hessian 与信赖域。用于理解 0.77 mm 接触主导的负曲率；本地 `regularized` 为 PN 度量下的全局曲率移位，不是上述动力学或完整信赖域方法复现，尚无完整路径稳定性保证。
+2026-10-18：针对同法向深度/速度的角度对照，核查Reyssat等2012原文图1及式(1)–(4)、Atkins–Xu 2005出版社摘要/引言，以及Lengiewicz 2020与Menga 2021作者摘要。明确沿刃拉切与本项目面内斜压不同；文献、坐标/功率推导、已有力向量证据及下一轮受控试验集中于[角度力学机理](../docs/history/topics/angle_force_mechanism.md)。没有用起裂峰值降力规律修正完整体曲线，也没有改变现有队列。
 
-2026-09-11 求解器核查：[Fernández-Fernández、Löschner、Bender，Progressively Projected Newton's Method](https://arxiv.org/abs/2505.21013v2)，初版 2025、修订 2026。可借鉴结论是逐单元正定投影可能过度改变全局切线；论文同时报告准静态下 PN 可能更优，因此必须做本问题的同前态对照。本地 `--hessian-mode hybrid` 只试验未投影 Newton 方向加 PSD 回退，不声称复现 PPN。切线接口依据 [IPC Toolkit 官方 API](https://ipctk.xyz/python-api/potentials.html)，沿用锁定 ipctk 1.6.0，并以有限差分核对。
+2026-10-18：核对Ceglie等JMPS206(2026),106389机构库全文的式(6)与第4.3节，以及Abaqus库仑摩擦理论，新增[界面剪切上限候选](../docs/history/topics/interface_candidate.md)。不移植PDMS/玻璃参数；明确本项目是节点当前面积压力及光滑上限的离散候选，包含完整非对称导数，不能把资格测试等同实验改善。共同Ogden形状历史筛选为负，保留其证据。
 
-2026-09-11 实现补充：本轮采用 [IPC Toolkit 官方 Python 接口](https://ipctk.xyz/build/python.html) 的 `ipctk==1.6.0` Windows 原生 wheel。依据 [模拟教程](https://ipctk.xyz/tutorials/simulation.html) 组织表面/体自由度映射、屏障能量和 CCD；本地静态宿主使用原有限应变材料，未加入惯性项，不是教程动力学案例的直接复现。原生 `make_static_obstacle_filter` 排除刀具内部碰撞并保留橡胶自接触，避免 Python 回调阻塞并行 CCD。API 以锁定版本的绑定签名为准，不能直接套用在线开发版。方法适用边界及参数敏感性要求见 [建模路线](../docs/modeling_roadmap.md)。
+2026-10-18：对照2023原文及Abaqus官方超弹、时间域黏弹、实体单元/混合压力说明，完成[原生三角度材料核查](native_material_audit_20261018.md)。明确当前二次J体积能与原论文对数形式不同，瞬时/长期泊松比不同，以及局部P1细化不能全面排除锁定；对应实际场导数、双历史和共同参数筛选证据，不将文献适用性当本地求解证明。
 
-论文原文件仅留在本地，不上传 GitHub。面向 AI 的结构化摘要、原文定位、来源链接、适用边界和代码映射集中在 [method_notes.md](method_notes.md)。这些笔记是自行归纳的研究说明，不是论文全文或作者认证的实现规范。
+2026-10-16：补核Reese–Govindjee（1998）有限应变非线性黏度的原文框架，完成独立正耗散候选核及两角度历史筛选。具体函数为项目假设，非BB复现；阅读范围见[前裂专题](prefracture_rate_response.md)，筛选与未再平衡的限制见[方法说明](../docs/history/topics/nonlinear_relaxation.md)。
 
-| 文献编号 | 用途 |
-|---|---|
-| R01 — Spagnoli 2019 | 斜切运动、摩擦及能量分解 |
-| R02 — Dammaß 2021 | 小应变黏弹性与相场的双向耦合 |
-| R03 — Dammaß 2023 | 有限变形材料、相场、二维应力假设及独立复现 |
-| R04 — Moreno-Mateos / Steinmann | 软材料切割的体材料、黏附与界面机制 |
-| R05 — Pinto Carvalho 2022 | 刚体—可变形体无摩擦 dual mortar |
-| R06 — Khandelwal 2022 | 二次边界接触自由度及误差分析 |
-| R07 — Maas 2011 | 节点积分、稳定化和锁死权衡 |
-| R08 — Acary / Brémond / Huber | 离散库仑摩擦求解器及尺度比较 |
-| R09 — Lopez-Pamies 2025 | 独立强度与无缺口起裂预测 |
-| R10 — Kamarei 2025 | 黏弹性、广义强度面与断裂能耦合候选 |
-| R11 — Lopez-Pamies 2026 | 受强度约束的能量最小化预印本 |
-| R12 — 接触全局化资料 | 平滑延续、互补函数及 Siconos 分裂求解的适用边界 |
-| R13 — Deuflhard / PETSc | 修正量线搜索及本地失败边界 |
-| R14 — Hohlfeld / Mahadevan 2011 | 局部折皱与分支问题；不能替代本实验断裂判据 |
-| R15 — Hassani / Hild 等；HiGHS | 摩擦多解与全节点有界分支可行性诊断 |
-| R16 — Qi / Sun 1998 | 半光滑 Newton 的局部条件与非光滑残差全局化 |
-| R17 — Li 等 2023 | 当前自写方案退出后，优先采用完整 PolyFEM/IPC 流程；二维线性碰撞几何、平滑摩擦和材料适配另验 |
-| R18 — Giacoma 等 2016 | LATIN 局部—整体摩擦耦合设计 |
-| R19 — Both 等 2022 | 借鉴软材料多孔介质的稳定化分裂 |
-| R20 — Degroote / preCICE | 流固界面加速及内层收敛要求 |
-| R21 — Acary 等 2026 | 已核查全文；二维内点核心已开始实现，有限应变外层与 ANM 边界另验 |
-| R22 — Gfrerer 等 2022 | 直接处理多值接触图的 SCD Newton 候选 |
-| R23 — PETSc | 保持接触代数约束的伪瞬态延续候选 |
-| R24 — Dickson 等 2007 | 伪弧长预测—校正与简单折点；非光滑适用限制 |
-| R25 — Jong 2012 | 同伦路径到达性的假设；数值近端同伦候选与适用限制 |
+2026-10-15变形模式/约束核查：补核Ahmadi等总应力平面应力的作者摘要、Bergström–Boyce多轴非线性黏弹性的出版摘要，及已有硅胶刀压入论文的支承适用范围。与实际7个条件平衡和1个未收敛端点分开记录；不借文献擅改固定底面或把PS当有限宽度真值。见[前裂专题末节](prefracture_rate_response.md)及[实际结果](../docs/solver_status.md)。
 
-求解器实现另参考 [FEBio v4.13](https://github.com/febiosoftware/FEBio/tree/v4.13)、[SuperLU_MT](https://github.com/xiaoyeli/superlu_mt/tree/8324379)、[FEBio 节点—面接触](https://febiosoftware.github.io/febio-feature-manual/features/solid_surfaceinteraction_sliding-node-on-facet/) 及 [GetFEM 大滑移](https://getfem.org/userdoc/model_contact_friction_large_sliding.html)。这些是实现依据，不是本实验验证。
+2026-10-15解析圆鼻候选：已将曲面一致间隙/法向/切线的思路落到独立代码，保留保守整边CCD；明确单侧积分与原IPC权重不同、没有实现Gregory片。源码标度与适用限制见[方法笔记](method_notes.md)，通过范围及30°高力未解决的结论见[求解状态](../docs/solver_status.md)。
 
-[Zimmerman–Ateshian 2018](https://doi.org/10.1115/1.4040497) 及 [作者模型库](https://repo.febio.org/permalink/project/68) 可作为后续独立大变形摩擦基准；本轮未取得该论文全文，不声称复现其算例。[检索记录](../docs/literature_search_log.md) 保留查询和证据范围；[模型规范](../docs/current_model_spec.md) 的 CB245NE 参数不被论文替换。
+2026-10-15进一步诊断：补核IPC技术补充、半光滑接触活跃集论文与PETSc残差求解说明，见[方法笔记末节](method_notes.md)；补读官方CR/BB模型实现说明，见[前裂专题](prefracture_rate_response.md)。明确冻结摩擦势与刷新接触几何的区别、共同材料跨模式验证及阅读限制；未把文献方法名称当作本地收敛证明。
+
+2026-10-15跨角度补核：复核CR跨压缩模式的材料验证逻辑，补充Persson–Volokitin光滑表面橡胶摩擦作者稿的适用边界。用于区分恒μ假设、约束传力与摩擦耗散，未据此直接更换接触模型。原始来源及阅读范围见[前裂专题](prefracture_rate_response.md)。
+
+2026-10-15路线选择：复核R28平衡/非平衡网络及Efremov压入历史响应的适用边界，采用单独的正剪切刚度分配候选；不把静态G当已识别的无限时平衡模量，也不把单速度力拟合当唯一材料识别。新增辨别逻辑见[前裂专题](prefracture_rate_response.md)，实际参数与验收见[材料候选](../docs/history/topics/material_candidate.md)。
+
+2026-10-14实验特征分析补核：重读 *Cutting soft materials* 正式原文中弹性体平滑压入—切割过渡的实验说明，用于限制“无掉力即未裂”和“统计折点即起裂”的解释；见[前裂专题](prefracture_rate_response.md)。未据此修改物理模型或移植参数。
+
+2026-10-14材料候选实施：基于R28的CR时间响应机制与R03的有限应变返回映射，单独检验正剪切Maxwell支路；不复制EPDM参数、不宣称实现完整Bergström–Boyce模型。厂家报告没有动态模量/松弛谱，新参数仍是假设。参见[候选方案与门槛](../docs/history/topics/material_candidate.md)。
+
+2026-10-14补查前裂近线性：R30原图、R54无损伤Mooney–Rivlin楔入先例，以及二维接触的条件性比例模型；区分经验线性、局部相似性和严格不可压缩平面应变下MR/NH等价性。阅读范围、未取得全文的R55及排除的金属恢复公式见[前裂专题](prefracture_rate_response.md)。新增两篇硅胶PDF仅留本地，本轮未运行有限元。
+
+2026-10-14新增R53：高阶连续几何有效性与积分失配，已结合MINI实际失败场核查；见[配对笔记](pairing_review.md)。仅采用诊断依据，未宣称复现论文算法或解决实验曲率。
+
+整理日期：2026-10-13。范围是仓库可恢复的既往参考资料及本轮新增定向阅读；不是系统综述，也不声称覆盖未记录的历史对话。PDF、图片、实验和计算数据仍只留本地，公开部分仅为原创 Markdown 笔记、书目和代码。
+
+- [统一文献目录](catalog.md)：按建模问题整理，保留 R01–R25，补齐此前散落的材料、接触、识别、离散和求解文献；标明阅读范围与适用限制。
+- [本轮位移—压力配对分析](pairing_review.md)：实际做了什么、结果能说明什么、后续路线的文献依据。
+- [MINI重构采用记录](../docs/history/topics/mini_redesign.md)：已把气泡富集、连续压力及内部消元接入IPC候选；来源、恢复保障与资格限制。
+- [近线性验证链](../docs/history/topics/linearity_verification.md)：把局部体积误差、空间运动、力幅值和曲率分开验收，避免只追求单元软化或线性求解提速。
+- [早期方法笔记 R01–R25](method_notes.md)：原文位置、假设、方法及历史代码关联。条目中的旧实现不代表主线现状。
+- [宏混合离散](macro_mixed_discretization.md)、[前裂时间响应](prefracture_rate_response.md)：已有专题笔记，继续复用。
+- [历次阅读与采用记录](research_history.md)、[检索记录](../docs/literature_search_log.md)：保留先前查过、拒绝或未能获取的资料，不把历史失败清理掉。
+- [来源链接审计索引](source_index.md)：完整链接去重表与引用位置，包含官方软件文档、厂商资料及只在本地旧报告中出现的来源；不是“全部已读全文”清单。
+
+当前仍是无断裂、有限应变、平面应变的 IPC 主线。P1 默认未变，1 mm 混合诊断保持暂停。当前执行状态只以 [solver_status](../docs/solver_status.md) 为准；论文标题、单元名称或通过小基准均不能代替本项目验收。
+
+2026-10-13清点时，本地 `references` 的12份PDF已逐一核对首页身份并记录页数与SHA256；这是历史清单，详见本地 `outputs/pressure_pairing_20261013/local_pdf_inventory.json`。2026-10-14另增加R30/R54两篇公开原文，未上传用户论文或下载的PDF。

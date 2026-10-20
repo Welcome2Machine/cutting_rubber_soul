@@ -2,11 +2,40 @@
 
 Displacements are continuous P1 on four subtriangles; pressure is continuous
 P1 on the parent triangulation. Only the p^2/K term is row-sum lumped.
-No artificial shear-scale volume stabilization is added.
+The default adds no volume stabilization. An explicit diagnostic can penalize
+unresolved volume fluctuations at shear scale; the homogeneous law is retained.
 """
 import numpy as np
 from scipy.sparse import coo_matrix
 from .model_config import FEMMesh
+
+
+def solve_pressure_blocks(local, metric_local, pressure, shift, rhs):
+    """Solve the condensed PTC equation without explicitly filling its Schur block.
+
+    Both exact tangent and metric contain B.T M_p^-1 B. Eliminating the
+    auxiliary pressure below gives L + shift*L_metric + (1+shift)*B.T M_p^-1 B.
+    Friction may make L nonsymmetric; no symmetric-indefinite solver is assumed.
+    """
+    from scipy.sparse import bmat, diags
+    from scipy.sparse.linalg import splu
+    B, mass = pressure
+    if not np.isfinite(shift) or shift < 0 or np.any(mass <= 0):
+        raise ValueError('Invalid pressure mass or PTC shift')
+    L = local+shift*metric_local
+    system = bmat([[L, B.T], [B, -diags(mass/(1+shift))]], format='csc')
+    system.eliminate_zeros()
+    factor = splu(system)
+    answer = factor.solve(np.r_[rhs, np.zeros(len(mass))])
+    du = answer[:len(rhs)]
+    residual = L@du+(1+shift)*(B.T@((B@du)/mass))-rhs
+    error = float(np.linalg.norm(residual))
+    limit = 1e-8*max(1., float(np.linalg.norm(rhs)))
+    if not np.isfinite(error) or error > limit:
+        raise np.linalg.LinAlgError(f'Mixed linear residual {error:g} exceeds {limit:g}')
+    return du, dict(method='sparse_pressure_blocks', matrix_nnz=system.nnz,
+                    factor_nnz=factor.L.nnz+factor.U.nnz,
+                    condensed_residual_n=error, residual_limit_n=limit)
 
 
 def refine_macro_mesh(base,boundary):

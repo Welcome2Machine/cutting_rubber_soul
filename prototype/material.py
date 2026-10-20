@@ -4,20 +4,28 @@ from mechanics.finite_strain import Material,elastic_response
 
 
 def from_config(config):
-    # alpha=2 reproduces the current isochoric neo-Hookean elastic baseline.
-    # Preserve its quadratic-J volume energy when isolating the code migration.
-    return Material(mu_eq=(config.shear_modulus_n_mm2,),alpha_eq=(2.,),
+    # The shared kernel uses G=sum(mu_i*alpha_i)/2. Preserve the measured
+    # small-strain G and K when varying the large-strain shape, not mu_i.
+    # alpha=2 exactly retains the previous neo-Hookean law.
+    alpha = config.ogden_alpha
+    if not np.isfinite(alpha) or alpha <= 0:
+        raise ValueError('Ogden exponent must be finite and positive')
+    return Material(mu_eq=(2*config.shear_modulus_n_mm2/alpha,),alpha_eq=(alpha,),
                     poisson=config.poisson_ratio,volumetric='quadratic_j')
 
 
-def response(F,config,*,tangent=True):
-    return elastic_response(F,from_config(config),kinematics='plane_strain',tangent=tangent)
+def response(F,config,*,tangent=True,diagnostics=True):
+    return elastic_response(F,from_config(config),kinematics='plane_strain',tangent=tangent,
+                            diagnostics=diagnostics)
 
 
 def bulk(mesh,u,config,*,with_tangent=True):
     areas,gradients,dofs=mesh.bulk_data
     F=np.eye(2)+np.einsum('eai,eaJ->eiJ',u.reshape(-1,2)[mesh.triangles],gradients)
-    q=response(F,config,tangent=with_tangent);volumes=areas*config.width_mm
+    # P1 assembly consumes only P, energy, J and (optionally) the tangent.
+    # Keep public response() diagnostics available for stress/field outputs,
+    # without constructing unused Cauchy tensors and eigensystems per trial.
+    q=response(F,config,tangent=with_tangent,diagnostics=False);volumes=areas*config.width_mm
     r=np.einsum('e,eiJ,eaJ->eai',volumes,q['P'],gradients).reshape(-1,6)
     k=None
     if with_tangent:
@@ -53,7 +61,7 @@ class NodalVolume:
         # The bracket is a sum of squared patch fluctuations and vanishes for
         # homogeneous deformation. This is a numerical stabilization, not a
         # changed homogeneous bulk modulus. Zero retains the comparison model.
-        self.projected_fraction=1-stabilization_shear*config.shear_modulus_n_mm2/self.K
+        self.projected_fraction=max(0.,1-stabilization_shear*config.shear_modulus_n_mm2/self.K)
 
     def pressure(self,J):
         nodal=self.K*(self.S@J-1)

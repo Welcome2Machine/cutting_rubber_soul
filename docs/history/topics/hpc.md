@@ -1,5 +1,7 @@
 # 超算运行准备
 
+> Historical technical record. Obsolete outputs were retired on 2026-10-20; summary links do not include the original figures or full replay histories. See [current research status](../../research_status.md).
+
 当前固定基线是 IPC，实际在本地 Windows 验证。若以后迁移到计算节点，先安装 requirements.txt 并运行 IPC 短测试；固定基线在作业内以前台运行：`python -m prototype.ipc_reference --baseline --output outputs/hpc_ipc_baseline`，至少分配 4 个 CPU。不要在 Slurm 作业内使用 `--detach`。改变线程或其他配置时需省略 `--baseline`，作为单独的平台诊断记录。下方 `tools/run_hpc.sh` 是保留的 **FEBio 参考模板**，不是 IPC 默认入口。
 
 处理器、操作系统和调度器尚未知。当前按 Linux 单节点共享内存 CPU 准备，不指定学校账户、分区或厂商指令集。FEBio/OpenMP 和 SuperLU_MT 可使用多线程；大内存支持更细网格和直接分解，但不能自动解决非线性失收敛。Python 主线的 SciPy 稀疏 LU 不会因增加 OpenMP 线程而全面并行。

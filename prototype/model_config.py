@@ -19,7 +19,8 @@ class FEMConfig:
     inclination_deg: float = 60.0
     drop_s_mm: float = 7.0
 
-    # Blade A geometry from the supplied blade drawing
+    # Blade 99755: full included angle and thickness confirmed by the supplied
+    # specification table. It does not specify the microscopic edge radius.
     blade_thickness_mm: float = 0.245
     blade_tip_angle_deg: float = 23.0
 
@@ -55,10 +56,18 @@ class FEMConfig:
     max_adaptive_substeps: int = 256
     progress: bool = False
 
-    # CB245NE starting material data.  G and tensile strength are published
-    # catalogue values; Gc is a neoprene cutting prior, not a CB245NE test.
-    shear_modulus_n_mm2: float = 0.66
+    # Current CB245NE catalogue G, adopted at the user's request (2026-10-11).
+    # It is a supplier reference value, not a measurement of this sample.
+    # Historical configurations explicitly retain their own G (e.g. 0.66 MPa
+    # in ipc_baseline.json); K follows G at the fixed Poisson ratio below.
+    shear_modulus_n_mm2: float = 0.47
+    # One-term isochoric Ogden shape. 2 is the existing neo-Hookean law;
+    # other positive values are uncalibrated diagnostic candidates, at fixed G.
+    ogden_alpha: float = 2.0
     poisson_ratio: float = 0.49
+    # Historical fracture inputs are retained for old input/checkpoint
+    # compatibility only. The intact task does not activate damage or CZM.
+    # Gc is a neoprene cutting prior, not a CB245NE test.
     tensile_strength_n_mm2: float = 4.4
     fracture_energy_n_mm: float = 2.15
     cohesive_opening_mm: float = 0.18
@@ -109,6 +118,7 @@ class FEMConfig:
             "contact_smoothing_mm": self.contact_smoothing_mm,
             "friction_velocity_regularization_mm_s": self.friction_velocity_regularization_mm_s,
             "shear_modulus_n_mm2": self.shear_modulus_n_mm2,
+            "ogden_alpha": self.ogden_alpha,
             "tensile_strength_n_mm2": self.tensile_strength_n_mm2,
             "fracture_energy_n_mm": self.fracture_energy_n_mm,
             "cohesive_opening_mm": self.cohesive_opening_mm,

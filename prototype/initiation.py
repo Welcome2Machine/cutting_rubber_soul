@@ -1,7 +1,7 @@
 """Uncracked-body initiation screening, independent of the prescribed seam model.
 
 No elements are deleted and no post-initiation crack propagation is claimed.
-All dimensions follow FEMConfig (N, mm, s). See docs/initiation_model.md.
+All dimensions follow FEMConfig (N, mm, s). See docs/history/topics/initiation_model.md.
 """
 from __future__ import annotations
 
@@ -71,7 +71,9 @@ def intact_mesh(config, options, *, fine_halfwidth_mm=None):
         from .macro_element import refine_macro_mesh
         coarse_options=replace(options,volumetric_discretization='element',contact_discretization='integral',surface_spacing_mm=2*options.surface_spacing_mm,refinement_mm=2*options.refinement_mm)
         coarse_config=replace(config,mesh_size_mm=2*config.mesh_size_mm)
-        return refine_macro_mesh(*intact_mesh(coarse_config,coarse_options,fine_halfwidth_mm=max(2*options.refinement_mm,8*options.tip_radius_mm)))
+        halfwidth = (max(2*options.refinement_mm,8*options.tip_radius_mm)
+                     if fine_halfwidth_mm is None else fine_halfwidth_mm)
+        return refine_macro_mesh(*intact_mesh(coarse_config,coarse_options,fine_halfwidth_mm=halfwidth))
     def grid(a, b, h):
         return np.linspace(a, b, int(np.ceil((b-a)/h))+1)
     s = grid(0, config.length_mm, config.mesh_size_mm)

@@ -1,5 +1,7 @@
 # 橡胶斜切建模：论文方法笔记
 
+2026-10-13整理说明：R01–R25保留稳定编号；以下代码关联与路线选择多为2026-09历史记录，不能当作当前实现清单。现在默认是完整体P1/IPC，P2与混合配对属于独立诊断，断裂关闭。完整主题目录及新增资料见 [catalog](catalog.md)，当前状态见 [solver_status](../docs/solver_status.md)。
+
 类型：面向后续 AI/开发者的研究工作笔记；2026-09-10 由 AI 整理，未经过论文作者或人工逐式复核。不是论文全文转录，也不替代原文。仅上传自行组织的摘要、必要公式、书目链接和实现判断；不上传 PDF、图片、读图曲线或实验/计算数据。
 
 阅读规则：`Rxx` 为稳定文献标识；“论文范围”来自本地对应版本，“项目判断”是本仓库推论，不能写成作者已验证的结论。页码为本地 PDF 页序，从 1 开始。查公式时回到对应版本原文；不以摘要中的省略式直接编程。工况与 CB245NE 参数以 [模型规范](../docs/current_model_spec.md) 为准。
@@ -61,7 +63,7 @@
 - 核查位置：第 1 页摘要、第 9 页 Conclusions。
 - 论文范围：三维 UT4 节点积分四面体，比较对全部虚功或仅等容部分作稳定化；收敛依赖问题、网格与参数，要求针对应用验证网格。
 - 项目判断：支持把锁死和软模式放在同一组对照中检查。不能把 UT4 等容稳定化参数直接搬到二维节点体积平均，或仅因反力变软就认定应力更准确。
-- 代码关联：`prototype/material.py` 的 NodalVolume 是本仓库独立能量形式；当前主线采用 P2 完整积分，节点体积路线保留作比较。
+- 历史代码关联：`prototype/material.py` 的 NodalVolume 是本仓库独立能量形式；本条撰写时曾采用 P2 完整积分。现主线为 P1/IPC，节点体积与高阶配对仅作独立比较。
 
 ## R08 — Acary、Brémond、Huber：离散摩擦求解器比较
 
@@ -245,3 +247,19 @@ R17–R20 的本地应用：已在 `prototype.contact_partitioned` 实现冻结�
 论文的到达性结论需要光滑性、秩条件、唯一初始解和有界零集等假设；Newton–固定点同伦还要求存在正定矩阵 A，使 `F'(x)+A` 处处非奇异。其形式可改写为 `F(x)−(1−a)F(x0)+(1−a)A(x−x0)`，附加项在目标处消失。
 
 项目判断：伪弧长能通过局部转折，不自动保证当前残差射线连到目标。非光滑库仑关系、有限应变可行域和路径有界性均未满足上述已证明条件，不能把论文的概率一结论移植过来，也不能声称加一个对角项就获得保证。该式仅为后续改变数值同伦的候选，当前未实现。现有正常走步但未到目标的记录不能证明闭环、原问题无解或发生断裂。
+
+## 2026-10-15补核：IPC几何分支与残差求解
+
+2026-10-16深部适用性更正：0°/33°/57°失败末态的整边间隙远小于Gauss采样间隙；固定场加密产生远超验收限的自由残差。因此浅部资格不能外推，解析单侧候选暂停用于深部定量预测。将位移上限提前到CCD之前的有界变体也未取得新接受态，不推广。[官方IPC Toolkit](https://github.com/ipc-sim/ipc-toolkit)分别提供接触势与碰撞检测接口；正确调用接口不等于任意自定义积分都与之匹配。下一轮恢复已有完整案例的原生接触作为对照，具体因果解释依赖本地实算而非论文保证，详见[求解状态](../docs/solver_status.md)。
+
+实际采用状态：新增独立解析圆鼻候选，直接从圆弧距离求法向、曲率和完整刷新摩擦Jacobian。它没有实现Gregory片、mortar或半光滑活跃集；材料边界的单侧参考积分也不等于IPC improved-max。外包刀具多边形仅作保守CCD，材料自接触仍为IPC。原64片局部卡点及两级积分/双角度控制通过，各自新0–.05 mm路径通过，但无深行程保证，30°力偏差未解释。详见[状态](../docs/solver_status.md)。
+
+物理barrier标度依据本地ipctk1.6.0源码：[barrier函数](https://github.com/ipc-sim/ipc-toolkit/blob/v1.6.0/src/ipc/barrier/barrier.cpp)及[BarrierPotential](https://github.com/ipc-sim/ipc-toolkit/blob/v1.6.0/src/ipc/potentials/barrier_potential.cpp)。本候选对真实间隙g采用 `B=−κ/dhat³ (g²−dhat²)² log(g²/dhat²)`（0<g<dhat），κ含出平面宽度；按固定参考边界长度积分，导数含距离曲率。摩擦沿当前法向的切平面使用原Coulomb平滑，残差切线包含法向容量与切向基刷新；“刷新后的摩擦能量”不是该总残差的全局势。单位/导数与本地源码及差分核对，不据此声称与原接触权重相同。
+
+Puso & Laursen (2002), *A 3D contact smoothing method using Gregory patches*, IJNME54,1161–1194，[出版社摘要](https://onlinelibrary.wiley.com/doi/10.1002/nme.466)。本次只核对摘要：一致的间隙/力计算和相邻片切平面连续性用于减轻节点跨面片时的接触抖动，并改善文中算例收敛。与本次圆鼻折线节点切换证据相符，支持下一步核查曲线一致接触；并未取得算法全文、复现Gregory片或证明本项目适用。不能只平滑显示法向而保留不一致的力、切线和防穿透检测。
+
+[IPC技术补充](https://ipc-sim.github.io/file/IPC-supplement-A-technical.pdf)第8–9节区分点—边/点—点切向映射，说明冻结法向力与切向基后的摩擦势及其平滑。此处的连续Hessian结论不能直接扩展成“每次刷新接触几何后的总残差处处光滑”；本项目使用完整几何耦合Jacobian，刀鼻多边形顶点仍需单侧核查。
+
+Hüeber、Stadler、Wohlmuth (2008), *A primal-dual active set algorithm for three-dimensional contact problems with Coulomb friction*, SISC30,572–596，[作者全文](https://math.nyu.edu/~stadler/papers/friction3d.pdf)，DOI10.1137/060671061。本轮读摘要与第1–2节：通过非光滑互补条件联系活跃集与半光滑Newton，论文的具体问题为线弹性、mortar/乘子离散；未复现，也不能直接给当前有限应变IPC提供收敛保证。
+
+[PETSc SNES手册](https://petsc.org/release/manual/snes/)的Newton线搜索/信赖域是可比较的数值框架。本地诊断实现了残差Armijo线搜索，但没有调用PETSc；普通Newton、邻侧切线及切线混合的有界回放均未通过，不能因引用成熟方法就认定修复成功。新的单点分支消元证据只定位这次离散问题的局部停滞，不是原物理问题无解、真正失稳或裂纹的证明。后续优先检查圆鼻几何分片一致性，而非单纯增加迭代预算。实际结果统一见[求解状态](../docs/solver_status.md)。

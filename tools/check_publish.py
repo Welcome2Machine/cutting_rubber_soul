@@ -16,7 +16,7 @@ DOC_ROOTS=CODE_ROOTS|{'docs','references'}
 
 def allowed(path):
     p=PurePosixPath(path)
-    if path=='docs/video_observations.md':return False
+    if p.name=='video_observations.md':return False
     if path in CONFIGS or path in ROOT_FILES:return True
     if path in {'README.md','AGENTS.md'}:return True
     if p.parts[0] in DOC_ROOTS and p.suffix=='.md':return True

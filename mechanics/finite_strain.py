@@ -18,6 +18,7 @@ class Material:
     poisson: float = .49
     relaxation_s: float | None = None
     volumetric: str = "quadratic_j"
+    viscous_flow: str = "paper2023"
 
     def __post_init__(self):
         if not 0<self.poisson<.5:raise ValueError('Poisson ratio must lie in (0, .5)')
@@ -29,11 +30,14 @@ class Material:
         if self.mu_ov and (self.moduli(True)[0]<=0 or self.relaxation_s is None or not np.isfinite(self.relaxation_s) or self.relaxation_s<=0):
             raise ValueError('A viscous branch needs positive shear and measured positive relaxation time')
         if self.volumetric not in ('quadratic_j','paper2023'):raise ValueError('Unknown volumetric energy')
+        if self.viscous_flow not in ('paper2023','isochoric_maxwell'):
+            raise ValueError('Unknown viscous flow law')
 
     def moduli(self,over=False):
         mu,alpha=(self.mu_ov,self.alpha_ov) if over else (self.mu_eq,self.alpha_eq)
         shear=.5*np.dot(mu,alpha)
         bulk=2*shear*(1+self.poisson)/(3*(1-2*self.poisson))
+        if over and self.viscous_flow=='isochoric_maxwell':bulk=0.
         return shear,bulk
 
     def to_dict(self):return asdict(self)
@@ -62,7 +66,9 @@ def principal(e,material,over=False):
     return energy,tau,h
 
 
-def elastic_response(F,material,*,tangent=True,kinematics='plane_strain'):
+def elastic_response(F,material,*,tangent=True,kinematics='plane_strain',diagnostics=True):
+    if kinematics=='plane_strain' and material.alpha_eq==(1.,) and material.volumetric=='quadratic_j':
+        return _ogden_one_plane_strain(F,material,tangent=tangent,diagnostics=diagnostics)
     # Closed-form specialization of the SAME Ogden alpha=2 law. This avoids
     # spectral decompositions in the intact CB245NE elastic limit; all other
     # laws and plane-stress calculations retain the general spectral kernel.
@@ -78,18 +84,22 @@ def elastic_response(F,material,*,tangent=True,kinematics='plane_strain'):
     H=cofactor/J[:,None,None];I1=np.sum(F*F,axis=(1,2))+1
     G,K=material.moduli();a=J**(-2/3)
     P=G*a[:,None,None]*(F-I1[:,None,None]*H/3)+K*(J-1)[:,None,None]*cofactor
-    b=np.tile(np.eye(3),(len(F),1,1));b[:,:2,:2]=F@F.transpose(0,2,1)
-    cauchy=G*(a/J)[:,None,None]*(b-I1[:,None,None]*np.eye(3)/3)+K*(J-1)[:,None,None]*np.eye(3)
-    out=cauchy[:,2,2]*J
-    result=dict(P=P,energy=G/2*(a*I1-3)+K/2*(J-1)**2,J=J,lambda_out=np.ones(len(F)),
-        cauchy=cauchy,plane_stress_residual=out,metric=np.tile(np.eye(3),(len(F),1,1)),viscous_rate=np.zeros(len(F)))
-    # Keep the general kernel's diagnostic normalization exactly: its h is the
-    # principal Kirchhoff/log-stretch tangent (plane strain need not have tau33=0).
-    eig=np.linalg.eigvalsh(b)
-    values=a[:,None]*eig;mean=values.mean(axis=1)
-    h=2*G*(np.eye(3)*values[:,None,:]-(values[:,None,:]+values[:,:,None])/3+mean[:,None,None]/3)
-    h+=K*J[:,None,None]*(2*J-1)[:,None,None]
-    result['plane_stress_scaled_residual']=np.abs(out)/np.maximum(1.,np.max(np.abs(h),axis=(1,2)))
+    result=dict(P=P,energy=G/2*(a*I1-3)+K/2*(J-1)**2,J=J)
+    if diagnostics:
+        # Assembly needs only P, energy, J and the tangent. Avoid allocating
+        # diagnostic tensors/eigensystems at every quadrature point when the
+        # caller explicitly opts out; the default preserves the public result.
+        b=np.tile(np.eye(3),(len(F),1,1));b[:,:2,:2]=F@F.transpose(0,2,1)
+        cauchy=G*(a/J)[:,None,None]*(b-I1[:,None,None]*np.eye(3)/3)+K*(J-1)[:,None,None]*np.eye(3)
+        out=cauchy[:,2,2]*J
+        result.update(lambda_out=np.ones(len(F)),cauchy=cauchy,plane_stress_residual=out,
+            metric=np.tile(np.eye(3),(len(F),1,1)),viscous_rate=np.zeros(len(F)))
+        # Preserve the diagnostic normalization used by the spectral kernel.
+        eig=np.linalg.eigvalsh(b)
+        values=a[:,None]*eig;mean=values.mean(axis=1)
+        h=2*G*(np.eye(3)*values[:,None,:]-(values[:,None,:]+values[:,:,None])/3+mean[:,None,None]/3)
+        h+=K*J[:,None,None]*(2*J-1)[:,None,None]
+        result['plane_stress_scaled_residual']=np.abs(out)/np.maximum(1.,np.max(np.abs(h),axis=(1,2)))
     if tangent:
         outer=np.einsum('eiJ,ekL->eiJkL',H,H)
         cross=np.einsum('eiL,ekJ->eiJkL',H,H)
@@ -101,6 +111,93 @@ def elastic_response(F,material,*,tangent=True,kinematics='plane_strain'):
     return result
 
 
+def _ogden_one_plane_strain(F,material,*,tangent=True,diagnostics=True):
+    """Exact alpha=1 specialization; no principal-vector derivatives are needed.
+
+    With F33=1 and J>0, the two in-plane stretches satisfy
+    lambda1+lambda2 = sqrt(F:F+2*J). Thus the isochoric energy is
+    2*G*(J**(-1/3)*(lambda1+lambda2+1)-3). The tangent below is its exact
+    Hessian, including the unchanged K/2*(J-1)**2 volumetric energy.
+    This is an optional constitutive law, not a fitted rubber model.
+    """
+    F=np.asarray(F,dtype=float)
+    if F.ndim!=3 or F.shape[1:]!=(2,2) or not np.isfinite(F).all():
+        raise ValueError('Expected finite F(n,2,2)')
+    J=F[:,0,0]*F[:,1,1]-F[:,0,1]*F[:,1,0]
+    if np.any(J<=0):raise FloatingPointError('Inverted deformation')
+    cofactor=np.empty_like(F)
+    cofactor[:,0,0]=F[:,1,1];cofactor[:,1,1]=F[:,0,0]
+    cofactor[:,0,1]=-F[:,1,0];cofactor[:,1,0]=-F[:,0,1]
+    H=cofactor/J[:,None,None]
+    S=np.sqrt(np.sum(F*F,axis=(1,2))+2*J)
+    total=S+1
+    U=(F+cofactor)/S[:,None,None]
+    G,K=material.moduli();a=J**(-1/3)
+    P=2*G*a[:,None,None]*(U-total[:,None,None]*H/3)+K*(J-1)[:,None,None]*cofactor
+    result=dict(P=P,energy=2*G*(a*total-3)+K/2*(J-1)**2,J=J)
+    if diagnostics:
+        cauchy=np.zeros((len(F),3,3))
+        cauchy[:,:2,:2]=(P@F.transpose(0,2,1))/J[:,None,None]
+        out=2*G*a*(1-total/3)+K*J*(J-1)
+        cauchy[:,2,2]=out/J
+        result.update(lambda_out=np.ones(len(F)),cauchy=cauchy,plane_stress_residual=out,
+            metric=np.tile(np.eye(3),(len(F),1,1)),viscous_rate=np.zeros(len(F)))
+        # Match the general kernel's diagnostic normalization; these spectral
+        # values are intentionally absent from the assembly-only path.
+        eig=np.linalg.eigvalsh(F@F.transpose(0,2,1))
+        values=a[:,None]*np.column_stack((np.sqrt(eig),np.ones(len(F))))
+        mean=values.mean(axis=1)
+        h=2*G*(np.eye(3)*values[:,None,:]-(values[:,None,:]+values[:,:,None])/3+mean[:,None,None]/3)
+        h+=K*J[:,None,None]*(2*J-1)[:,None,None]
+        result['plane_stress_scaled_residual']=np.abs(out)/np.maximum(1.,np.max(np.abs(h),axis=(1,2)))
+    if tangent:
+        identity=np.einsum('ik,JL->iJkL',np.eye(2),np.eye(2))
+        # Hessian of det(F), equivalently derivative of cofactor(F), in 2D.
+        determinant_hessian=np.zeros((2,2,2,2))
+        determinant_hessian[0,0,1,1]=determinant_hessian[1,1,0,0]=1.
+        determinant_hessian[0,1,1,0]=determinant_hessian[1,0,0,1]=-1.
+        outer=np.einsum('eiJ,ekL->eiJkL',H,H)
+        cross=np.einsum('eiL,ekJ->eiJkL',H,H)
+        du=(identity+determinant_hessian-np.einsum('eiJ,ekL->eiJkL',U,U))/S[:,None,None,None,None]
+        C=2*G*a[:,None,None,None,None]*(du
+            -(np.einsum('eiJ,ekL->eiJkL',U,H)+np.einsum('eiJ,ekL->eiJkL',H,U))/3
+            +total[:,None,None,None,None]*(outer/9+cross/3))
+        C+=K*J[:,None,None,None,None]*((2*J-1)[:,None,None,None,None]*outer-(J-1)[:,None,None,None,None]*cross)
+        result['tangent']=C.reshape(-1,4,4)
+    return result
+
+
+def _neo_hookean_plane_stress_log_stretch(e2,material):
+    """Safeguarded local thickness solve for positive neo-Hookean/quad-J.
+
+    The isochoric tau33 vanishes at z^2=(lambda1^2+lambda2^2)/2;
+    the volumetric term vanishes at z=1/det(F2). These two points
+    bracket the unique positive thickness root. Curvature in log(z) can
+    be negative before reaching that root, so clipped Newton is unsafe.
+    This bracket is specific to alpha=2, not a general Ogden guarantee.
+    """
+    q_iso=.5*(np.logaddexp(2*e2[:,0],2*e2[:,1])-np.log(2.))
+    q_vol=-e2.sum(axis=1)
+    lo=np.minimum(q_iso,q_vol);hi=np.maximum(q_iso,q_vol)
+    q=np.clip(np.zeros(len(e2)),lo,hi)
+    for _ in range(80):
+        _,t,h=principal(np.column_stack((e2,q)),material)
+        tau=t[:,2];curvature=h[:,2,2]
+        done=np.abs(tau)<=1e-9+64*np.finfo(float).eps*np.max(np.abs(h),axis=(1,2))
+        if np.all(done):
+            if np.any(curvature<=0):
+                raise RuntimeError('Unstable elastic plane-stress thickness root')
+            return q
+        lo=np.where((tau<0)&~done,q,lo)
+        hi=np.where((tau>0)&~done,q,hi)
+        correction=np.zeros_like(q)
+        np.divide(tau,curvature,out=correction,where=curvature>0)
+        trial=q-correction
+        usable=(curvature>0)&np.isfinite(trial)&(trial>lo)&(trial<hi)
+        q=np.where(done,q,np.where(usable,trial,.5*(lo+hi)))
+    raise RuntimeError('Elastic plane-stress bracket solve failed')
+
+
 def _spectral_elastic_response(F,material,*,tangent=True,kinematics='plane_strain'):
     """Equilibrium Ogden response; plane strain fixes F33=1, not stress33=0."""
     F=np.asarray(F,dtype=float)
@@ -109,7 +206,10 @@ def _spectral_elastic_response(F,material,*,tangent=True,kinematics='plane_strai
     if np.any(det<=0):raise FloatingPointError('Inverted deformation')
     if kinematics not in ('plane_strain','plane_stress'):raise ValueError('Unknown kinematics')
     eig,Q=np.linalg.eigh(F@F.transpose(0,2,1));e2=.5*np.log(eig)
-    q=np.zeros(len(F))
+    q=(_neo_hookean_plane_stress_log_stretch(e2,material)
+       if kinematics=='plane_stress' and material.alpha_eq==(2.,)
+       and material.mu_eq[0]>0 and material.volumetric=='quadratic_j'
+       else np.zeros(len(F)))
     for _ in range(60):
         w,t,h=principal(np.column_stack((e2,q)),material)
         if kinematics=='plane_strain' or np.all(np.abs(t[:,2])<=1e-9+64*np.finfo(float).eps*np.max(np.abs(h),axis=(1,2))):break
@@ -153,8 +253,15 @@ def response(F,previous_metric,dt,material,*,tangent=True,kinematics="plane_stre
     q=-np.log(determinant) if kinematics=="plane_stress" else np.zeros(len(F))
     e=np.column_stack((tr2,q+.5*np.log(A[:,2,2])))
     shear,bulk=material.moduli(True)
-    eta_i=2*shear*material.relaxation_s;eta_v=bulk*material.relaxation_s
-    L=dt*((np.eye(3)-np.ones((3,3))/3)/(2*eta_i)+np.ones((3,3))/(9*eta_v))
+    if material.viscous_flow=='isochoric_maxwell':
+        # Positive deviatoric mobility only: no unmeasured bulk relaxation.
+        # Here relaxation_s is the actual infinitesimal shear relaxation time:
+        # tau_dev=2*G*e_dev, de_vis/dt=tau_dev/(2*G*relaxation_s).
+        L=dt*(np.eye(3)-np.ones((3,3))/3)/(2*shear*material.relaxation_s)
+    else:
+        # Preserve the original 2023 reproduction and its parameter convention.
+        eta_i=2*shear*material.relaxation_s;eta_v=bulk*material.relaxation_s
+        L=dt*((np.eye(3)-np.ones((3,3))/3)/(2*eta_i)+np.ones((3,3))/(9*eta_v))
     local=np.empty((len(F),4,4));r=np.empty((len(F),4))
     for iteration in range(35):
         eeq=np.column_stack((eq2,q))
@@ -185,11 +292,16 @@ def response(F,previous_metric,dt,material,*,tangent=True,kinematics="plane_stre
     new_metric=np.zeros_like(A)
     new_metric[:,:2,:2]=inverse@elastic_b@inverse.transpose(0,2,1)
     new_metric[:,2,2]=np.exp(2*(e[:,2]-q))
-    dev_tau=tov-tov.mean(axis=1)[:,None]
-    viscous_rate=(dev_tau**2).sum(axis=1)/(2*eta_i)+tov.sum(axis=1)**2/(9*eta_v)
+    viscous_rate=np.einsum('ni,ij,nj->n',tov,L/dt,tov)
     result=dict(P=P,energy=weq+wov,metric=new_metric,lambda_out=np.exp(q),
         J=determinant*np.exp(q),plane_stress_residual=teq[:,2]+tov[:,2],viscous_rate=viscous_rate,
         plane_stress_scaled_residual=np.abs(teq[:,2]+tov[:,2])/np.maximum(1.,stress_scale))
+    # Reduced local incremental potential: elastic energy plus quadratic
+    # viscous distance. Its F derivative is P; stored energy alone is not.
+    # On the converged return map e-trial=-L*tau, the distance is tau.L.tau/2.
+    result['incremental_potential']=weq+wov+.5*dt*viscous_rate
+    result['equilibrium_energy']=weq
+    result['overstress_energy']=wov
     if not tangent:return result
     directions=np.eye(4).reshape(4,2,2)
     db=directions[None]@F[:,None].transpose(0,1,3,2)+F[:,None]@directions.transpose(0,2,1)[None]

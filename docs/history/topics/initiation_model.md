@@ -1,6 +1,10 @@
 # 完整试样有限应变与起裂候选
 
-本页描述方程、离散及能力边界；运行结果集中于 [求解状态](solver_status.md)，实验目标以 [任务要求](task_requirements.md)、[模型规范](current_model_spec.md) 和原始资料为准。
+> Historical technical record. Obsolete outputs were retired on 2026-10-20; summary links do not include the original figures or full replay histories. See [current research status](../../research_status.md).
+
+> 当前入口说明（2026-10-06）：本页下述 P2 与乘子接触描述的是保留的 `run_initiation` 实现；本轮实际运行的 `prototype.ipc_reference` 使用 P1 纯位移三角形和 IPC 接触，不使用这里的 P2 离散。材料有限应变内核共用，单元和接触宿主不同。不能把此页的 P2 验证结论直接当作当前 IPC 网格的精度证明。
+
+本页描述方程、离散及能力边界；运行结果集中于 [求解状态](../../solver_status.md)，实验目标以 [任务要求](../../task_requirements.md)、[模型规范](../../current_model_spec.md) 和原始资料为准。
 
 ## 材料与体单元
 

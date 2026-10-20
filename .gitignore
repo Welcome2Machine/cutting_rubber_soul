@@ -28,3 +28,4 @@ reproductions/dammass2023/reference/
 references/citation_metadata.json
 docs/validation.json
 docs/video_observations.md
+docs/**/video_observations.md

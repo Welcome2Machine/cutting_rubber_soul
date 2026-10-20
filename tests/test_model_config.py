@@ -3,6 +3,24 @@ from prototype.model_config import FEMConfig
 
 
 class ModelConfigTests(unittest.TestCase):
+    def test_current_moduli_and_explicit_legacy_input_are_distinct(self):
+        import json
+        from pathlib import Path
+
+        current = FEMConfig()
+        current.validate()
+        self.assertEqual(current.shear_modulus_n_mm2, .47)
+        self.assertEqual(current.poisson_ratio, .49)
+        self.assertAlmostEqual(current.bulk_modulus_n_mm2, 23.343333333333333)
+
+        # A new default must not silently revise old input/checkpoint physics.
+        path = Path(__file__).resolve().parents[1] / 'prototype' / 'ipc_baseline.json'
+        legacy = FEMConfig(**json.loads(path.read_text(encoding='utf-8'))['model'])
+        self.assertEqual(legacy.shear_modulus_n_mm2, .66)
+        self.assertAlmostEqual(legacy.bulk_modulus_n_mm2, 32.78)
+        restored = FEMConfig(**legacy.to_dict())
+        self.assertEqual(restored.to_dict(), legacy.to_dict())
+
     def test_target_loading_is_three_mm_and_fifteen_seconds(self):
         c=FEMConfig()
         c.validate()
