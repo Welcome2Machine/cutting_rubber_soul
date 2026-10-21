@@ -198,7 +198,7 @@ Fz取刀具所有节点反力的实验室竖直合力，包含法向和摩擦。
 
 - **E1 历史机器证据：** 原`theory_audit_20261018`已退役，保留[精简摘要](../outputs/retired_evidence/theory_audit_20261018.json)。当时包含8场重新组装、坐标投影、参考区域虚功、各试次原力/增量比较及代数修正限制；旧审查脚本仅在清理前源码备份中，不再作为当前命令入口。
 - **E2 界面干预：** `outputs/interface_candidate_20261018/paths_05mm/early_stop_review.json`及`stop_review.py`，完整33和停止57均保留。
-- **E3 内部细化：** `outputs/native_diagnosis_20261018/mesh_paths/queue_status.json`，以及[当前求解状态](solver_status.md)的10月18日终态。
+- **E3 内部细化：** 原完整路径已退役，保留[机器摘要](../outputs/retired_evidence/native_diagnosis_20261018.json)及[几何资格摘要](../outputs/retired_evidence/native_mesh_geometry_20261018.json)。它们是历史证据，不是可完整重放的现有场；只细化内部、未细化接触边界。
 - **E4 材料实现与参数屏查：** [材料核查](../references/native_material_audit_20261018.md)，`outputs/native_material_audit_20261018/`；不能将历史回放写成新有限元力。
 - **E5 约束/模式：** `outputs/angle_modes_20261015/README.md`及`review.json`，30/60解析接触条件态；不伪装为本轮33/57原生全历史结果。
 - **E6 形状/非线性松弛：** `outputs/material_shape_20261018/replay/screen.json`、`outputs/nonlinear_relaxation_20261016/README.md`。

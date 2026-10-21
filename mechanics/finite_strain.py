@@ -29,7 +29,10 @@ class Material:
             raise ValueError('Positive equilibrium shear and Poisson ratio in (0, .5) required')
         if self.mu_ov and (self.moduli(True)[0]<=0 or self.relaxation_s is None or not np.isfinite(self.relaxation_s) or self.relaxation_s<=0):
             raise ValueError('A viscous branch needs positive shear and measured positive relaxation time')
-        if self.volumetric not in ('quadratic_j','paper2023'):raise ValueError('Unknown volumetric energy')
+        # log_j names the same volumetric potential used by the paper2023
+        # reproduction, independently of the viscous flow law. Keep the old
+        # spelling/signatures for exact replay of frozen reproduction histories.
+        if self.volumetric not in ('quadratic_j','log_j','paper2023'):raise ValueError('Unknown volumetric energy')
         if self.viscous_flow not in ('paper2023','isochoric_maxwell'):
             raise ValueError('Unknown viscous flow law')
 

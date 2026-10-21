@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import shutil
 import sys
+import time
 import numpy as np
 
 ROOT = Path(__file__).resolve().parent
@@ -141,12 +142,33 @@ def compute_process_policy(mode='compute'):
             restore()
 
 
+def replace_with_retry(temporary, path, *, timeout_s=2.):
+    """Bounded retry for Windows sharing/access conflicts on atomic replace.
+
+    Readers (dashboard, editor, antivirus) can briefly deny delete-sharing.
+    Never remove the destination first, never report an unwritten result as
+    saved, and never swallow persistent permissions or other I/O errors.
+    """
+    temporary, path = Path(temporary), Path(path)
+    deadline = time.monotonic()+timeout_s
+    delay = .01
+    while True:
+        try:
+            temporary.replace(path)
+            return
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(min(delay, max(0., deadline-time.monotonic())))
+            delay = min(.1, 2*delay)
+
+
 def write_json(path, value):
     path = Path(path)
     payload = json.dumps(value, indent=2, ensure_ascii=False, allow_nan=False) + '\n'
     temporary = path.with_suffix('.tmp')
     temporary.write_text(payload, encoding='utf-8')
-    temporary.replace(path)
+    replace_with_retry(temporary, path)
 
 
 def save_npz(path, **values):
@@ -154,7 +176,7 @@ def save_npz(path, **values):
     temporary = path.with_suffix('.tmp')
     with temporary.open('wb') as stream:
         np.savez_compressed(stream, **values)
-    temporary.replace(path)
+    replace_with_retry(temporary, path)
 
 
 def source_hashes(packages=('prototype', 'mechanics'), *, snapshot=None):

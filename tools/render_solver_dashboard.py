@@ -262,9 +262,10 @@ def render(data, study, refresh=False):
 
 
 def atomic_write(path, text):
+    from run_support import replace_with_retry
     temp = path.with_suffix(path.suffix+'.tmp')
     temp.write_text(text, encoding='utf-8')
-    os.replace(temp, path)
+    replace_with_retry(temp, path)
 
 
 def render_document(source, study):

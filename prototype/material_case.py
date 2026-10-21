@@ -23,18 +23,23 @@ def signature(p):
                 physical_force_tolerance_n=BASELINE['force_tolerance_n'])
     if getattr(p, 'actual_affine_policy', False):
         value['predictor_policy'] = 'actual-affine-stagnation-rule'
+    if hasattr(p, 'contact_control'):
+        value['contact_control'] = p.contact_control
+    if hasattr(p, 'material_kinematics'):
+        value['material_kinematics'] = p.material_kinematics
     if getattr(p, 'shear_limit_mpa', None) is not None:
         value['interface_law'] = dict(name='nodal-current-area-smooth-shear-limit',
             strength_mpa=p.shear_limit_mpa,smooth_min_power=4,area='current rubber boundary dual area')
     return value
 
 def make_problem(*,angle,equilibrium_shear,maxwell_shear,relaxation_s,loading_rate,bulk_modulus=None,mu=.35,
-                 equilibrium_alpha=2.,maxwell_alpha=2.,actual_affine_policy=False,shear_limit_mpa=None):
+                 equilibrium_alpha=2.,maxwell_alpha=2.,actual_affine_policy=False,shear_limit_mpa=None,
+                 volumetric='quadratic_j'):
     """Shared construction for actual-angle runs and completed-reference audits."""
     if not all(np.isfinite(a) and 1 <= a <= 4 for a in (equilibrium_alpha,maxwell_alpha)):
         raise ValueError('Explicit candidate exponents must be in [1, 4]')
     p=ViscoelasticProblem(maxwell_shear=maxwell_shear,relaxation_s=relaxation_s,
-        loading_rate=loading_rate,bulk_modulus=bulk_modulus,case='oblique',mu=mu,
+        loading_rate=loading_rate,bulk_modulus=bulk_modulus,volumetric=volumetric,case='oblique',mu=mu,
         shear_modulus=equilibrium_shear,ogden_alpha=equilibrium_alpha,dhat=.0025,local_spacing=.05,
         surface_spacing=.005,nose_facets=64,inclination=angle,tip_radius=.02,
         fine_halfwidth=3.,max_iterations=500,predictor='secant',hessian_mode='regularized',element='p1')

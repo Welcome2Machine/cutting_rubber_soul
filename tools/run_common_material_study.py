@@ -170,18 +170,22 @@ def check(m,out):
         if sha(name)!=h:raise ValueError('Study input changed: '+name)
 
 
-def case(out,job):
+def case(out,job,*,factory=None,targets=None):
+    # Reuse the exact-history lifecycle for explicitly separate contact controls.
+    # Existing callers retain their original factory and depth schedule.
+    factory=make if factory is None else factory
+    targets=schedule(job['target_mm']) if targets is None else targets
     m=read(out/'manifest.json');check(m,out);folder=out/job['name'];folder.mkdir(exist_ok=False);(folder/'states').mkdir()
     for name in m['source_sha256']:
         dest=folder/'source'/name;dest.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(out/'source'/name,dest)
     r=dict(status='initializing',completed=False,target_mm=job['target_mm'],steps=[],rejected_load_attempts=[],
-           source_sha256=m['source_sha256'],settings=dict(increment=.01),job=job,
+           source_sha256=m['source_sha256'],settings=dict(increment=job.get('increment',.01)),job=job,
            tip_contact_tracking=dict(errors=[]),force_tolerance_n=BASELINE['force_tolerance_n'])
     write_json(folder/'result.json',r);began=time.monotonic();p=None;x=None;depth=None
     with (folder/'run.log').open('w',encoding='utf-8',buffering=1) as log,contextlib.redirect_stdout(log),threadpool_limits(1),compute_process_policy() as policy:
         r['runtime_process_policy']=policy
         try:
-            p=make(job['angle'],job['parameters']);r['signature']=json.loads(json.dumps(signature(p)))
+            p=factory(job['angle'],job['parameters']);r['signature']=json.loads(json.dumps(signature(p)))
             r['reference_contact_check']=p.reference_contact_check;r['mesh']=dict(nodes=p.n,elements=len(p.mesh.triangles))
             x=p.rest.copy();old=p.start
             if job.get('resume'):x,old=resume(p,Path(job['resume']),folder,r)
@@ -189,7 +193,7 @@ def case(out,job):
             tracker=TipContactTracker(p.rest,p.mesh.triangles,p.n,p.config,p.dhat,p.nose_facets)
             r.update(status='running',setup_s=time.monotonic()-began);write_json(folder/'result.json',r)
             tick=time.monotonic();deadline=tick+job['seconds']
-            for depth in schedule(job['target_mm']):
+            for depth in targets:
                 if depth<=old+1e-12:continue
                 step_tick=time.monotonic();x,row=p.step(x,old,float(depth),deadline);old=float(depth)
                 row['wall_step_s']=time.monotonic()-step_tick
@@ -215,7 +219,7 @@ def case(out,job):
         terminal=r['status'];r['status']='auditing';write_json(folder/'result.json',r)
         try:
             t=time.monotonic()
-            if r['steps']:audit(make(job['angle'],job['parameters']),folder,r,deadline=t+600.)
+            if r['steps']:audit(factory(job['angle'],job['parameters']),folder,r,deadline=t+600.)
             r.update(status=terminal,audit_s=time.monotonic()-t)
         except Exception as exc:r.update(status='audit_failed',completed=False,audit_error=repr(exc));traceback.print_exc()
         r['elapsed_s']=time.monotonic()-began
@@ -256,6 +260,26 @@ def render(out,state):
     atomic_write(out/'index.html',shell('共同材料可行性',body,refresh=state['status']=='running'));write_json(out/'queue_status.json',state)
 
 
+def wait_for_case(process, seconds, heartbeat, *, poll_seconds=10):
+    """A dashboard IO failure must neither abandon nor duplicate a live solve."""
+    tick=time.monotonic();errors=[];forced=None
+    try:
+        while process.poll() is None:
+            if time.monotonic()-tick > seconds:
+                forced='supervisor_timeout';process.terminate();process.wait(timeout=30);break
+            try:heartbeat()
+            except OSError as exc:
+                errors.append(dict(elapsed_s=time.monotonic()-tick,error=repr(exc)))
+                print('REPORT_IO_ERROR '+repr(exc),file=sys.stderr,flush=True)
+            time.sleep(poll_seconds)
+    finally:
+        # Non-IO reporting/programming errors propagate, but cannot leave an
+        # unowned solver running while the queue starts another case.
+        if process.poll() is None:
+            process.terminate();process.wait(timeout=30)
+    return forced,errors
+
+
 def supervise(out,m,job,state):
     check(m,out);folder=out/job['name']
     if folder.exists():raise ValueError('Refuse existing case')
@@ -263,11 +287,9 @@ def supervise(out,m,job,state):
     forced=None;tick=time.monotonic()
     with (out/(job['name']+'.stdout.log')).open('wb') as stdout,(out/(job['name']+'.stderr.log')).open('wb') as stderr:
         p=subprocess.Popen(cmd,cwd=out/'source',env=child_env(m),stdin=subprocess.DEVNULL,stdout=stdout,stderr=stderr,**background_child_options())
-        job.update(status='running',pid=p.pid,started=stamp(),command=cmd);render(out,state)
-        while p.poll() is None:
-            if time.monotonic()-tick>job['seconds']+900:
-                forced='supervisor_timeout';p.terminate();p.wait(timeout=30);break
-            render(out,state);time.sleep(10)
+        job.update(status='running',pid=p.pid,started=stamp(),command=cmd)
+        forced,io_errors=wait_for_case(p,job['seconds']+900,lambda:render(out,state))
+        job['reporting_io_errors']=io_errors
     if p.returncode and not forced:forced=classify_process_exit(p.returncode)
     summary=summarize_case(folder,job,p.returncode,forced_status=forced)
     job.update(status=summary['status'],summary=summary,wall_s=time.monotonic()-tick)

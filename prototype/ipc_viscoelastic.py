@@ -14,7 +14,7 @@ from .ipc_reference import IPCProblem
 
 class ViscoelasticProblem(IPCProblem):
     def __init__(self, *, maxwell_shear, relaxation_s, loading_rate,
-                 bulk_modulus=None, **kwargs):
+                 bulk_modulus=None, volumetric='quadratic_j', **kwargs):
         if not all(np.isfinite(x) and x>0 for x in
                    (maxwell_shear,relaxation_s,loading_rate)):
             raise ValueError('Explicit positive Maxwell shear, time and loading rate required')
@@ -22,6 +22,8 @@ class ViscoelasticProblem(IPCProblem):
             raise ValueError('This candidate requires P1 with the existing friction PTC host')
         if bulk_modulus is not None and (not np.isfinite(bulk_modulus) or bulk_modulus<=0):
             raise ValueError('Explicit bulk modulus must be finite and positive')
+        if volumetric not in ('quadratic_j','log_j'):
+            raise ValueError('Intact Maxwell volume law must be quadratic_j or log_j')
         super().__init__(**kwargs)
         if bulk_modulus is not None:
             # P1 has no cached pressure/enrichment operator. Geometry/contact
@@ -36,7 +38,7 @@ class ViscoelasticProblem(IPCProblem):
             raise ValueError('Use the friction PTC host for this material candidate')
         self.material=replace(from_config(self.config),mu_ov=(float(maxwell_shear),),
                               alpha_ov=(2.,),relaxation_s=float(relaxation_s),
-                              viscous_flow='isochoric_maxwell')
+                              viscous_flow='isochoric_maxwell',volumetric=volumetric)
         self.loading_rate=float(loading_rate)
         self.material_metric=np.tile(np.eye(3),(len(self.mesh.triangles),1,1))
         self.previous_material_metric=self.material_metric.copy()
