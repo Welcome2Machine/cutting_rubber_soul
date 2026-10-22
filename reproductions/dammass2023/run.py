@@ -18,7 +18,7 @@ def prepare(out):
     out.mkdir(parents=True,exist_ok=True)
     write_json(out/'provenance.json',dict(paper='10.1007/s00466-023-02310-1',
         python=platform.python_version(),numpy=np.__version__,
-        sources=source_hashes(('reproductions/dammass2023','mechanics'),snapshot=out/'source_snapshot'),
+        sources=source_hashes(('reproductions/dammass2023','mechanics')),
         paper_sha256=hashlib.sha256((ROOT/'references/updated phase.pdf').read_bytes()).hexdigest()))
 
 

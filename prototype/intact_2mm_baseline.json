@@ -1,0 +1,48 @@
+{
+  "id": "intact-common-maxwell-2mm-v1",
+  "purpose": "Computational baseline; not an experimentally identified material",
+  "angles_deg": [
+    0,
+    33,
+    57
+  ],
+  "depth_mm": 2.0,
+  "increment_mm": 0.01,
+  "equilibrium_shear_mpa": 0.14,
+  "maxwell_shear_mpa": 1.24,
+  "relaxation_s": 1.7,
+  "bulk_modulus_mpa": 23.34333333333331,
+  "mu": 0.35,
+  "loading_rate_mm_s": 0.2,
+  "solver": {
+    "backend": "native SuperLU",
+    "predictor": "secant, then affine from the same accepted state on numerical failure",
+    "globalization": "model-error",
+    "max_ptc_iterations_per_attempt": 500,
+    "secant_stagnation_window": 40,
+    "affine_stagnation_window": 0,
+    "minimum_adaptive_increment_mm": 0.000625,
+    "observed_cutbacks": 0,
+    "force_tolerance_n": 0.0001,
+    "threads": 2,
+    "replay_solve_budget_s": 21600
+  },
+  "cases": {
+    "0": {
+      "path": "outputs/baseline/angle0",
+      "result_sha256": "d1b8e6f6cd187483ee72137f0a9987a5a724ded403683a5c2fe37b2edb2a4ae3",
+      "audit_sha256": "19bb873479cf6d8e6f7d5b776a18ad5f1acec7c6dc2e63d713f50f0f826f8851"
+    },
+    "33": {
+      "path": "outputs/baseline/angle33",
+      "result_sha256": "3f8ed06af8341517dd78f6c971cd0fb384e27274c8ea71adf5f4cad629fcfd54",
+      "audit_sha256": "476ce09384694a8acb01bf280161608194529f4f454a40c80b8c2159786eb546"
+    },
+    "57": {
+      "path": "outputs/baseline/angle57",
+      "result_sha256": "6080e2890334bbe865b5d0d1d686e02da60b491414a805b82a917da52a53edd2",
+      "audit_sha256": "c185deec50ca4ce3770a1aa501eb221bd25bc85d3cf6ce261cd9c1b9b90fbb61"
+    }
+  },
+  "evidence_retention": "Complete accepted states and original numerical reports retained; frozen source trees removed at user request. Fresh audit uses current code; original source replay is unavailable."
+}

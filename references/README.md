@@ -1,85 +1,169 @@
-# 项目文献库
+# 参考文献原文与引用导读
 
-2026-10-21：[共同参数与全历史敏感性](../docs/model_identifiability_audit.md#文献依据及阅读范围)。
-核读dolfin-adjoint官方时间依赖逆问题说明，以及Hartmann–Gilbert 2021有限黏弹材料识别的指定网页章节。
-用于区分全历史总导数、冻结状态偏导和局部可辨识性；未宣称复现其反演或由局部失败证明模型族无能力。
+整理：2026-10-22。本目录合并原文献目录、方法笔记和专题导读，保留原始论文PDF；不保存重复检索日志、下载元数据或逐次运行状态。文献说明与项目结果分开：后者见[研究历史](../docs/research_history.md)。本次只整理已有阅读记录，没有重新联网验证，也不把摘要升级为全文证据。
 
-2026-10-21：[有限宽相容性诊断依据](../docs/finite_width_diagnostic.md#文献依据及阅读范围)。
-核对Bleyer/FEniCSx广义平面应变教程的位移场、整体面外自由度和合力约束正文；
-Ahmadi等仅摘要。常数广义平面应变、局部平面应力和当前连续面外位移诊断明确区分，均不冒充完整三维切割验证。
+阅读标记：**F**＝曾核读原文相关章节，并非逐页全读；**A**＝摘要/元数据；**S**＝官方文档或间接来源；**U**＝版本或身份未充分确认。保留R编号便于追溯，编号不等于论文篇数。
 
-2026-10-21：[小角度幅值与面外约束因素](../docs/angle_amplitude_factors.md#文献依据及阅读范围)。
-重核Abaqus可压缩性正文与Ahmadi等平面应力论文作者摘要；分别限定材料压缩性、面外自由与有限宽三维的适用范围。
+## 当前任务的阅读顺序
 
-2026-10-21：[刀尖半径与压入/起裂力](blade_radius_notes.md)。核读McCarthy等2010作者稿相关章节，
-区分同深度完整体反力和起裂力。10/20/40 μm为本地敏感性范围，不是刀99755实测参数。
+1. **材料与近线性压入：** R03、R28–R30、R54及下文Reese–Govindjee。当前主线是有限应变等容Maxwell，并非完整Bergström–Boyce；静态G不能独立识别G0、G∞或松弛谱。近线性可来自接触几何与时间响应共同作用，不能直接用乘指数衰减的总力替代FE。
+2. **接触与运动学：** R17/R42、Duong–Sauer、GCP。共同刚体运动、表面材料身份、投影/激活、完整切线和接触积分须一起核查；不能在原IPC模板中任意删除VV或重复积分。
+3. **离散与约束：** R32、R37–R38、R53及广义平面应变教程。稳定配对、高阶几何、局部平面应力与有限宽三维是不同问题，方法名称不证明本项目精度或可解性。
+4. **拟合：** R26–R27、Hartmann–Gilbert及dolfin-adjoint。含内部变量的参数变化必须传播整个历史；固定旧历史偏导、局部切线预测和有限参数加载各自独立验收。
+5. **未来断裂：** R01–R04、R09–R11。当前不启用断裂；切后稳态、低压CZM结论和起裂强度不能移植到未裂高压区。
 
-2026-10-21：[接触材料坐标与几何离散](contact_transport_notes.md)。补核Duong–Sauer 2019的
-表面接触运动学、面积积分和完整线性化；Tur等2012仅获摘要/引言，未冒充全文阅读。
-本地传输核不是运动摩擦锥或mortar复现，实际场资格与实现边界单独记录。
+## 对本项目有直接约束的解释
 
-2026-10-21：[模型结构与接触历史核查](../docs/model_structure_review.md)。核读Duong–Sauer 2019
-全文HTML第3.1–3.2节的表面参数、旧相互作用点与滑移点定义，以及Abaqus可压缩性说明。
-本地跨样条节点原型不是论文完整实现；同形NH端点限制和实际场条件导数由本地计算检验。
+- *Cutting soft materials*的弹性体可平滑地从压入转为切割；无明显掉力不证明未裂，力曲线斜率下降也不能独立给出起裂时刻。
+- Kojima2020在其薄硅胶/垫层/13.9°刀实验中观察到前转折近线性且斜率弱速度依赖，不能把本项目全部早段偏差预先解释为黏性主导。
+- Mitsomwang2014给出无损伤、大应变、平面应变、Mooney–Rivlin和正则库仑刀压入先例；试样/支承不同，图中仍有上弯，不是严格线性公式。
+- 严格不可压缩、二维平面应变且第三主伸长为1时，标准两参数Mooney–Rivlin的I1/I2形状退化，不能靠重新分配这两个系数产生任意新曲线形状。可压缩性、面外运动或更一般本构需另行分析。
+- 沿刃拉切与本项目面内斜压的角度定义不同；能量分解与力的坐标投影不是改变摩擦参数的因果贡献。
+- 文献的收敛理论、材料参数及现成软件能力不替代本项目真实残差、正J、CCD、双历史与连续加载检查。
 
-2026-10-21：[物理资格与接触修正](../docs/physical_qualification.md#4-文献核对及下一步实现边界)。
-补核完整表面投影/客观滑移的实现要求、MOOSE摩擦mortar的活动集与加权接触量，并回查No Free Slide、
-Convergent IPC及有限厚度耦合的适用范围。阅读范围逐条标记；没有把局部核称为mortar复现或保证库迁移成功。
+## 切割、断裂与材料时间响应
 
-2026-10-21：[材料参数与sim2real判读](../docs/material_uncertainty.md)。目视核对Maxell Kureha
-CB245NE原始报告的23°C静态剪切模量.47 MPa及“测定值非规格值”；结合Abaqus黏弹参数定义、
-Jerrams 2005机构摘要，明确不能把厂家一个模量直接等同G0或G∞。本轮参数为受控假说，
-不是文献识别值；PDF只保存在本地诊断输出，引用与阅读范围见该文。
+| ID | 来源 | 已有阅读范围、用途与限制 |
+|---|---|---|
+| R01 | Spagnoli等（2019），*Cutting resistance of soft materials: Effects of blade inclination and friction*，[DOI](https://doi.org/10.1016/j.tafmec.2019.02.017) | F；斜切能量/摩擦。其刀具角度定义、黏附剪应力和贯穿后稳态不能直接替代当前压入 |
+| R02 | Dammaß、Ambati、Kästner（2021），*A unified phase-field model of fracture in viscoelastic materials*，[DOI](https://doi.org/10.1007/s00161-021-01013-3) | F；小应变黏弹相场，不能用于当前有限应变材料核 |
+| R03 | Dammaß等（2023），*Phase-field modelling and analysis of rate-dependent fracture phenomena at finite deformation*，[DOI](https://doi.org/10.1007/s00466-023-02310-1) | F；有限变形黏弹材料与相场，已有独立复现；EPDM参数不移植CR |
+| R04 | Moreno-Mateos、Steinmann，*Cutting soft materials: how material differences shape the response*，[2025预印本](https://arxiv.org/abs/2507.13565)、[2026期刊](https://doi.org/10.1038/s41524-025-01869-y) | F；力/表面位移、体材料与界面机制。2026-01-06正式发表；DOI中的2025不是期刊年份。低接触压力和CZM结论依赖工况 |
+| R09 | Lopez-Pamies等（2025），*Classical variational phase-field models cannot predict fracture nucleation*，[DOI](https://doi.org/10.1016/j.cma.2024.117520) | F；独立强度与起裂，不把正则化长度拟合当盲预测 |
+| R10 | Kamarei、Breedlove、Lopez-Pamies（2025），*Nucleation and propagation of fracture in viscoelastic elastomers: A complete phase-field theory*，[v1](https://arxiv.org/abs/2506.16479v1) | F（部分章节）；黏弹性/强度/断裂能联合候选，未耦合本项目刀具摩擦 |
+| R11 | Lopez-Pamies等（2026），*Nucleation and propagation of brittle fracture as a constrained energy minimization problem*，[预印本](https://arxiv.org/abs/2608.28326) | F；强度约束允许萌生区域；非保守摩擦仍需扩展 |
+| R28 | Bergström、Boyce（1998），*Constitutive modeling of the large strain time-dependent behavior of elastomers*，[出版社](https://www.sciencedirect.com/science/article/abs/pii/S0022509697000756) | A；填炭黑CR有限应变率效应，不能移植支路参数 |
+| R29 | Efremov、Kotova、Timashev（2020），*Viscoelasticity in simple indentation-cycle experiments: a computational study*，[DOI](https://www.nature.com/articles/s41598-020-70361-y) | F；加载时间/松弛竞争影响曲线；总力卷积不是新的有限元重算 |
+| R30 | Kojima、Nagasawa、Igarashi（2020），*Cutting Characteristics of Silicone Rubber Sheet with Respect to Indentation Velocity of Keen Wedge Blade*，[DOI 10.9773/sosei.61.1](https://www.jstage.jst.go.jp/article/sosei/61/708/61_1/_article/-char/en) | F；早段近线性且斜率弱速度依赖，反对自动把前裂差异解释成黏性主导；硅胶/支承/刀形不同 |
+| R47 | Anssari-Benam、Bucchi、Destrade、Saccomandi（2022期刊/2024预印本），*The generalised Mooney space for modelling the response of rubber-like materials*，[DOI](https://doi.org/10.1007/s10659-022-09889-1)、[作者稿](https://arxiv.org/abs/2403.01223) | A；多变形模式约束本构选择，不提供本批CR材料参数 |
 
-2026-10-21：[实际接触切换与求解候选审查](../docs/contact_solver_review.md)。
-定向核查SciPy LSMR和PETSc SNES官方方法说明；本地候选未通过实际增量，
-未声称接入PETSc或解决57°，方法名称不能替代现场验收。
+## 近不可压离散、边界及压入机理
 
-2026-10-21：[接触修正与长路径对照](../docs/contact_time_validation.md)。补核IPC摩擦时间尺度、
-Kratos有限间隙客观滑移说明、Du等作者稿的分片接触数值作用。局部客观滑移核已通过小测试但未接入FE；
-直接删相邻VV在本地特征切换反例中产生5.59 N跳变，已否决。长路径只隔离正则/时间离散，不改变共同材料。
+| ID | 来源 | 已有阅读范围、用途与限制 |
+|---|---|---|
+| R07 | Maas等（2011），*Implementation and Verification of a Nodally-Integrated Tetrahedral Element in FEBio*，UUSCI-2011-007，[原文](https://publications.sci.utah.edu/publications/SCITechReports/UUSCI-2011-007.pdf) | F；锁死/软模/稳定化权衡；三维UT4不保证二维节点体积方案 |
+| R14 | Hohlfeld、Mahadevan（2011），*Unfolding the Sulcus*，[DOI](https://doi.org/10.1103/PhysRevLett.106.105702) | F；局部折皱与分支，不能把本地不收敛直接认定为物理分岔或断裂 |
+| R31 | Lubarda、Lubarda（2024期刊/2023作者稿），二维圆柱压入与位移约束研究，[DOI](https://doi.org/10.1016/j.euromechsol.2024.105362)、[全文](https://arxiv.org/html/2309.02361v1) | F（作者稿）；压入量依赖远场位移基准。小变形圆柱不能量化薄刀有限应变 |
+| R32 | Ahmadi等（2024预印本），*Plane stress finite element modelling of arbitrary compressible hyperelastic materials*，[原文](https://arxiv.org/html/2410.22562v1) | F；出平面变量与一致凝聚；不能据此将20 mm宽试样直接改平面应力 |
+| R33 | Bonet、Burton（1998），*A simple average nodal pressure tetrahedral element for incompressible and nearly incompressible dynamic explicit applications*，[出版来源](https://onlinelibrary.wiley.com/doi/abs/10.1002/%28SICI%291099-0887%28199805%2914%3A5%3C437%3A%3AAID-CNM162%3E3.0.CO%3B2-W) | A/方法来源；节点平均压力，非二维准静态接触保证 |
+| R34 | Bonet、Marriott、Hassan（2001），*An averaged nodal deformation gradient linear tetrahedral element for large strain explicit dynamic applications*，[DOI](https://doi.org/10.1002/cnm.429) | A/方法来源；平均压力在弯曲问题的短板，需单独验收柔度 |
+| R35 | Bercovier、Pironneau（1979），P1-iso-P2定义来源，[DOI](https://doi.org/10.1007/BF01399555) | S；由Symfem定义追溯。未独立全文核对，不把Stokes结论移植有限应变 |
+| R36 | Koko，*Uzawa conjugate gradient method for the Stokes problem: Matlab implementation with P1-iso-P2/P1 finite element*，[作者稿](https://www.ljll.fr/~frey/papers/Navier-Stokes/Koko%20J.%2C%20Uzawa%20conjugate%20gradient%20method%20for%20the%20Stokes%20problem.pdf) | F；细位移/粗压力及积分。年份/正式出版身份未独立确认，搜索抓取时间不当发表年 |
+| R37 | Fu、Neunteufel、Schöberl、Zdunek（2025），*A four-field mixed formulation for incompressible finite elasticity*，[DOI](https://doi.org/10.1016/j.cma.2025.118082)、[原文](https://arxiv.org/html/2503.00989v2) | F；非线性体积约束、独立梯度/应力及局部消元；未实现刀具耦合 |
+| R38 | Karabelas等（2020，在线2019），*Versatile stabilized finite element formulations for nearly and fully incompressible solid mechanics*，[出版全文](https://link.springer.com/article/10.1007/s00466-019-01760-w) | F，本轮新增；MINI和压力投影，有限变形假设及计算代价；不保证本地摩擦全程 |
+| R39 | Lederer等（2017），*Divergence-free Reconstruction Operators for Pressure-Robust Stokes Discretizations with Continuous Pressure Finite Elements*，[DOI](https://epubs.siam.org/doi/10.1137/16M1089964) | A，本轮新增；稳定配对不自动等于压力鲁棒；Stokes重构未移植 |
+| R40 | Tian等（2021预印本），*Mixed displacement-pressure-phase field framework for finite strain fracture of nearly incompressible hyperelastic materials*，[作者稿](https://arxiv.org/abs/2112.00294) | A（本轮复核）；受损相压力退化与Q1/P0、P2/P1比较不能替代当前完整体配对检查 |
+| R48 | Shojaeifard等（2026），*Deep Indentation of Soft Solids: A Limit State*，[v4](https://arxiv.org/abs/2606.30971v4) | A；圆杆/Ogden半空间的深压入尺度，不是薄刃早段曲率的验证 |
 
-2026-10-20：[接触候选几何、GCP实现和资格限制](geometric_self_contact_assessment.md)。官方公式／源码与本地导数检查后，已接入显式GCP法向势和项目自摩擦；参考自适应采用经过证书的统一上限特例。补充Abide等2022活动集和Grippo等1986非单调搜索依据。33°原失败增量与新预检通过并启动独立长线；57°三次有界资格均未通过，不宣称完整路线已经解决或实验已验证。
+## 接触、摩擦及非线性求解
 
-2026-10-19：[相邻表面节点伪自接触](adjacent_self_contact_20261019.md)。核对GCP作者论文、补充材料和工具库对dhat/边长及相邻顶点排斥的讨论；结合本地准确失败场1177项全部相邻VV的证据，设计仅限未自接触区间的有界对照。未宣称实现GCP，未改变原生默认。
+| ID | 来源 | 已有阅读范围、用途与限制 |
+|---|---|---|
+| R05 | Pinto Carvalho等（2022），*An efficient algorithm for rigid/deformable contact interaction based on the dual mortar method*，[DOI](https://doi.org/10.1007/s00466-022-02226-2) | F；有限变形无摩擦，客观摩擦和新裂面需另做 |
+| R06 | Khandelwal、Porwal、Wadhawan（2022），*Adaptive quadratic finite element method for the unilateral contact problem*，[作者稿](https://arxiv.org/abs/2209.04906) | F；二次边顶点/中点约束及后验误差；线性无摩擦假设 |
+| R08 | Acary、Brémond、Huber（2018），*On solving contact problems with Coulomb friction: formulations and numerical comparisons*，[HAL](https://hal.science/hal-01878539)、[作者稿](https://tripop.inrialpes.fr/people/acary/publications/Acary_Bremond_Huber.pdf) | F；多类离散摩擦算法比较；作者稿题名略异，没有普适最佳算法 |
+| R12a | Areias等（2019），*A simple and robust Coulomb frictional algorithm based on 3 additional degrees-of-freedom and smoothing*，[DOI](https://doi.org/10.1016/j.finel.2019.103321) | A；平滑参数延续；全文访问受限，本地尝试不是复现 |
+| R12b | Jiang（1999），Fischer–Burmeister相关互补算法论文，[DOI](https://doi.org/10.1287/moor.24.3.529) | A；互补重写的依据；未将全局收敛标题当当前问题保证 |
+| R13 | Deuflhard（2011），*Newton Methods for Nonlinear Problems*，[DOI](https://doi.org/10.1007/978-3-642-23899-4)；PETSc NLEQERR | S（专著）/F（官方算法实现）；只核查修正量线搜索，未读完专著 |
+| R15 | Hassani、Hild、Ionescu、Sakki，*A mixed finite element method and solution multiplicity for Coulomb frictional contact*，[作者全文](https://www.math.univ-toulouse.fr/~phild/Publications/CMAME3.pdf) | F；多解与摩擦谱。刊年本次不补填，线弹性不证明当前发生分支变化 |
+| R16 | Qi、Sun（1998修订稿），*A Survey of Some Nonsmooth Equations and Smoothing Newton Methods*，[原文](https://defengwebsite.github.io/files/qsreview1.pdf) | F；根点/广义导数非奇异等局部前提 |
+| R17 | Li等（2023），*Convergent Incremental Potential Contact*，[作者稿](https://arxiv.org/abs/2307.15908) | F；面积权重/接触修正/线性碰撞几何；不覆盖材料、网格或实验验收 |
+| R18 | Giacoma、Dureisseix、Gravouil（2016），*An efficient quasi-optimal space-time PGD application to frictional contact mechanics*，[DOI](https://doi.org/10.1186/s40323-016-0067-7) | F；LATIN局部—整体分解，非现成切割宿主 |
+| R19 | Both等（2022），*Iterative splitting schemes for a soft material poromechanics model*，[DOI](https://doi.org/10.1016/j.cma.2021.114183) | F；借鉴稳定化耦合分裂；孔压并非接触压力 |
+| R20 | Degroote等（2010），*Performance of partitioned procedures in fluid–structure interaction*，[DOI](https://doi.org/10.1016/j.compstruc.2009.12.006) | A（论文）/F（preCICE文档）；界面加速依赖内层收敛 |
+| R21 | Acary、Armand、Nguyen（2026），*Solving contact problems with Coulomb friction using an interior point algorithm and path following techniques*，[DOI](https://doi.org/10.1016/j.cma.2026.119227) | F；用户原PDF已核查；平方方程、ANM符号与原始摩擦终验收限制另有记录 |
+| R22 | Gfrerer等（2022），*On the SCD semismooth* Newton method for generalized equations with application to a class of static contact problems with Coulomb friction*，[原文](https://arxiv.org/pdf/2205.15129) | F；多值图线性化；本地试验不能宣称论文全套复现 |
+| R23 | PETSc TSPSEUDO及其引用的Kelley–Keyes（1998）、Coffey–Kelley–Keyes（2002） | F（[文档](https://petsc.org/main/manualpages/TS/TSPSEUDO/)）/S（论文）；辅助时间求稳态，未通读所引两篇论文 |
+| R24 | Dickson、Kelley、Ipsen、Kevrekidis（2007），*Condition Estimates for Pseudo-Arclength Continuation*，[DOI](https://doi.org/10.1137/060654384) | F；简单折点条件，非光滑接触不能直接继承 |
+| R25 | Jong（2012），*A Newton-Fixed Point Homotopy Algorithm For Nonlinear Complementarity Problems With Generalized Monotonicity*，[作者稿](https://optimization-online.org/wp-content/uploads/2012/08/3562.pdf) | F；路径可延续不等于能到达目标 |
+| R41 | Chen等（2025），*Offset Geometric Contact*，[DOI](https://doi.org/10.1145/3731205)、[作者页](https://graphics.cs.utah.edu/research/projects/ogc/) | F；本地与原IPC势/PTC组合在特征切换处失败，候选未通过准入；非论文完整算法否定 |
+| R42 | Li等（2020），*Incremental Potential Contact*，[主文](https://ipc-sim.github.io/file/IPC-paper-350ppi.pdf)、[补充](https://ipc-sim.github.io/file/IPC-supplement-A-technical.pdf) | F；屏障/摩擦lagging。原文明确lagging无收敛保证，不以冻结内层残差代替真平衡 |
+| R43 | Gee等（2009），*Pseudo-transient continuation for nonlinear transient elasticity*，[DOI](https://doi.org/10.1002/nme.2527) | A/方法来源；弹性PTC应用，非本项目全程稳定证明 |
+| R44 | *A Noise-Tolerant Quasi-Newton Algorithm for Unconstrained Optimization*（2020预印本），[作者稿](https://arxiv.org/abs/2010.04352) | A/方法来源；近收敛能量相减与线搜索噪声，不放松真残差 |
+| R45 | Gast等（2015），*Optimization Integrator for Large Time Steps*，[原文](https://math.ucdavis.edu/~jteran/papers/GSSJT15.pdf)，DOI 10.1109/TVCG.2015.2459687 | F；不定方向、截断CG、下降方向；未采用其完整动力学算法 |
+| R46 | Fernández-Fernández、Löschner、Bender，*Progressively Projected Newton's Method*（2025初版/2026修订），[v2](https://arxiv.org/abs/2505.21013v2) | F（相关结论）；投影改变全局切线；本地hybrid并非完整PPN实现 |
+| R49 | Zimmerman、Ateshian（2018），*A Surface-to-Surface Finite Element Algorithm for Large Deformation Frictional Contact in FEBio*，[DOI](https://doi.org/10.1115/1.4040497) | A；官方模型库提供候选基准；未取得完整论文，不声称复现其全部结果 |
 
-2026-10-18：针对同法向深度/速度的角度对照，核查Reyssat等2012原文图1及式(1)–(4)、Atkins–Xu 2005出版社摘要/引言，以及Lengiewicz 2020与Menga 2021作者摘要。明确沿刃拉切与本项目面内斜压不同；文献、坐标/功率推导、已有力向量证据及下一轮受控试验集中于[角度力学机理](../docs/history/topics/angle_force_mechanism.md)。没有用起裂峰值降力规律修正完整体曲线，也没有改变现有队列。
+## 实验辨识、位移与测量边界
 
-2026-10-18：核对Ceglie等JMPS206(2026),106389机构库全文的式(6)与第4.3节，以及Abaqus库仑摩擦理论，新增[界面剪切上限候选](../docs/history/topics/interface_candidate.md)。不移植PDMS/玻璃参数；明确本项目是节点当前面积压力及光滑上限的离散候选，包含完整非对称导数，不能把资格测试等同实验改善。共同Ogden形状历史筛选为负，保留其证据。
+| ID | 来源 | 已有阅读范围、用途与限制 |
+|---|---|---|
+| R26 | Oddes、Solav（2023），*Identifiability of soft tissue constitutive parameters from in-vivo macro-indentation*，[摘要](https://pubmed.ncbi.nlm.nih.gov/36801779/)，DOI 10.1016/j.jmbbm.2023.105708 | A；力＋位移有助参数识别，不保证所有参数唯一 |
+| R27 | Rokoš等（2018），*On Micromechanical Parameter Identification With Integrated DIC and the Role of Accuracy in Kinematic Boundary Conditions*，[作者稿](https://arxiv.org/abs/1810.08245)，[DOI](https://doi.org/10.1016/j.ijsolstr.2018.04.004) | F；边界运动误差污染材料反演，不能混用输入与独立验证 |
+| R50 | Tayeb等（2019），*Identification of Constitutive Parameters Governing the Hyperelastic Response of Rubber by Using Full-field Measurement and the Virtual Fields Method*，[作者稿](https://arxiv.org/abs/1907.02687) | A；全场识别路线，不等于单视角切割光流能唯一识别G/μ |
+| R51 | iDICs（2025），*A Good Practices Guide for Digital Image Correlation*, Edition 2，[官方](https://idics.org/guide/)、[DOI](https://doi.org/10.32720/idics/gpg.ed2) | 官方指南；设置/相关/应变质量要求，当前光流未宣称满足全部指南 |
 
-2026-10-18：对照2023原文及Abaqus官方超弹、时间域黏弹、实体单元/混合压力说明，完成[原生三角度材料核查](native_material_audit_20261018.md)。明确当前二次J体积能与原论文对数形式不同，瞬时/长期泊松比不同，以及局部P1细化不能全面排除锁定；对应实际场导数、双历史和共同参数筛选证据，不将文献适用性当本地求解证明。
+## R54–R55：前裂近线性的定向补查（2026-10-14）
 
-2026-10-16：补核Reese–Govindjee（1998）有限应变非线性黏度的原文框架，完成独立正耗散候选核及两角度历史筛选。具体函数为项目假设，非BB复现；阅读范围见[前裂专题](prefracture_rate_response.md)，筛选与未再平衡的限制见[方法说明](../docs/history/topics/nonlinear_relaxation.md)。
+| ID | 来源 | 已有阅读范围、用途与限制 |
+|---|---|---|
+| R54 | Mitsomwang、Nagasawa、Kuroiwa、Fukushima（2014），*Deformation Analysis of Silicone Rubber Sheet Subjected to Keen WC Blade Indentation*，IJAT8(5),761–772；[DOI10.20965/ijat.2014.p0761](https://www.fujipress.jp/ijat/au/ijate000800050761/) | F（第3节、图14/17/18目视）；无损伤大应变平面应变先例，材料/垫层与当前目标不同 |
+| R55 | Ciavarella、Hills、Monno（1998），*Contact problems for a wedge with rounded apex*，IJMS40(10),977–988；[机构库](https://eprints.soton.ac.uk/23252/)，DOI10.1016/S0020-7403(97)00141-0 | A及可检索首页；完整PDF获取失败。浅楔/线弹性极限线索，未用于给当前模型套系数 |
 
-2026-10-15变形模式/约束核查：补核Ahmadi等总应力平面应力的作者摘要、Bergström–Boyce多轴非线性黏弹性的出版摘要，及已有硅胶刀压入论文的支承适用范围。与实际7个条件平衡和1个未收敛端点分开记录；不借文献擅改固定底面或把PS当有限宽度真值。见[前裂专题末节](prefracture_rate_response.md)及[实际结果](../docs/solver_status.md)。
+## 补充论文、已核读方法及官方资料
 
-2026-10-15解析圆鼻候选：已将曲面一致间隙/法向/切线的思路落到独立代码，保留保守整边CCD；明确单侧积分与原IPC权重不同、没有实现Gregory片。源码标度与适用限制见[方法笔记](method_notes.md)，通过范围及30°高力未解决的结论见[求解状态](../docs/solver_status.md)。
+| 来源 | 已有阅读范围与任务边界 |
+|---|---|
+| R52 Tan、Kang、Patterson (2016), *Experimental investigation on surface deformation of soft half plane indented by rigid wedge*, DOI 10.1007/s10483-016-2139-9，[出版PDF](https://pubs-en.cstam.org.cn/data/article/amm/preview/pdf/20161007.pdf) | F：摘要、§1、§4.1文本；未目视核查图8。DIC给出总力以外的空间判据；不移植其1.68 mm半径及失效深度。 |
+| R53 Sichetti等 (2025), *High-Order Continuous Geometrical Validity*，[DOI](https://doi.org/10.1145/3745763) | F：作者v2 HTML §7–8.3；高阶映射、积分和浮点保守性。没有移植全文算法。 |
+| Reese & Govindjee (1998), *A theory of finite viscoelasticity and numerical aspects*，[DOI](https://doi.org/10.1016/S0020-7683(97)00217-5)、[大学托管全文](https://giref.ulaval.ca/~deteix/bois/documents_references/article4.pdf) | F：§2.1式20–25与§3。乘法分解、主轴返回与有限黏弹流动背景；本地非线性流动候选不是BB复现，未移植参数。 |
+| Bergström & Boyce (2001), *Constitutive modeling of the time-dependent and cyclic loading of elastomers and application to soft biological tissues*，[DOI](https://doi.org/10.1016/S0167-6636(01)00070-9) | A/出版节选；共同材料需跨模式/循环验证。当前单支路Maxwell并非其完整网络。 |
+| Jerrams (2005), *Friction and adhesion in rigid surface indentation of nitrile rubber*，[机构摘要](https://arrow.tudublin.ie/cerart/2/)，DOI10.1016/j.matdes.2004.02.012 | A；HNBR钢压头，力、松弛、黏滑和表面轮廓联合辨别。不证明当前CR界面应增加黏附或μ过大。 |
+| Persson & Volokitin (2006), *Rubber friction on smooth surfaces*，[作者稿](https://arxiv.org/abs/cond-mat/0607084)，DOI10.1140/epje/i2006-10045-9 | A及引言；支持速度/温度相关界面可能性，不直接移植到强变形锋利刀具。 |
+| Reyssat等 (2012), *Slicing Softly with Shear*，[DOI](https://doi.org/10.1103/PhysRevLett.109.244301)、[原文](https://softmath.seas.harvard.edu/wp-content/uploads/2019/10/2012-24.pdf) | F：图1、式1–4；剪切辅助切割。沿刃拉切与面内斜压不同，不能直接套法向降力系数。 |
+| Atkins & Xu (2005), *Slicing of soft flexible solids with industrial applications*，[DOI](https://doi.org/10.1016/j.ijmecsci.2005.01.013) | A/引言；切割功率与拉切机理，非完整体压入载荷公式。 |
+| Lengiewicz等 (2020), *Finite deformations govern the anisotropic shear-induced area reduction of soft elastic contacts*，[DOI](https://doi.org/10.1016/j.jmps.2020.104056)、[作者摘要](https://arxiv.org/abs/2005.02107) | A；剪切与接触面积几何耦合，不能推出本项目固定角度降力。 |
+| Menga等 (2021), *Exploring the effect of geometric coupling on friction and energy dissipation in rough contacts of elastic and viscoelastic coatings*，[DOI](https://doi.org/10.1016/j.jmps.2020.104273)、[作者摘要](https://arxiv.org/abs/2006.16133) | A；区分几何耦合和耗散。粗糙涂层参数不移植到刀具。 |
+| Duong & Sauer (2019), *A concise frictional contact formulation based on surface potentials and isogeometric discretization*，[DOI](https://doi.org/10.1007/s00466-019-01689-0)、[全文HTML](https://arxiv.org/html/1808.10420v2) | F：§3.1–3.4、§4.1–4.3及线性化结构。区分当前投影、旧相互作用点、滑移点；统一面积积分与完整切线。本地IPC传输候选未实现论文运动摩擦锥。 |
+| Tur等 (2012), *2D contact smooth formulation based on the mortar method*，[DOI](https://doi.org/10.1016/j.cma.2012.08.002) | A/引言；C1几何、mortar积分与一致线性化整体处理。全文未获，且为无摩擦，不能认证本项目摩擦历史。 |
+| Huang等 (2025), *Geometric Contact Potential*，[DOI](https://doi.org/10.1145/3731142)、[作者稿](https://cims.nyu.edu/gcl/papers/2025-Contact.pdf)、[官方教程](https://ipctk.xyz/tutorials/gcp.html) | 官方公式、v1.6源码和本地接口实测；未宣称逐页读完PDF。方向性/局部最近条件与CCD联合，不是固定k-ring删对。独立候选未完成共同长程资格。 |
+| Abide等 (2022), *Unified primal-dual active set method for dynamic frictional contact problems*，[全文](https://link.springer.com/article/10.1186/s13663-022-00729-4) | F：活动集/投影框架；本地只借鉴分支处理，不等同动力学算法复现。 |
+| Grippo、Lampariello、Lucidi (1986), *A Nonmonotone Line Search Technique for Newton’s Method*，[DOI](https://doi.org/10.1137/0723046) | A及后续官方说明；有限窗口启发式不继承当前非光滑问题的全局收敛保证。 |
+| Ligurský & Renard (2014), *A continuation problem for computing solutions of discretised evolution problems with application to plane quasi-static contact problems with friction*，[DOI](https://doi.org/10.1016/j.cma.2014.07.011) | A及背景；分段光滑预测校正，不保证本项目存在可达平衡。 |
+| Haslinger等 (2018), *Nonsmooth continuation of parameter dependent static contact problems with Coulomb friction*，[DOI](https://doi.org/10.1016/j.matcom.2017.08.001)、[作者稿](https://homel.vsb.cz/~kuc14/papers_in_progress/contModelling.pdf) | F：引言和§5；摩擦参数路径的转向、出支与分离分支。同一连通支路不覆盖所有解，作者稿页码与正式版不同。 |
+| McCarthy、Ní Annaidh、Gilchrist (2010), *On the sharpness of straight edge blades in cutting soft solids: Part II – Analysis of blade geometry*，[DOI](https://doi.org/10.1016/j.engfracmech.2009.10.003)、[机构全文](https://researchrepository.ucd.ie/server/api/core/bitstreams/ca936b39-6f89-4acb-90e3-f203da41eae8/content) | F：摘要、问题定义、§4.2/4.3。区分同深度反力与起裂力；1–5 μm聚氨酯体系结果不是99755半径实测。 |
+| Ceglie等 (2026，2025在线), *Contact area shrinkage and increase in wavy frictional sliding contacts*，[DOI](https://doi.org/10.1016/j.jmps.2025.106389)、[机构全文](https://iris.unisalento.it/retrieve/533bbb63-a320-4e7c-87fc-4720e8ce5a05/1-s2.0-S0022509625003631-main.contactarea.pdf) | F：§2式6、§4.3；有限弹性界面剪切强度上限。PDMS/玻璃参数不移植，本地节点压力候选非原文完整算法。 |
+| Chi等 (2016), *A paradigm for higher-order polygonal elements in finite elasticity using a gradient correction scheme*，[DOI](https://doi.org/10.1016/j.cma.2015.12.025)、[作者稿](https://paulino.princeton.edu/journal_papers/2016/CMAME_16_AParadigmForHigherOrder.pdf) | F相关积分讨论；借鉴独立高阶/正权重积分检验，不能直接要求P2使用其多边形梯度修正。 |
+| Chi等 (2015), *Polygonal finite elements for finite elasticity*，[DOI](https://doi.org/10.1002/nme.4802)、[原文](https://pamies.cee.illinois.edu/assets/pdf/IJNME_2015.pdf) | F相关章节；局部强变形可早于全局大位移导致离散困难，不允许据此接受翻转单元。 |
+| Hartmann & Gilbert (2021), Computational Mechanics68,633–650，[出版全文](https://link.springer.com/article/10.1007/s00466-021-01998-3) | F：摘要、§2、§4.1–4.2、§5.1–5.2网页文字，未逐式核查图片公式。有限黏弹内部状态敏感性、反力/应变与可辨识性；未执行其完整反演。 |
 
-2026-10-15进一步诊断：补核IPC技术补充、半光滑接触活跃集论文与PETSc残差求解说明，见[方法笔记末节](method_notes.md)；补读官方CR/BB模型实现说明，见[前裂专题](prefracture_rate_response.md)。明确冻结摩擦势与刷新接触几何的区别、共同材料跨模式验证及阅读限制；未把文献方法名称当作本地收敛证明。
+### 官方实现与原材料资料
 
-2026-10-15跨角度补核：复核CR跨压缩模式的材料验证逻辑，补充Persson–Volokitin光滑表面橡胶摩擦作者稿的适用边界。用于区分恒μ假设、约束传力与摩擦耗散，未据此直接更换接触模型。原始来源及阅读范围见[前裂专题](prefracture_rate_response.md)。
+| 来源 | 已核读内容及限制 |
+|---|---|
+| [IPC Toolkit](https://ipctk.xyz/tutorials/getting_started.html)、[IPC技术补充](https://ipc-sim.github.io/file/IPC-supplement-A-technical.pdf)、[项目说明](https://github.com/ipc-sim/IPC/wiki) | 二维近接触屏障、CCD、冻结摩擦帧/法向载荷的内势。内层能量下降不等于刷新摩擦后的平衡，lagging本身无普适收敛保证。 |
+| [PETSc SNES](https://petsc.org/release/manual/snes/)、[SNESNEWTONTR](https://petsc.org/release/manualpages/SNES/SNESNEWTONTR/)、[SNESNGMRES](https://petsc.org/release/manualpages/SNES/SNESNGMRES/)、[SNESASPIN](https://petsc.org/release/manualpages/SNES/SNESASPIN/) | 残差全局化、历史组合与非线性预条件的组织依据；当前并未接入PETSc或实现ASPIN/RASPEN。 |
+| [GetFEM大滑移接触](https://getfem.org/userdoc/model_contact_friction_large_sliding.html) | 参考面积分、刚性障碍和库仑投影；其节点brick标注不可用，不能误当现成可用入口。 |
+| [MOOSE乘子Petrov–Galerkin](https://mooseframework.inl.gov/syntax/Constraints/Petrov-Galerkin_approach_for_Lagrange_multipliers.html) | 乘子插值/测试空间与加权间隙区别，不等于自动排除点值穿透。 |
+| [FEBio sliding-elastic](https://febiosoftware.github.io/febio-docs/features/features/solid_surfaceinteraction_sliding-elastic/)、[官方模型库](https://repo.febio.org/permalink/project/68) | 增广接触、非对称刚度及补丁/Hertz等基准，未在本项目运行其模型。 |
+| [SciPy splu](https://docs.scipy.org/doc/scipy/reference/generated/scipy.sparse.linalg.splu.html)、[NVIDIA cuDSS](https://docs.nvidia.com/cuda/cudss/latest/index.html) | 稀疏线性子问题的后端能力；不迁移材料/IPC/CCD，也不自动解决非线性方向困难。本项目未启用GPU。 |
+| [dolfin-adjoint](https://dolfin-adjoint.github.io/dolfin-adjoint/documentation/maths/2-problem.html) | 已读问题定义/求解方法；时间相关目标依赖全部状态层，区别全历史导数与条件偏导。 |
+| [Bleyer广义平面应变教程](https://bleyerj.github.io/comet-fenicsx/tours/linear_problems/generalized_plane_strain/generalized_plane_strain.html) | 位移场、整体面外自由度与合力约束正文；常数GPS、局部PS与有限宽三维不同。 |
+| [Abaqus时间域黏弹性](https://docs.software.vt.edu/abaqusv2025/English/SIMACAEMATRefMap/simamat-c-timevisco.htm) | 瞬时/长期参数定义与材料时间；不证明当前CR参数已识别。 |
+| [COMSOL氯丁橡胶压缩基准](https://www.comsol.com/model/download/1389851/models.nsm.chloroprene_rubber_compression_test.pdf)、[BB模型技术说明](https://www.ansys.com/content/dam/resource-center/datasheet/bergstrom-boyce-model.pdf) | 分别核读2–9页、2–5页文字；平衡/非平衡网络、保持和卸载检验。未照搬材料或复现，COMSOL尺寸文字需复核。 |
+| [Maxell Kureha CB245NE报告](https://www.kurehae.maxell.co.jp/dl/test_report/CB245NE.pdf) | 原图核对23°C静态剪切模量0.47 MPa及“测定值非规格值”。不是本批样品G0/G∞标定；99755尺寸仍以用户截图为准。 |
 
-2026-10-15路线选择：复核R28平衡/非平衡网络及Efremov压入历史响应的适用边界，采用单独的正剪切刚度分配候选；不把静态G当已识别的无限时平衡模量，也不把单速度力拟合当唯一材料识别。新增辨别逻辑见[前裂专题](prefracture_rate_response.md)，实际参数与验收见[材料候选](../docs/history/topics/material_candidate.md)。
+## 本地原文映射
 
-2026-10-14实验特征分析补核：重读 *Cutting soft materials* 正式原文中弹性体平滑压入—切割过渡的实验说明，用于限制“无掉力即未裂”和“统计折点即起裂”的解释；见[前裂专题](prefracture_rate_response.md)。未据此修改物理模型或移植参数。
+PDF仅留本地，不发布原文或原图。页码必须按实际版本使用；以下原文件名保持不变。
 
-2026-10-14材料候选实施：基于R28的CR时间响应机制与R03的有限应变返回映射，单独检验正剪切Maxwell支路；不复制EPDM参数、不宣称实现完整Bergström–Boyce模型。厂家报告没有动态模量/松弛谱，新参数仍是假设。参见[候选方案与门槛](../docs/history/topics/material_candidate.md)。
+| 条目 | 本地文件 |
+|---|---|
+| R01 | `2.pdf` |
+| R02 | `A unified phase-field model of fracture in viscoelastic.pdf` |
+| R03 | `updated phase.pdf`；[独立复现](../reproductions/dammass2023/README.md) |
+| R04 | `MorenoMateos_Steinmann_2025_preprint.pdf`，预印本与2026正式版分开引用 |
+| R05 | `PintoCarvalho_et_al_2022_dual_mortar.pdf` |
+| R06 | `Khandelwal_Porwal_Wadhawan_2022_quadratic_contact.pdf` |
+| R07 | `Maas_et_al_2011_nodal_integration_FEBio.pdf` |
+| R08 | `Acary_Bremond_Huber_2018_contact_solvers_author.pdf`，作者版题名与正式章略异 |
+| R09 | `LopezPamies_et_al_2025_nucleation_review.pdf` |
+| R10 | `Kamarei_Breedlove_LopezPamies_2025_preprint.pdf` |
+| R11 | `LopezPamies_et_al_2026_constrained_fracture_preprint.pdf` |
+| R21 | `solvingcontactproblemswithCoulombFriction.pdf` |
+| R30 | `Kojima_2020_silicone_wedge_velocity.pdf` |
+| R54 | `Mitsomwang_2014_silicone_blade.pdf` |
+| 历史保存原文 | `nsf_contact_saved.pdf`，原索引未提供可靠身份映射，不凭文件名补造题录 |
+| 厂家原始报告 | `CB245NE.pdf` |
 
-2026-10-14补查前裂近线性：R30原图、R54无损伤Mooney–Rivlin楔入先例，以及二维接触的条件性比例模型；区分经验线性、局部相似性和严格不可压缩平面应变下MR/NH等价性。阅读范围、未取得全文的R55及排除的金属恢复公式见[前裂专题](prefracture_rate_response.md)。新增两篇硅胶PDF仅留本地，本轮未运行有限元。
-
-2026-10-14新增R53：高阶连续几何有效性与积分失配，已结合MINI实际失败场核查；见[配对笔记](pairing_review.md)。仅采用诊断依据，未宣称复现论文算法或解决实验曲率。
-
-整理日期：2026-10-13。范围是仓库可恢复的既往参考资料及本轮新增定向阅读；不是系统综述，也不声称覆盖未记录的历史对话。PDF、图片、实验和计算数据仍只留本地，公开部分仅为原创 Markdown 笔记、书目和代码。
-
-- [统一文献目录](catalog.md)：按建模问题整理，保留 R01–R25，补齐此前散落的材料、接触、识别、离散和求解文献；标明阅读范围与适用限制。
-- [本轮位移—压力配对分析](pairing_review.md)：实际做了什么、结果能说明什么、后续路线的文献依据。
-- [MINI重构采用记录](../docs/history/topics/mini_redesign.md)：已把气泡富集、连续压力及内部消元接入IPC候选；来源、恢复保障与资格限制。
-- [近线性验证链](../docs/history/topics/linearity_verification.md)：把局部体积误差、空间运动、力幅值和曲率分开验收，避免只追求单元软化或线性求解提速。
-- [早期方法笔记 R01–R25](method_notes.md)：原文位置、假设、方法及历史代码关联。条目中的旧实现不代表主线现状。
-- [宏混合离散](macro_mixed_discretization.md)、[前裂时间响应](prefracture_rate_response.md)：已有专题笔记，继续复用。
-- [历次阅读与采用记录](research_history.md)、[检索记录](../docs/literature_search_log.md)：保留先前查过、拒绝或未能获取的资料，不把历史失败清理掉。
-- [来源链接审计索引](source_index.md)：完整链接去重表与引用位置，包含官方软件文档、厂商资料及只在本地旧报告中出现的来源；不是“全部已读全文”清单。
-
-当前仍是无断裂、有限应变、平面应变的 IPC 主线。P1 默认未变，1 mm 混合诊断保持暂停。当前执行状态只以 [solver_status](../docs/solver_status.md) 为准；论文标题、单元名称或通过小基准均不能代替本项目验收。
-
-2026-10-13清点时，本地 `references` 的12份PDF已逐一核对首页身份并记录页数与SHA256；这是历史清单，详见本地 `outputs/pressure_pairing_20261013/local_pdf_inventory.json`。2026-10-14另增加R30/R54两篇公开原文，未上传用户论文或下载的PDF。
+Watson同伦综述仅保留为未确认检索线索（U），不补造题名/DOI。Simo–Taylor–Pister、Simo–Armero在他文中追溯引用，不冒充独立核读。Mathews等2024的线性深度–力公式用于金属压痕弹性恢复，已排除用于本项目橡胶加载段。引用保存不提升阅读或本地验证级别。

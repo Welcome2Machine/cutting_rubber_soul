@@ -16,15 +16,10 @@ class PairedAssemblyTests(unittest.TestCase):
         self.threads.__enter__()
         self.addCleanup(self.threads.__exit__, None, None, None)
         self.p = IPCProblem('patch', mu=.35, local_spacing=.2,
-                            surface_spacing=.2, element='p2-interior')
+                            surface_spacing=.2, element='p1')
         p = self.p
         x = p.rest.copy()
         x[p.n:, 1] -= 2*p.dhat-.006
-        # Nonaffine interior enrichment, while retaining an unambiguous flat
-        # contact geometry for independent finite-difference checks.
-        rng = np.random.default_rng(491)
-        x[p.enrichment.base_nodes:p.n] += rng.normal(
-            size=(p.n-p.enrichment.base_nodes, 2))*1e-4
         p.previous = x.copy()
         x[p.n:, 0] += .002
         self.x = x
@@ -43,7 +38,7 @@ class PairedAssemblyTests(unittest.TestCase):
         np.testing.assert_allclose(paired[4].toarray(), projected[2].toarray(), rtol=1e-14, atol=1e-12)
         return paired
 
-    def test_nonaffine_p2_matches_two_independent_assemblies(self):
+    def test_p1_matches_two_independent_assemblies(self):
         self.assert_paired_equivalent(self.x, self.p.lag(self.x))
         # The no-friction branch must also work when a metric is requested.
         self.assert_paired_equivalent(self.x, None)
@@ -69,12 +64,13 @@ class PairedAssemblyTests(unittest.TestCase):
     def test_paired_call_evaluates_bulk_only_once(self):
         p = self.p
         lag = p.lag(self.x)
-        with patch.object(p.enrichment, 'bulk', wraps=p.enrichment.bulk) as call:
+        from prototype import ipc_reference
+        with patch.object(ipc_reference, 'bulk', wraps=ipc_reference.bulk) as call:
             result = p.evaluate(self.x, lag, projected=False, with_metric=True)
             self.assertEqual(call.call_count, 1)
             self.assertTrue(call.call_args.kwargs['with_tangent'])
             self.assertEqual(len(result), 5)
-        with patch.object(p.enrichment, 'bulk', wraps=p.enrichment.bulk) as call:
+        with patch.object(ipc_reference, 'bulk', wraps=ipc_reference.bulk) as call:
             projected = p.evaluate(self.x, lag, projected=True, with_metric=True)
             self.assertEqual(call.call_count, 1)
             self.assertIs(projected[2], projected[4])
@@ -106,7 +102,7 @@ class PairedAssemblyTests(unittest.TestCase):
         first = self.assert_paired_equivalent(x, lag0)
         moved = x.copy()
         moved[p.n:, 1] += .0003
-        moved[p.enrichment.base_nodes:p.n, 0] += .0001
+        moved[:p.n, 0] += .0001
         second = self.assert_paired_equivalent(moved, p.lag(moved))
         self.assertGreater(np.linalg.norm(first[1]-second[1]), 1e-3)
         # Put the relative tangential movement inside friction smoothing, so
@@ -118,11 +114,11 @@ class PairedAssemblyTests(unittest.TestCase):
         self.assertGreater(np.linalg.norm(different_lag[1]-history[1]), 1e-3)
 
 
-    def test_reused_lu_preserves_accepted_frictional_p2_history(self):
+    def test_reused_lu_preserves_accepted_frictional_p1_history(self):
         results = []
         for method in ('direct', 'reused-lu'):
             p = IPCProblem('patch', mu=.35, local_spacing=.2,
-                           surface_spacing=.2, element='p2-interior',
+                           surface_spacing=.2, element='p1',
                            linear_solver=method)
             x, old = p.rest.copy(), p.start
             log = io.StringIO()

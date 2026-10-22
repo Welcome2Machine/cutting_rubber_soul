@@ -3,7 +3,6 @@ from contextlib import contextmanager
 import hashlib
 import json
 from pathlib import Path
-import shutil
 import sys
 import time
 import numpy as np
@@ -179,7 +178,8 @@ def save_npz(path, **values):
     replace_with_retry(temporary, path)
 
 
-def source_hashes(packages=('prototype', 'mechanics'), *, snapshot=None):
+def source_hashes(packages=('prototype', 'mechanics')):
+    """Record implementation fingerprints without duplicating source trees."""
     sources = [Path(__file__).resolve()]
     for package in packages:
         sources.extend((ROOT / package).glob('*.py'))
@@ -187,8 +187,4 @@ def source_hashes(packages=('prototype', 'mechanics'), *, snapshot=None):
     for source in sorted(set(sources)):
         relative = source.relative_to(ROOT)
         result[relative.as_posix()] = hashlib.sha256(source.read_bytes()).hexdigest()
-        if snapshot is not None:
-            target = Path(snapshot) / relative
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, target)
     return result

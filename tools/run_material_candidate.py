@@ -1,6 +1,6 @@
 """Bounded intact material experiment; separate from default/legacy queues.
 
-Run from a frozen checkout for a long case. Outputs retain exact pre-increment
+Do not edit solver sources while a case is running. Outputs retain exact pre-increment
 friction AND material histories. Resumption requires matching sources/parameters
 and reassembles every state. No damage and no force rescaling.
 """
@@ -20,6 +20,8 @@ from prototype.ipc_reference import BASELINE,adaptive_load_steps,record_tip_cont
 from prototype.material_case import (make_problem, signature, audit, resume,
                                      resume_compatibility, load_force_csv)
 from prototype.tip_contact import TipContactTracker
+from prototype.material_performance import (performance_policy, require_same_performance,
+    enable_performance, performance_summary, close_performance, native_audit)
 
 
 def compare(out,report,reference=None,image_estimates=None,experiment=None,*,experiment_angle=60.,image_angle=60.):
@@ -88,15 +90,6 @@ def compare(out,report,reference=None,image_estimates=None,experiment=None,*,exp
         first=grid<=1.+1e-12
         experimental['first_mm_available']=bool(sd[-1]>=1.-1e-12)
         experimental['first_mm_rmse_n']=float(np.sqrt(np.mean(gd[first]**2))) if sd[-1]>=1.-1e-12 else None
-        if sd[-1]>=2.-1e-12:
-            last=intervals[-1]
-            stiffness_error=abs(last['simulation_n_per_mm']/last['experiment_n_per_mm']-1)
-            experimental['two_mm_engineering_screen']=dict(
-                full_rmse_below_2p3632_n=experimental['rmse_n']<=.8*2.954,
-                first_mm_rmse_below_1p441_n=experimental['first_mm_rmse_n']<=1.441,
-                last_half_mm_stiffness_error_fraction=stiffness_error,
-                last_half_mm_stiffness_error_below_25_percent=stiffness_error<=.25,
-                interpretation='Predeclared exploratory gates against prior candidate; NOT material/mesh/time validation')
         summary['experiment']=experimental
         with (out/'experiment_comparison.csv').open('w',encoding='utf-8',newline='') as stream:
             writer=csv.writer(stream);writer.writerow(['depth_mm','simulation_fz_n','experiment_fz_n','difference_n'])
@@ -156,22 +149,25 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--maxwell-shear',type=float,required=True)
-    parser.add_argument('--equilibrium-shear',type=float,default=.47)
+    parser.add_argument('--equilibrium-shear',type=float,default=.14)
     parser.add_argument('--bulk-modulus',type=float)
     parser.add_argument('--equilibrium-alpha',type=float,default=2.,help='Common Ogden shape; small-strain G unchanged')
     parser.add_argument('--maxwell-alpha',type=float,default=2.,help='Common relaxing-branch shape; Gv and small-shear tau unchanged')
-    parser.add_argument('--actual-affine-policy',action='store_true',help='Opt-in qualified predictor rule; physical acceptance unchanged')
-    parser.add_argument('--shear-limit-mpa',type=float,help='Explicit nodal-current-area interface strength hypothesis')
     parser.add_argument('--relaxation-s',type=float,required=True)
     parser.add_argument('--loading-rate',type=float,required=True)
     parser.add_argument('--angle',type=float,choices=(0.,30.,33.,57.,60.),default=60.)
     parser.add_argument('--mu',type=float,default=.35,
         help='Common positive Coulomb coefficient; exact-history resume requires an identical value')
-    parser.add_argument('--depth',type=float,default=.05)
+    parser.add_argument('--depth',type=float,default=2.)
     parser.add_argument('--increment',type=float,default=.01)
-    parser.add_argument('--seconds',type=float,default=900.)
+    parser.add_argument('--seconds',type=float,default=21600.)
     parser.add_argument('--resume',type=Path)
     parser.add_argument('--threads',type=int,default=2)
+    parser.add_argument('--material-batch-size',type=int,default=0,
+        help='Opt-in material point batches; 0 retains the original whole-array evaluation')
+    parser.add_argument('--linear-backend',choices=('native','pardiso'),default='native')
+    parser.add_argument('--linear-threads',type=int,default=4,
+        help='Positive PARDISO thread count; unused by the native backend')
     parser.add_argument('--reference',type=Path)
     parser.add_argument('--image-estimates',type=Path)
     parser.add_argument('--image-angle',type=float,default=60.,help='Explicit angle assigned to the screenshot table')
@@ -179,29 +175,34 @@ def main():
     parser.add_argument('--experiment',type=Path,
         help='Authorized force-depth CSV in N and micrometres; assign its angle explicitly')
     args=parser.parse_args()
-    if not all(np.isfinite(v) and v>0 for v in (args.depth,args.increment,args.seconds,args.mu)):
-        parser.error('positive finite depth, increment, solve budget and friction coefficient required')
+    if not all(np.isfinite(v) and v>0 for v in (args.depth,args.increment,args.seconds,args.mu)) or args.depth>2:
+        parser.error('positive finite controls and target depth <= 2 mm required')
     if args.threads<1:parser.error('threads must be positive')
+    try:
+        performance=performance_policy(material_batch_size=args.material_batch_size,
+            linear_backend=args.linear_backend,linear_threads=args.linear_threads,ipc_threads=args.threads)
+    except ValueError as exc:parser.error(str(exc))
+    if args.resume:
+        old=json.loads((args.resume/'result.json').read_text(encoding='utf-8'))
+        try:require_same_performance(old,performance)
+        except ValueError as exc:parser.error(str(exc))
     if args.experiment:
         _,_,rate=load_force_csv(args.experiment)
         if args.angle!=args.experiment_angle or not np.isclose(rate,args.loading_rate,rtol=0,atol=1e-12):
             parser.error('Experiment requires its assigned angle and matching loading speed')
     out=args.output.resolve();out.mkdir(parents=True,exist_ok=False);(out/'states').mkdir()
-    sources=source_hashes(packages=('prototype','mechanics'),snapshot=out/'source')
-    tool=Path(__file__).resolve();target=out/'source/tools'/tool.name;target.parent.mkdir(exist_ok=True)
-    shutil.copy2(tool,target);sources['tools/'+tool.name]=hashlib.sha256(tool.read_bytes()).hexdigest()
-    if args.actual_affine_policy:
-        predictor=tool.with_name('replay_affine_policy.py')
-        shutil.copy2(predictor,target.with_name(predictor.name))
-        sources['tools/'+predictor.name]=hashlib.sha256(predictor.read_bytes()).hexdigest()
+    sources=source_hashes(packages=('prototype','mechanics'))
+    tool=Path(__file__).resolve()
+    sources['tools/'+tool.name]=hashlib.sha256(tool.read_bytes()).hexdigest()
     baseline=Path(__file__).resolve().parents[1]/'prototype/ipc_baseline.json'
-    shutil.copy2(baseline,out/'source/prototype/ipc_baseline.json')
     sources['prototype/ipc_baseline.json']=hashlib.sha256(baseline.read_bytes()).hexdigest()
     report=dict(status='initializing',completed=False,source_sha256=sources,steps=[],
         target_mm=args.depth,rejected_load_attempts=[],force_tolerance_n=BASELINE['force_tolerance_n'],
         parameter_status='conditional material hypothesis; not independently calibrated',
         loading_rate_status='conditional inherited 0.2 mm/s unless explicitly replaced',
-        tip_contact_tracking=dict(errors=[]),settings=vars(args).copy())
+        tip_contact_tracking=dict(errors=[]),settings=vars(args).copy(),performance_policy=performance,
+        load_control=dict(mode='adaptive_bisection',minimum_increment_mm=.000625,
+                          maximum_increment_mm=args.increment,output_grid_increment_mm=args.increment))
     report['settings']={k:str(v) if isinstance(v,Path) else v for k,v in report['settings'].items()}
     write_json(out/'result.json',report)
     if args.experiment:
@@ -210,13 +211,16 @@ def main():
         report['experiment_sha256']=hashlib.sha256(args.experiment.read_bytes()).hexdigest()
         report['loading_rate_status']='matches speed_um_s in authorized experimental export'
     with (out/'run.log').open('w',encoding='utf-8') as log,contextlib.redirect_stdout(log),\
-         threadpool_limits(limits=args.threads),compute_process_policy() as policy:
+         threadpool_limits(limits=args.threads),\
+         (threadpool_limits(limits=1,user_api='blas') if performance['blas_threads']==1
+          else contextlib.nullcontext()),compute_process_policy() as policy:
         report['runtime_process_policy']=policy
         print('RUNTIME_POLICY '+json.dumps(policy),flush=True)
         started=time.monotonic();p=None;x=None
         try:
-            p=make_problem(**{k:getattr(args,k) for k in ('angle','equilibrium_shear','maxwell_shear',
-                'relaxation_s','loading_rate','bulk_modulus','mu','equilibrium_alpha','maxwell_alpha','actual_affine_policy','shear_limit_mpa')})
+            construction={k:getattr(args,k) for k in ('angle','equilibrium_shear','maxwell_shear',
+                'relaxation_s','loading_rate','bulk_modulus','mu','equilibrium_alpha','maxwell_alpha')}
+            p=make_problem(**construction)
             # JSON round trip makes signatures stable across tuples in Material.
             report['signature']=json.loads(json.dumps(signature(p)))
             report['reference_contact_check']=p.reference_contact_check
@@ -225,6 +229,8 @@ def main():
             if args.resume:
                 report['status']='resuming';write_json(out/'result.json',report)
                 x,old=resume(p,args.resume,out,report)
+            enable_performance(p,performance)
+            print('PERFORMANCE_POLICY '+json.dumps(performance),flush=True)
             tracker=TipContactTracker(p.rest,p.mesh.triangles,p.n,p.config,p.dhat,p.nose_facets)
             report['status']='running';write_json(out/'result.json',report)
             solve_start=time.monotonic();deadline=solve_start+args.seconds
@@ -253,18 +259,22 @@ def main():
         report['elapsed_s']=time.monotonic()-started
         write_json(out/'result.json',report)
         try:
-            if p is not None and report['steps']:audit(p,out,report)
+            if p is not None and report['steps']:
+                if args.material_batch_size or args.linear_backend!='native':
+                    native_audit(lambda:make_problem(**construction),out,report)
+                else:audit(p,out,report)
         except Exception as exc:
             report.update(status='audit_failed',completed=False,audit_error=f'{type(exc).__name__}: {exc}')
             traceback.print_exc(file=log)
+        finally:
+            if p is not None:
+                report['performance_counters']=performance_summary(p)
+                try:close_performance(p)
+                except Exception as exc:
+                    report['backend_cleanup_error']=f'{type(exc).__name__}: {exc}'
+                    traceback.print_exc(file=log)
     write_json(out/'result.json',report)
     export_contact_table(out,report)
-    if args.shear_limit_mpa is not None and p is not None and report['steps']:
-        try:
-            from prototype.shear_limited_contact import export_interface_history
-            export_interface_history(p,out,report)
-        except Exception as exc:
-            report['interface_export_error']=f'{type(exc).__name__}: {exc}'
     with (out/'fz_depth.csv').open('w',newline='',encoding='utf-8') as stream:
         writer=csv.writer(stream);writer.writerow(['depth_mm','fz_n'])
         writer.writerows((r['depth_mm'],r['reaction_fz_n']) for r in report['steps'])

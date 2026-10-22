@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 import numpy as np
 from run_support import ROOT,write_json,save_npz,source_hashes,compute_process_policy
-from run_support import background_child_options,classify_process_exit
+from run_support import background_child_options,classify_process_exit,replace_with_retry
 
 
 class ChildProcessTests(unittest.TestCase):
@@ -52,13 +52,13 @@ class RunSupportTests(unittest.TestCase):
             with np.load(path) as state:np.testing.assert_array_equal(state['u'],np.arange(4))
             self.assertFalse(path.with_suffix('.tmp').exists())
 
-    def test_source_snapshot_preserves_layout_and_shared_helper(self):
-        with tempfile.TemporaryDirectory() as directory:
-            hashes=source_hashes(('mechanics',),snapshot=directory)
-            self.assertEqual(hashes,source_hashes(('mechanics',)))
-            self.assertIn('run_support.py',hashes)
-            self.assertIn('mechanics/finite_strain.py',hashes)
-            for name in hashes:self.assertEqual((Path(directory)/name).read_bytes(),(ROOT/name).read_bytes())
+    def test_source_fingerprints_cover_shared_kernel_and_helper(self):
+        import hashlib
+        hashes=source_hashes(('mechanics',))
+        self.assertIn('run_support.py',hashes)
+        self.assertIn('mechanics/finite_strain.py',hashes)
+        for name,digest in hashes.items():
+            self.assertEqual(hashlib.sha256((ROOT/name).read_bytes()).hexdigest(),digest)
 
 
 class FakeProcessPolicy:
@@ -215,3 +215,37 @@ class ComputeProcessPolicyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             with compute_process_policy('invalid'):
                 self.fail('invalid policy must not enter the computation')
+
+
+class AtomicOutputTests(unittest.TestCase):
+    def test_transient_replace_denial_keeps_destination_until_success(self):
+        with tempfile.TemporaryDirectory() as d:
+            target=Path(d)/"result.json";target.write_text('{"old":true}')
+            original=Path.replace;calls=[]
+            def locked(source,destination):
+                calls.append(source)
+                if len(calls)<3:
+                    self.assertEqual(target.read_text(),'{"old":true}')
+                    raise PermissionError("temporary reader lock")
+                return original(source,destination)
+            with patch.object(Path,"replace",locked):
+                write_json(target,{"accepted_depth_mm":.845})
+            self.assertEqual(json.loads(target.read_text()),{"accepted_depth_mm":.845})
+            self.assertEqual(len(calls),3)
+            self.assertFalse(target.with_suffix(".tmp").exists())
+
+    def test_persistent_denial_propagates_without_erasing_old_result(self):
+        with tempfile.TemporaryDirectory() as d:
+            target=Path(d)/"result.json";target.write_text("old")
+            temporary=Path(d)/"result.tmp";temporary.write_text("new")
+            with patch.object(Path,"replace",side_effect=PermissionError("ACL")):
+                with self.assertRaises(PermissionError):
+                    replace_with_retry(temporary,target,timeout_s=.02)
+            self.assertEqual(target.read_text(),"old")
+            self.assertEqual(temporary.read_text(),"new")
+
+    def test_unrelated_error_is_not_retried(self):
+        with patch.object(Path,"replace",side_effect=OSError("disk full")) as replace:
+            with self.assertRaises(OSError):
+                replace_with_retry("a","b")
+            self.assertEqual(replace.call_count,1)

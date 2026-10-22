@@ -24,7 +24,7 @@ from scipy.sparse.linalg import spsolve, splu, eigsh, LinearOperator, ArpackNoCo
 from threadpoolctl import threadpool_limits
 from run_support import write_json, save_npz, source_hashes, compute_process_policy
 from .model_config import FEMConfig, local_to_lab, _rotation_vectors
-from .initiation import InitiationOptions, intact_mesh, _blade_boundary_vertices
+from .geometry import GeometryOptions, intact_mesh, blade_boundary_vertices
 from .material import bulk
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,7 +32,7 @@ BASELINE_PATH = Path(__file__).with_name("ipc_baseline.json")
 BASELINE = json.loads(BASELINE_PATH.read_text(encoding="utf-8"))
 # Current specimen/blade task; separate from the immutable historical baseline.
 # This is an input preset, not a claim that the revised material is validated.
-CURRENT_PRESET = dict(case="oblique", depth=3., increment=.01, friction=.35,
+CURRENT_PRESET = dict(case="oblique", depth=2., increment=.01, friction=.35,
     shear_modulus=FEMConfig().shear_modulus_n_mm2, ogden_alpha=2., dhat=.0025,
     threads=2, seconds=0., max_iterations=500, local_spacing=.05,
     surface_spacing=.005, nose_facets=64, inclination=60., tip_radius=.02,
@@ -114,11 +114,6 @@ class IPCProblem:
         fine_halfwidth=BASELINE["fine_halfwidth_mm"],
         hessian_mode="projected",
         element="p1",
-        macro_stabilization_shear=0.,
-        quadrature_order=4,
-        interior_refinement_levels=0,
-        interior_refinement_radius=.15,
-        interior_spacing=None,
         linear_solver="direct",
         shear_modulus=FEMConfig().shear_modulus_n_mm2,
         ogden_alpha=2.,
@@ -132,8 +127,8 @@ class IPCProblem:
         self.case = case
         self.dhat = dhat
         self.max_iterations = max_iterations
-        if contact_formulation not in ('improved-max', 'offset-geometric'):
-            raise ValueError('Unknown contact formulation')
+        if contact_formulation != 'improved-max':
+            raise ValueError('The maintained contact formulation is improved-max')
         self.contact_formulation = contact_formulation
         if hessian_mode not in ("projected", "hybrid", "regularized"):
             raise ValueError("Unknown Hessian mode")
@@ -146,8 +141,6 @@ class IPCProblem:
         self.predictor = predictor
         if friction_globalization not in ('model-error', 'residual-merit'):
             raise ValueError('Unknown friction globalization')
-        if friction_globalization == 'residual-merit' and contact_formulation != 'improved-max':
-            raise ValueError('Residual merit requires the improved-max reference contact formulation')
         self.friction_globalization = friction_globalization
         self._accepted_predictor_history = []
         self.stagnation_window = 0  # Enabled only by the adaptive load controller.
@@ -164,12 +157,8 @@ class IPCProblem:
                               shear_modulus_n_mm2=float(shear_modulus),
                               ogden_alpha=float(ogden_alpha))
         self.config.validate()
-        if (not np.isfinite(macro_stabilization_shear) or macro_stabilization_shear < 0
-                or macro_stabilization_shear > self.config.bulk_modulus_n_mm2/shear_modulus):
-            raise ValueError('Macro stabilization must lie between zero and K/G')
-        if macro_stabilization_shear and element != 'p1-macro-mixed':
-            raise ValueError('Volume fluctuation stabilization requires p1-macro-mixed')
-        self.macro_stabilization_shear = float(macro_stabilization_shear)
+        if element != "p1":
+            raise ValueError("The maintained cutting model uses P1 triangles")
         if case == "patch":
             self.config = replace(
                 self.config,
@@ -181,63 +170,22 @@ class IPCProblem:
                 max_indentation_mm=0.3,
             )
         self.options = replace(
-            InitiationOptions(**BASELINE["mesh"]),
+            GeometryOptions(**{k: v for k, v in BASELINE["mesh"].items()
+                               if k in GeometryOptions.__dataclass_fields__}),
             refinement_mm=local_spacing,
             surface_spacing_mm=surface_spacing,
             tip_radius_mm=tip_radius,
         )
-        # Red-refined P1 displacement / parent-P1 pressure diagnostic. Keep a
-        # full-integration control on exactly the same displacement/contact mesh.
-        self.element = element
-        macro = element in ('p1-macro-full', 'p1-macro-mixed')
-        if macro:
-            self.options = replace(self.options, volumetric_discretization='macro_mixed')
+        self.element = "p1"
         self.mesh, _ = intact_mesh(
             self.config, self.options, fine_halfwidth_mm=self.fine_halfwidth
         )
-        if interior_spacing is not None:
-            if (element != 'mini' or case != 'oblique' or not np.isfinite(interior_spacing)
-                    or interior_spacing <= local_spacing):
-                raise ValueError('Interior coarsening requires oblique MINI and spacing above local spacing')
-            from .ipc_mini import coarsen_interior
-            coarse, _ = intact_mesh(self.config, replace(self.options,refinement_mm=interior_spacing),
-                                     fine_halfwidth_mm=self.fine_halfwidth)
-            self.mesh = coarsen_interior(self.mesh, coarse,
-                np.array([self.config.drop_s_mm,self.config.height_mm]), .3)
-        if interior_refinement_levels:
-            if element not in ('mini','p1'):
-                raise ValueError('Interior refinement diagnostic supports P1 and MINI')
-            from .ipc_mini import refine_interior
-            self.mesh = refine_interior(self.mesh,
-                np.array([self.config.drop_s_mm,self.config.height_mm]),
-                interior_refinement_radius,interior_refinement_levels)
         tri = self.mesh.triangles
         edges = np.sort(np.vstack((tri[:, [0, 1]], tri[:, [1, 2]], tri[:, [2, 0]])), axis=1)
         edges, counts = np.unique(edges, axis=0, return_counts=True)
         edges = edges[counts == 1]
-        self.enrichment = None
-        if element == "p2-interior":
-            from .ipc_p2 import InteriorP2
-            self.enrichment = InteriorP2(self.mesh, self.config, quadrature_order)
-            self.mesh = self.enrichment.mesh
-        elif element == 'mini':
-            if case == 'patch':
-                raise ValueError('MINI currently supports the oblique case; patch imposes extra internal x constraints')
-            from .ipc_mini import MiniElement
-            self.enrichment = MiniElement(self.mesh, self.config, quadrature_order)
-            self.mesh = self.enrichment.mesh
-        elif element != "p1" and not macro:
-            raise ValueError("Unknown displacement element")
+        self.enrichment = None  # Retained for old P1 observer compatibility.
         self.nodal_volume = None
-        if element == 'mini':
-            from .pressure_pairing import ContinuousP1Volume
-            self.nodal_volume = ContinuousP1Volume(self.enrichment)
-        if element == 'p1-macro-mixed':
-            if linear_solver != 'direct':
-                raise ValueError('Macro-mixed friction uses direct sparse pressure blocks; reused-lu is not implemented')
-            from .material import NodalVolume
-            self.nodal_volume = NodalVolume(self.mesh, self.config,
-                                            stabilization_shear=self.macro_stabilization_shear)
         self.start = -2 * dhat / max(np.cos(np.deg2rad(self.config.inclination_deg)), 0.1)
         if case == "patch":
             blade = np.array(
@@ -249,7 +197,7 @@ class IPCProblem:
                 ]
             )
         else:
-            vertices = _blade_boundary_vertices(self.config, self.options, self.start)
+            vertices = blade_boundary_vertices(self.config, self.options, self.start)
             angle = np.deg2rad(self.config.blade_tip_angle_deg / 2)
             _, en = _rotation_vectors(self.config.inclination_deg)
             center = (
@@ -319,9 +267,7 @@ class IPCProblem:
     def collisions(self, x):
         c = self.ipc.NormalCollisions()
         c.use_area_weighting = True
-        c.collision_set_type = (self.ipc.NormalCollisions.OGC
-                               if self.contact_formulation == 'offset-geometric' else
-                               self.ipc.NormalCollisions.IMPROVED_MAX_APPROX)
+        c.collision_set_type = self.ipc.NormalCollisions.IMPROVED_MAX_APPROX
         c.build(self.cmesh, x[self.surface], self.dhat)
         return c
 
@@ -337,8 +283,7 @@ class IPCProblem:
         """P1 constitutive assembly; explicit material candidates override this."""
         return bulk(self.mesh, u, self.config, with_tangent=with_tangent)
 
-    def evaluate(self, x, lag=None, tangent=True, projected=True, *, with_metric=False,
-                 with_pressure_blocks=False):
+    def evaluate(self, x, lag=None, tangent=True, projected=True, *, with_metric=False):
         """Optionally assemble exact and PSD tangents from one material evaluation.
 
         No cache survives this call: changing x, lag or previous cannot reuse a
@@ -346,21 +291,8 @@ class IPCProblem:
         """
         if with_metric and not tangent:
             raise ValueError('A paired metric requires the tangent')
-        if with_pressure_blocks and (not with_metric or projected or self.nodal_volume is None):
-            raise ValueError('Pressure blocks require the exact paired macro-mixed assembly')
         u = (x[: self.n] - self.mesh.reference_xy).ravel()
-        if self.element == 'mini':
-            if tangent and not with_pressure_blocks:
-                raise ValueError('MINI tangents require explicit sparse pressure blocks')
-            r, k, dofs, energy, minj = self.nodal_volume.bulk(u, with_tangent=tangent)
-        elif self.enrichment is None:
-            r, k, dofs, energy, minj = self.material_bulk(u, with_tangent=tangent)
-        else:
-            r, k, dofs, energy, minj = self.enrichment.bulk(u, with_tangent=tangent)
-        nonlocal_k = None
-        if self.nodal_volume is not None and self.element != 'mini':
-            r, k, nonlocal_k, energy = self.nodal_volume.correct(
-                u, r, k, energy, condensed=not with_pressure_blocks)
+        r, k, dofs, energy, minj = self.material_bulk(u, with_tangent=tangent)
         g = np.zeros(self.total)
         np.add.at(g, dofs.ravel(), r.ravel())
         c = self.collisions(x)
@@ -377,21 +309,12 @@ class IPCProblem:
         if tangent:
             if projected or with_metric:
                 eigen, v = np.linalg.eigh(k)
-                # Keep the original P1 arithmetic; use batched products for P2.
-                kp = ((v*np.maximum(eigen,0)[:,None,:]) @ v.transpose(0,2,1)
-                      if self.enrichment is not None else
-                      np.einsum("eik,ek,ejk->eij", v, np.maximum(eigen, 0), v))
+                kp = np.einsum("eik,ek,ejk->eij", v, np.maximum(eigen, 0), v)
             rows = np.broadcast_to(dofs[:, :, None], k.shape).ravel()
             cols = np.broadcast_to(dofs[:, None, :], k.shape).ravel()
             def assemble(local, clamp):
                 projection = self.ipc.PSDProjectionMethod.CLAMP if clamp else self.ipc.PSDProjectionMethod.NONE
                 matrix = coo_matrix((local.ravel(),(rows,cols)),shape=(self.total,self.total)).tocsc()
-                if nonlocal_k is not None:
-                    # Condensed pressure block is PSD. Add it exactly to both
-                    # physical Hessian and auxiliary metric, after projecting
-                    # only the corrected local isochoric/geometric block.
-                    q = nonlocal_k.tocoo()
-                    matrix += coo_matrix((q.data, (q.row, q.col)), shape=matrix.shape).tocsc()
                 ch = self.barrier.hessian(c,self.cmesh,sx,projection)
                 if lag is not None:
                     ch += self.friction.hessian(lag,self.cmesh,(x-self.previous)[self.surface],projection)
@@ -401,29 +324,13 @@ class IPCProblem:
             if with_metric:
                 metric = h if projected else assemble(kp,True)
         if with_metric:
-            if with_pressure_blocks:
-                # The residual/local tangent already include the stabilization.
-                # Scale the auxiliary coupling so its Schur block is f*B.T/M*B,
-                # exactly as in condensed assembly, including the f=0 limit.
-                nv = self.nodal_volume
-                b = (np.sqrt(nv.projected_fraction)*nv.pressure_coupling).tocoo()
-                coupling = coo_matrix((b.data, (b.row, b.col)),
-                    shape=(b.shape[0], self.total)).tocsc()
-                return float(energy), g, h, minj, metric, (coupling, self.nodal_volume.pressure_mass)
             return float(energy),g,h,minj,metric
         return float(energy), g, h, minj
 
     def checkpoint_data(self):
-        if self.enrichment is not None:
-            return self.enrichment.checkpoint_data()
-        from .macro_element import checkpoint
-        return checkpoint(self.mesh)
+        return {}
 
     def safe_step(self, x, direction):
-        if self.enrichment is not None:
-            return min(self.enrichment.safe_step(x[:self.n]-self.mesh.reference_xy, direction[:self.n]),
-                       self.ipc.compute_collision_free_stepsize(
-                           self.cmesh, x[self.surface], (x+direction)[self.surface]))
         F = np.eye(2) + np.einsum(
             "eai,eaJ->eiJ", (x[: self.n] - self.mesh.reference_xy)[self.mesh.triangles], self.grad
         )
@@ -454,27 +361,10 @@ class IPCProblem:
         ).tocsc()
 
     def _ptc_trial(self, x, direction, maximum):
-        """Check the represented endpoint as well as the analytic path bound.
-
-        Enriched maps can approach J=0 between quadrature points while the
-        integrated residual remains finite. A vanishing admissible direction
-        is a recoverable load failure, not evidence of nonlinear progress.
-        Do not catch unrelated assembly/programming errors here.
-        """
+        """Bound the update by blade displacement, positive J and complete CCD."""
         geometric_fraction = self.safe_step(x, direction)
         alpha = min(1., .5*self.options.tip_radius_mm/maximum, geometric_fraction)
         trial = x+alpha*direction
-        if self.enrichment is not None:
-            # Algorithmic cutoff, NOT a relaxed physical residual or J clamp.
-            # Cut back from the accepted load/history instead of spending the
-            # entire affine budget on numerically insignificant updates.
-            if not np.isfinite(geometric_fraction) or geometric_fraction < 1e-6:
-                raise LoadStepFailure('IPC enriched geometric stagnation: '
-                                      f'safe_fraction={geometric_fraction:.9g}')
-            minimum = self.enrichment.minimum_j(trial[:self.n]-self.mesh.reference_xy)
-            if not np.isfinite(minimum) or minimum <= 0:
-                raise LoadStepFailure('IPC enriched rounded trial is not positive: '
-                                      f'min_J={minimum:.9g}, alpha={alpha:.9g}')
         return trial, alpha, geometric_fraction
 
     def linear_direction(self, matrix, rhs):
@@ -502,17 +392,8 @@ class IPCProblem:
             lag = self.lag(x)
             assembly_start = time.perf_counter()
             assembly_cpu_start = time.process_time()
-            if self.enrichment is not None:
-                print(f'PERF_BEGIN depth_mm={depth:.6f} iteration={iteration} stage=assembly',flush=True)
-            # Both P1 and P2 need the same-state exact tangent and PSD metric.
-            # Share bulk/contact evaluation; no data survives this call.
-            pressure = None
-            if self.nodal_volume is not None:
-                _,g,H,_,paired_metric,pressure = self.evaluate(
-                    x,lag,projected=False,with_metric=True,with_pressure_blocks=True)
-                pressure = (pressure[0][:, self.free], pressure[1])
-            else:
-                _,g,H,_,paired_metric = self.evaluate(x,lag,projected=False,with_metric=True)
+            # Share the exact tangent and PSD metric at the same state.
+            _,g,H,_,paired_metric = self.evaluate(x,lag,projected=False,with_metric=True)
             print(f'PERF_ASSEMBLY seconds={time.perf_counter()-assembly_start:.6f} '
                   f'process_cpu_seconds={time.process_time()-assembly_cpu_start:.6f}',flush=True)
             r = g[self.free]
@@ -536,15 +417,7 @@ class IPCProblem:
                 if time.monotonic() > deadline:
                     raise TimeoutError("IPC friction pseudo-transient wall budget")
                 solve_start = time.perf_counter()
-                if pressure is not None:
-                    if self.element == 'mini':
-                        du, linear_info = self.nodal_volume.solve_ptc(
-                            A, M, pressure, shift, -r, self.free, linear)
-                    else:
-                        from .macro_element import solve_pressure_blocks
-                        du, linear_info = solve_pressure_blocks(A, M, pressure, shift, -r)
-                    print('LINEAR_MIXED '+json.dumps(linear_info,sort_keys=True),flush=True)
-                elif linear is None:
+                if linear is None:
                     du = self.linear_direction(A+shift*M, -r)
                 else:
                     du, linear_info = linear.solve(A+shift*M,-r)
@@ -560,28 +433,15 @@ class IPCProblem:
                 trial, alpha, geometric_fraction = self._ptc_trial(x, direction, maximum)
                 trial_start = time.perf_counter()
                 gt = self.evaluate(trial, self.lag(trial), tangent=False)[1][self.free]
-                if self.enrichment is not None:
-                    print(f'PERF_RETRY depth_mm={depth:.6f} iteration={iteration} retry={retry} '
-                          f'linear_s={solve_seconds:.6f} trial_s={time.perf_counter()-trial_start:.6f}',flush=True)
                 nt = float(np.linalg.norm(gt))
                 # Safeguard the local force model, rather than requiring each
                 # auxiliary time step to reduce the physical residual monotonically.
                 linear_action = A@du
-                if pressure is not None:
-                    B, mass = pressure
-                    linear_action += (self.nodal_volume.schur_action(B, du) if self.element == 'mini'
-                                      else B.T@((B@du)/mass))
                 error = float(np.linalg.norm(gt-r-alpha*linear_action))
                 model_accept = error <= .25*max(norm, nt) or nt <= BASELINE["force_tolerance_n"]
-                # Model error tends to zero with alpha even if no force balance
-                # is gained. For an almost blocked enriched direction, recover
-                # stabilization before advancing towards a degenerate map.
-                geometric_stall = (self.enrichment is not None and geometric_fraction < 1e-3
-                                   and nt > .99*norm and nt > BASELINE['force_tolerance_n'])
-                model_accept = model_accept and not geometric_stall
                 merit_accept = (not model_accept and self.friction_globalization == 'residual-merit'
                                 and residual_merit_decrease(norm, nt, float(r@linear_action), alpha))
-                if (np.isfinite(nt) and not geometric_stall and not np.array_equal(trial, x)
+                if (np.isfinite(nt) and not np.array_equal(trial, x)
                         and (model_accept or merit_accept)):
                     x = trial
                     self.trial = x.copy()
@@ -590,14 +450,12 @@ class IPCProblem:
                           f"criterion={'fresh_residual_merit' if merit_accept else 'model_error'}", flush=True)
                     # A good actual decrease does not make an inaccurate local
                     # model trustworthy: retain stabilization for merit steps.
-                    shift = (max(initial_shift, shift) if (merit_accept or
-                             (self.enrichment is not None and geometric_fraction < .25)) else
+                    shift = (max(initial_shift, shift) if merit_accept else
                              max(1e-10, min(1e6, shift*nt/max(norm, 1e-15)/1.2)))
                     break
                 print(f"FRICTION_PTC_REJECT retry={retry} metric_shift={shift:.9g} "
                       f"alpha={alpha:.9g} residual_N={nt:.9g} "
                       f"model_error_N={error:.9g} "
-                      f"geometric_stall={geometric_stall} "
                       f"model_limit_N={.25*max(norm, nt):.9g}", flush=True)
                 # Successful Newton-like steps can make shift arbitrarily small.
                 # On rejection recover the initial stabilization scale immediately;
@@ -798,7 +656,7 @@ class IPCProblem:
         self.previous = x.copy()
         x = self._loading_predictor(x, old, depth)
         self.trial = x.copy()
-        if self.config.friction_coefficient > 0 or self.element == 'mini':
+        if self.config.friction_coefficient > 0:
             x, iterations = self.solve_friction(x, depth, deadline)
             accepted = self.acceptance(x, depth, iterations+1, 0)
             self._remember_predictor_acceptance(x, depth, old)
@@ -994,11 +852,7 @@ def run(args):
         inclination=args.inclination, tip_radius=args.tip_radius,
         fine_halfwidth=args.fine_halfwidth,
         hessian_mode=args.hessian_mode,
-        element=args.element, quadrature_order=args.quadrature_order,
-        interior_refinement_levels=args.interior_refinement_levels,
-        interior_refinement_radius=args.interior_refinement_radius,
-        interior_spacing=args.interior_spacing,
-        macro_stabilization_shear=args.macro_stabilization_shear,
+        element=args.element,
         linear_solver=args.linear_solver,
         shear_modulus=args.shear_modulus,
         ogden_alpha=args.ogden_alpha,
@@ -1052,9 +906,7 @@ def run(args):
             barrier_stiffness_scales_with_shear_modulus=False,
         ),
         simplifications=dict(
-            displacement_element=("MINI: P1 vertices + internal cubic bubble coefficients" if args.element == 'mini' else
-                                  "P1, fixed mesh" if p.enrichment is None else
-                                  "P2 interior enrichment, original P1 boundary trace"),
+            displacement_element="P1, fixed mesh",
             tip_radius_mm=p.options.tip_radius_mm,
             nose_facets=p.nose_facets,
             fracture=False,
@@ -1071,9 +923,7 @@ def run(args):
         ),
         baseline_id=BASELINE["id"] if args.baseline else None,
         contact_formulation=args.contact_formulation,
-        contact_formulation_status=("experimental_known_switch_discontinuity"
-                                    if args.contact_formulation == 'offset-geometric' else
-                                    "intact_reference_discretization"),
+        contact_formulation_status="intact_reference_discretization",
         input_preset="current_20261011" if args.current else None,
         blade_parameter_status=dict(model="99755", thickness_and_full_angle="user_specification_table",
             radius="user_specified_not_measured", bevel_profile="single_straight_bevel_assumption",
@@ -1109,7 +959,7 @@ def run(args):
                       "pseudo_transient_model_error") if args.friction else
                      "armijo_with_roundoff_refinement" if args.hessian_mode == "regularized"
                      else "armijo"),
-        source_sha256=source_hashes(snapshot=out / "source"),
+        source_sha256=source_hashes(),
         nodes=p.n,
         elements=len(p.mesh.triangles),
         threads=args.threads,
@@ -1131,56 +981,10 @@ def run(args):
             retry_predictor='affine', stagnation_window=40, stagnation_improvement_fraction=.1)
         report['load_control']['stagnation_scope'] = 'secant_only; affine retains original iteration budget'
         report['rejected_load_attempts'] = []
-    if args.interior_refinement_levels:
-        report['mesh_settings']['interior_refinement'] = dict(
-            levels=args.interior_refinement_levels,radius_mm=args.interior_refinement_radius,
-            center_local_sn_mm=[p.config.drop_s_mm,p.config.height_mm],
-            boundary_trace='original edges and vertices exactly preserved')
-    if args.interior_spacing is not None:
-        report['mesh_settings']['interior_coarsening'] = dict(
-            spacing_mm=args.interior_spacing, retained_tip_radius_mm=.3,
-            version=2,retained_fine_connectivity=True,
-            boundary_trace='all original exterior coordinates retained; only interior retriangulated')
-    if p.enrichment is not None:
-        report['discretization'] = dict(element=args.element, quadrature_order=args.quadrature_order,
-            quadrature_points=args.quadrature_order**2, base_nodes=p.enrichment.base_nodes,
-            boundary_trace='unchanged P1', jacobian_check='exact spatial minimum; temporal Bernstein certificate')
-    if args.element == 'mini':
-        report['discretization'].update(
-            pressure='continuous P1, consistent mass, exact nonlinear pressure elimination',
-            bubble_coefficients=len(p.mesh.triangles)*2,
-            state_layout='vertices; internal bubble coefficients (not material nodes); blade',
-            linear_system='sparse vertex/pressure system; element bubble blocks eliminated and recovered',
-            status='experimental candidate; not yet qualified over 3 mm',
-            stabilization_parameter=None)
-    if args.element.startswith('p1-macro-'):
-        report['discretization'] = dict(element=args.element,
-            displacement='P1 on four red subtriangles',
-            pressure=('continuous parent P1, row-sum lumped mass, exactly condensed'
-                      if p.nodal_volume is not None else 'elementwise full volumetric integration'),
-            pressure_nodes=p.mesh.macro_node_count if p.nodal_volume is not None else 0,
-            auxiliary_metric=('PSD corrected local blocks plus exact PSD condensed pressure block'
-                              if p.nodal_volume is not None else 'PSD full local P1 Hessian'),
-            friction_linear_system=('uncondensed sparse pressure blocks, exact Schur-equivalent direction'
-                                    if p.nodal_volume is not None else 'standard sparse displacement system'),
-            boundary_trace='red-refined parent boundary; differs from legacy fine P1 away from tip',
-            jacobian_check='each physical P1 subtriangle; unchanged determinant and CCD checks')
-        if p.macro_stabilization_shear:
-            report['discretization']['volume_stabilization'] = dict(
-                shear_multiplier=p.macro_stabilization_shear,
-                coefficient_mpa=p.macro_stabilization_shear*p.config.shear_modulus_n_mm2,
-                energy='a*G/2 * (sum_e V_e*(J_e-1)^2 - sum_i V_i*(Jbar_i-1)^2)',
-                role='numerical volume fluctuation penalty; not a calibrated material parameter')
     if tracker is not None:
         report["tip_contact_tracking"] = dict(tracker.metadata, status="running", errors=[])
     shutil.copyfile(BASELINE_PATH, out / "baseline_config.json")
-    # A standalone solver snapshot must import without consulting the live tree.
-    # The separately recorded baseline_config_sha256 covers this identical copy.
-    shutil.copyfile(BASELINE_PATH, out / "source/prototype/ipc_baseline.json")
     visual_source = ROOT / "tools/visualize_ipc.py"
-    visual_snapshot = out / "source/tools/visualize_ipc.py"
-    visual_snapshot.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(visual_source, visual_snapshot)
     report["source_sha256"]["tools/visualize_ipc.py"] = hashlib.sha256(visual_source.read_bytes()).hexdigest()
     x = p.rest.copy()
     old = p.start
@@ -1207,9 +1011,6 @@ def run(args):
         report['runtime_process_policy'] = runtime_policy
         print('RUNTIME_POLICY '+json.dumps(runtime_policy, sort_keys=True), flush=True)
         write_json(out / 'result.json', report)
-        if args.contact_formulation == 'offset-geometric':
-            print('CONTACT_DIAGNOSTIC OGC has known force/energy jumps at feature '
-                  'switches; not qualified for the current smooth PTC solver', flush=True)
         try:
             for depth in targets:
                 deadline = start+args.seconds if args.seconds > 0 else float("inf")
@@ -1326,10 +1127,12 @@ def restore_accepted_prefix(source, out, report, p, targets):
         new_floor = after.pop("rejection_metric_shift_floor", None)
         if before != after or (old_floor != new_floor and (old_floor, new_floor) != (None, .1)):
             raise ValueError("Resume mismatch: friction_solver_settings")
+    if set(previous["source_sha256"]) != set(report["source_sha256"]):
+        raise ValueError("Resume source inventory differs")
     for name, fingerprint in previous["source_sha256"].items():
         # Runtime scheduling/output helpers do not change the physical kernel;
         # the accepted prefix is independently rechecked below before reuse.
-        if name not in ("prototype/ipc_reference.py", "tools/visualize_ipc.py", "prototype/contact_trace.py",
+        if name not in ("tools/visualize_ipc.py", "prototype/contact_trace.py",
                         "run_support.py"):
             if report["source_sha256"].get(name) != fingerprint:
                 raise ValueError(f"Resume physics source changed: {name}")
@@ -1420,10 +1223,10 @@ def export_visualization(out, report):
     report["visualization"] = dict(status="running", directory="visualization")
     write_json(out / "result.json", report)
     try:
-        # Run against the saved source so later workspace edits cannot change this export.
+        # Record current postprocessor provenance; no duplicate source tree is retained.
         with (out / "visualization.log").open("w", encoding="utf-8") as log:
             subprocess.run(
-                [sys.executable, "-u", str(out / "source/tools/visualize_ipc.py"),
+                [sys.executable, "-u", str(ROOT / "tools/visualize_ipc.py"),
                  "--source", str(out), "--output", str(out / "visualization")],
                 stdout=log, stderr=subprocess.STDOUT, check=True,
             )
@@ -1438,7 +1241,7 @@ def parse_args(argv=None):
     parser.add_argument(
         "--baseline",
         action="store_true",
-        help="Run the frozen ipc-frictionless-v1 preset; reject parameter changes",
+        help="Run the elastic P1 reference preset to 2 mm; reject parameter changes",
     )
     parser.add_argument("--current", action="store_true",
                         help="Current fine-mesh intact 60-degree preset, G=0.47 MPa and 0.02 mm tip; explicit options override it")
@@ -1451,8 +1254,8 @@ def parse_args(argv=None):
                         help="Small-strain shear modulus in MPa; current catalogue default 0.47, fixed Poisson ratio and barrier stiffness")
     parser.add_argument("--ogden-alpha", type=float,
                         help="One-term Ogden shape at fixed small-strain G; default 2 (neo-Hookean), other values uncalibrated")
-    parser.add_argument('--contact-formulation', choices=('improved-max', 'offset-geometric'),
-                        help='Contact discretization; OGC is diagnostic only: known feature-switch force jumps, incompatible with --current')
+    parser.add_argument('--contact-formulation', choices=('improved-max',),
+                        help='Complete native improved-max contact and self-contact')
     parser.add_argument('--friction-globalization', choices=('model-error', 'residual-merit'),
                         help='Optional fresh-residual sufficient-decrease fallback for rejected PTC trials; unchanged final force tolerance')
     parser.add_argument('--process-policy', choices=('system', 'compute'),
@@ -1472,16 +1275,7 @@ def parse_args(argv=None):
     parser.add_argument("--track-tip-contact", action=argparse.BooleanOptionalAction, default=None,
                         help="Record rounded-tip contact in undeformed material surface coordinates")
     parser.add_argument("--detach", action="store_true")
-    parser.add_argument("--element", choices=("p1", "p2-interior", "p1-macro-full", "p1-macro-mixed", "mini"), default="p1")
-    parser.add_argument('--macro-stabilization-shear', type=float, default=0.,
-                        help='Diagnostic volume fluctuation penalty a*G; macro-mixed only, zero keeps the original mixed model')
-    parser.add_argument("--quadrature-order", type=int, default=4)
-    parser.add_argument('--interior-refinement-levels',type=int,choices=(0,1,2),default=0,
-                        help='Interior-only mesh diagnostic; preserves all contact boundary edges')
-    parser.add_argument('--interior-refinement-radius',type=float,default=.15,
-                        help='Reference radius in mm for the explicit interior diagnostic')
-    parser.add_argument('--interior-spacing',type=float,
-                        help='MINI: coarser interior, exact original exterior vertices and 0.3 mm fine tip patch')
+    parser.add_argument("--element", choices=("p1",), default="p1")
     parser.add_argument('--linear-solver',choices=('direct','reused-lu'),default='direct',
                         help='Reused LU preconditions new linear systems; exact residual check and direct fallback')
     parser.add_argument('--predictor', choices=('affine', 'secant'),
@@ -1494,18 +1288,8 @@ def parse_args(argv=None):
                         help="Frictionless Hessian mode; friction uses the coupled pseudo-transient solver")
     parser.add_argument("--resume", type=Path, help="Copy and verify accepted prefix from an earlier run")
     args = parser.parse_args(argv)
-    if (not np.isfinite(args.interior_refinement_radius) or args.interior_refinement_radius <= 0
-            or (args.interior_refinement_levels and (args.baseline or args.element not in ('p1','mini')))):
-        parser.error('Interior refinement requires positive radius, P1/MINI and no frozen baseline')
-    if (not np.isfinite(args.macro_stabilization_shear) or args.macro_stabilization_shear < 0
-            or (args.macro_stabilization_shear and args.element != 'p1-macro-mixed')):
-        parser.error('--macro-stabilization-shear must be nonnegative and requires p1-macro-mixed')
     if args.current and args.baseline:
         parser.error('--current and --baseline are distinct presets')
-    if not 3 <= args.quadrature_order <= 10:
-        parser.error("Quadrature order must lie in [3,10]")
-    if args.element != 'p1' and (args.baseline or not args.no_visualize):
-        parser.error("Element diagnostic requires --no-visualize and no --baseline; use study postprocessing")
     if args.baseline and args.linear_solver!='direct':
         parser.error('Frozen baseline uses the direct linear solver')
     if args.baseline and args.predictor not in (None, 'affine'):
@@ -1535,15 +1319,6 @@ def parse_args(argv=None):
             )
         if supplied is None:
             setattr(args, name, value)
-    if args.interior_spacing is not None and (args.element != 'mini' or args.case != 'oblique'
-            or args.baseline or not np.isfinite(args.interior_spacing) or args.interior_spacing <= args.local_spacing):
-        parser.error('--interior-spacing requires oblique MINI and spacing greater than --local-spacing')
-    if args.current and args.contact_formulation != 'improved-max':
-        parser.error('--current uses improved-max: OGC failed the feature-switch continuity '
-                     'check and stalls with this solver. Use a separate explicit diagnostic '
-                     'without --current to study OGC.')
-    if args.friction_globalization == 'residual-merit' and args.contact_formulation != 'improved-max':
-        parser.error('Residual merit requires improved-max; it does not fix discontinuous OGC contact')
     if args.adaptive_load and (not np.isfinite(args.minimum_increment)
                               or not 0 < args.minimum_increment <= args.increment):
         parser.error('Adaptive minimum increment must be finite, positive and no larger than the nominal increment')
@@ -1552,7 +1327,7 @@ def parse_args(argv=None):
             np.isfinite(v) and v > 0 for v in (args.depth, args.increment, args.dhat)
         )
         or not np.isfinite(args.seconds) or args.seconds < 0
-        or args.depth > 3
+        or args.depth > 2
         or not np.isfinite(args.friction)
         or args.friction < 0
         or not np.isfinite(args.shear_modulus) or args.shear_modulus <= 0

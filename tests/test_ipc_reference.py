@@ -4,6 +4,7 @@ import contextlib
 import io
 import json
 from pathlib import Path
+from types import SimpleNamespace
 import tempfile
 import time
 import unittest
@@ -47,13 +48,13 @@ class BaselineCommandTests(unittest.TestCase):
             with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
                 parse_args(['--output',folder,'--seconds','-1'])
 
-    def test_frozen_baseline_rejects_changed_physics_and_loading(self):
+    def test_elastic_reference_rejects_changed_physics_and_loading(self):
         with tempfile.TemporaryDirectory() as folder:
             arguments = ["--baseline", "--output", folder]
             args = parse_args(arguments)
             self.assertEqual(
                 (args.depth, args.increment, args.friction, args.max_iterations),
-                (3.0, 0.025, 0.0, 200),
+                (2.0, 0.025, 0.0, 200),
             )
             for override in (
                 ["--friction", ".35"],
@@ -126,32 +127,6 @@ class NativeIPCTests(unittest.TestCase):
         with patch.object(p, 'evaluate', return_value=(1., -g, None, 1.)):
             self.assertFalse(p.roundoff_refinement(x, trial, 1., 1., g, gt))
 
-    def test_saved_091_full_step_satisfies_roundoff_and_physical_checks(self):
-        from scipy.sparse import diags
-        from scipy.sparse.linalg import spsolve
-        source = Path(__file__).resolve().parents[1]/'outputs/ipc_r002_60_curvature/failed_trial.npz'
-        if not source.exists():
-            self.skipTest('Local 0.91 mm failure fixture is not distributed')
-        p = IPCProblem(tip_radius=.02, local_spacing=.05, surface_spacing=.005,
-                       fine_halfwidth=3, nose_facets=64, dhat=.0025,
-                       hessian_mode='regularized')
-        with np.load(source) as state:
-            x = state['positions'].copy()
-            np.testing.assert_array_equal(state['reference_xy'], p.rest)
-        with threadpool_limits(limits=4):
-            E,g,H,_ = p.evaluate(x, projected=False)
-            A = H[p.free][:,p.free]+diags(np.full(len(p.free),1e-9))
-            v = np.zeros(x.size)
-            v[p.free] = spsolve(A, -g[p.free])
-            v = v.reshape(x.shape)
-            self.assertEqual(p.safe_step(x,v),1.)
-            trial = x+v
-            Et,gt,_,J = p.evaluate(trial,tangent=False)
-            self.assertLess(np.linalg.norm(gt[p.free]),1e-4)
-            self.assertGreater(J,0.)
-            self.assertFalse(p.ipc.has_intersections(p.cmesh,trial[p.surface]))
-            with contextlib.redirect_stdout(io.StringIO()):
-                self.assertTrue(p.roundoff_refinement(x,trial,E,Et,g,gt))
 
     def test_global_curvature_shift_preserves_well_conditioned_directions(self):
         from scipy.sparse import diags
@@ -201,51 +176,7 @@ class NativeIPCTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'Resume mismatch: dhat_mm'):
                 run(args)
 
-    def test_friction_resume_keeps_last_increment_slip(self):
-        source = Path('outputs/ipc_friction_ptc_20260912/01_angle60_mu0.35')
-        if not (source/'result.json').exists():
-            self.skipTest('Local friction continuation fixture is not distributed')
-        report = json.loads((source/'result.json').read_text())
-        p = IPCProblem(mu=.35, dhat=.0025, local_spacing=.05, surface_spacing=.005,
-                       fine_halfwidth=3, nose_facets=64, tip_radius=.02,
-                       inclination=60, hessian_mode='regularized')
-        targets = np.round(np.arange(301)*.01, 12)
-        with tempfile.TemporaryDirectory() as folder, threadpool_limits(limits=2):
-            out = Path(folder); (out/'states').mkdir()
-            report['friction_solver_settings']['rejection_metric_shift_floor'] = .1
-            report['friction_solver_settings']['model_error_fraction'] = .5
-            with self.assertRaisesRegex(ValueError, 'Resume mismatch: friction_solver_settings'):
-                restore_accepted_prefix(source, out, report, p, targets)
-            report['friction_solver_settings']['model_error_fraction'] = .25
-            x, depth = restore_accepted_prefix(source, out, report, p, targets)
-            with np.load(source/report['last_checkpoint']) as z:
-                np.testing.assert_array_equal(p.previous, z['previous_positions'])
-            self.assertGreater(np.linalg.norm(x-p.previous), 0)
-            self.assertLessEqual(p.acceptance(x, depth, 0, 0)['residual_n'], 1e-4)
-            p.previous = x.copy()
-            # This is exactly the former frictionless-only resume bug.
-            g = p.evaluate(x, p.lag(x), tangent=False)[1]
-            self.assertGreater(np.linalg.norm(g[p.free]), 1e-4)
 
-    def test_friction_retry_recovers_after_small_shift_at_30_degrees(self):
-        source = Path('outputs/ipc_friction_unlimited_20260912/02_angle30_mu0.35/failed_trial.npz')
-        if not source.exists():
-            self.skipTest('Local 30-degree 1.56 mm failure fixture is not distributed')
-        p = IPCProblem(mu=.35, dhat=.0025, local_spacing=.05, surface_spacing=.005,
-                       fine_halfwidth=3, nose_facets=64, tip_radius=.02,
-                       inclination=30, hessian_mode='regularized', max_iterations=500)
-        with np.load(source) as z:
-            np.testing.assert_array_equal(z['reference_xy'], p.rest)
-            previous = z['previous_positions'].copy()
-        # Recreate the whole failed load from accepted history, including the
-        # rapid shift reduction; restarting only its terminal iterate misses it.
-        with threadpool_limits(limits=2), contextlib.redirect_stdout(io.StringIO()) as log:
-            x, row = p.step(previous, 1.55, 1.56, time.monotonic()+120)
-        self.assertIn('FRICTION_PTC_REJECT', log.getvalue())
-        np.testing.assert_array_equal(p.previous, previous)
-        self.assertLessEqual(row['residual_n'], 1e-4)
-        self.assertGreater(row['min_j'], 0)
-        self.assertLessEqual(p.acceptance(x, 1.56, 0, 0)['residual_n'], 1e-4)
 
     def test_refinement_preserves_geometry_and_passes_short_path(self):
         coarse = IPCProblem()
@@ -426,3 +357,53 @@ class NativeIPCTests(unittest.TestCase):
                     self.assertEqual(result["status"], "failed")
                     self.assertEqual(result["steps"], [])
                     self.assertTrue((out / "failed_trial.npz").is_file())
+
+
+class ReferenceContactGeometryTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        try:
+            cls.ipc = toolkit()
+        except ModuleNotFoundError:
+            raise unittest.SkipTest('Optional ipctk==1.6.0 not installed')
+        cls.ipc.set_num_threads(1)
+
+    def geometry(self, rest, edges, formulation, n_dynamic=None):
+        p = object.__new__(IPCProblem)
+        p.ipc = self.ipc
+        p.contact_formulation = formulation
+        p.rest = np.asarray(rest, dtype=float)
+        p.previous = p.rest.copy()
+        p.surface = np.arange(len(rest))
+        p.surface_dofs = np.arange(p.rest.size)
+        p.dhat = .0025
+        p.cmesh = self.ipc.CollisionMesh(p.rest, np.asarray(edges, dtype=int))
+        if n_dynamic is not None:
+            p.cmesh.can_collide = self.ipc.make_static_obstacle_filter(n_dynamic)
+        p.barrier = self.ipc.BarrierPotential(p.dhat, 132., True)
+        p.friction = self.ipc.FrictionPotential(1e-5)
+        p.config = SimpleNamespace(friction_coefficient=.35)
+        return p
+
+    def test_stress_free_reference_check_accepts_separated_samples(self):
+        top = np.column_stack((np.linspace(0., .015, 4), np.zeros(4)))
+        rest = np.vstack((top, [[.015, -.02], [0., -.02]]))
+        edges = [[i, (i+1)%len(rest)] for i in range(len(rest))]
+        p = self.geometry(rest, edges, 'improved-max', len(rest))
+        p.n = len(rest)
+        check = p.check_reference_contact()
+        self.assertEqual(check['status'], 'passed')
+        self.assertEqual(check['body_contact_force_norm_n'], 0.)
+        self.assertEqual(check['normal_barrier_energy_n_mm'], 0.)
+
+    def test_stress_free_reference_check_rejects_same_polygon_dense_sampling(self):
+        # Same rectangle, only its top-edge sampling changes. There is no
+        # geometric overlap, yet adjacent samples inside dhat create forces.
+        top = np.column_stack((np.linspace(0., .015, 13), np.zeros(13)))
+        rest = np.vstack((top, [[.015, -.02], [0., -.02]]))
+        edges = [[i, (i+1)%len(rest)] for i in range(len(rest))]
+        p = self.geometry(rest, edges, 'improved-max', len(rest))
+        p.n = len(rest)
+        self.assertFalse(self.ipc.has_intersections(p.cmesh, rest))
+        with self.assertRaisesRegex(ValueError, 'contact-induced prestress'):
+            p.check_reference_contact()

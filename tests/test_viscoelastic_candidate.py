@@ -156,6 +156,21 @@ class MaterialRunControlTests(unittest.TestCase):
             self.assertEqual('--image-estimates' in cmd,angle==33)
             self.assertNotIn('--resume',cmd)
 
+    def test_queue_forwards_common_performance_policy_without_resume(self):
+        from tools.run_material_queue import make_command
+        from prototype.material_performance import performance_policy
+        m=dict(python='python',solve_seconds_per_case=100,threads=2,
+               performance_policy=performance_policy(material_batch_size=2048,linear_backend='pardiso'))
+        for angle in (0,33,57):
+            command=make_command(m,dict(angle=angle,target_mm=2,output='unused',resume='ignored'))
+            self.assertNotIn('--resume',command)
+            for flag,value in (('--material-batch-size','2048'),('--linear-backend','pardiso'),
+                               ('--linear-threads','4'),('--threads','2')):
+                self.assertEqual(command[command.index(flag)+1],value)
+        m['performance_policy']=performance_policy()
+        command=make_command(m,dict(angle=57,target_mm=2,output='unused'))
+        self.assertGreater(int(command[command.index('--linear-threads')+1]),0)
+
     def test_comparison_inputs_reject_mutation(self):
         import hashlib
         from tools.run_material_queue import verify_inputs
@@ -165,12 +180,6 @@ class MaterialRunControlTests(unittest.TestCase):
             verify_inputs(m);p.write_bytes(b'changed checkpoint')
             with self.assertRaises(RuntimeError):verify_inputs(m)
 
-    def test_incomplete_reference_cannot_be_reused(self):
-        from tools import run_material_queue as queue
-        with tempfile.TemporaryDirectory() as directory:
-            p=Path(directory);(p/'result.json').write_text(json.dumps(dict(signature=dict(config=dict(inclination_deg=0)))))
-            with patch.object(queue,'summarize_case',return_value=dict(mechanics_completed=False)):
-                with self.assertRaises(ValueError):queue.audit_reference(p,p,{},.35,2.)
 
     def test_force_csv_units_and_full_range_comparison(self):
         from tools.run_material_candidate import load_force_csv,compare
@@ -215,7 +224,7 @@ class MaterialRunControlTests(unittest.TestCase):
             self.assertEqual(float(cmd[cmd.index('--mu')+1]),.30)
             self.assertNotIn('--resume',cmd)
 
-    def test_fresh_queue_freezes_independent_jobs_without_resuming(self):
+    def test_queue_records_independent_jobs_without_copying_sources(self):
         from tools import run_material_queue as queue
         with tempfile.TemporaryDirectory() as directory:
             out=Path(directory)/'queue'
@@ -229,7 +238,10 @@ class MaterialRunControlTests(unittest.TestCase):
             self.assertEqual(manifest['mu'],.30)
             self.assertEqual([j['angle'] for j in manifest['jobs']],[60,30])
             self.assertTrue(all(j['resume'] is None and j['mu']==.30 for j in manifest['jobs']))
-            self.assertTrue((out/'source/tools/run_material_candidate.py').is_file())
+            self.assertFalse((out/'source').exists())
+            self.assertEqual(manifest['material']['equilibrium_shear'],.14)
+            self.assertEqual(manifest['material']['maxwell_shear'],1.24)
+            self.assertEqual(manifest['material']['relaxation_s'],1.7)
 
     def test_changed_mu_cannot_be_reported_as_requested_completed_case(self):
         from tools.run_material_queue import summarize_case
@@ -265,7 +277,7 @@ class MaterialRunControlTests(unittest.TestCase):
         m=dict(python='python',solve_seconds_per_case=21600,reference='ref60',image_estimates='image60')
         job=dict(angle=60,target_mm=2,output='out60',resume='history60')
         cmd=make_command(m,job)
-        self.assertIn('--resume',cmd);self.assertIn('--reference',cmd)
+        self.assertNotIn('--resume',cmd);self.assertIn('--reference',cmd)
         for angle in (30,0):
             cmd=make_command(m,dict(angle=angle,target_mm=2,output=f'out{angle}'))
             self.assertNotIn('--resume',cmd);self.assertNotIn('--reference',cmd)

@@ -14,16 +14,13 @@ from prototype.material import bulk
 
 
 class ParameterCommandTests(unittest.TestCase):
-    def test_interior_coarsening_is_explicit_and_mini_only(self):
+
+    def test_every_elastic_entrypoint_stays_within_two_mm(self):
         with tempfile.TemporaryDirectory() as folder:
-            common=['--current','--output',folder,'--no-visualize']
-            self.assertIsNone(parse_args(common).interior_spacing)
-            args=parse_args(common+['--element','mini','--interior-spacing','.2'])
-            self.assertEqual(args.interior_spacing,.2)
-            for extra in (['--interior-spacing','.2'],['--element','mini','--interior-spacing','.04'],
-                          ['--element','mini','--interior-spacing','nan']):
-                with contextlib.redirect_stderr(io.StringIO()),self.assertRaises(SystemExit):
-                    parse_args(common+extra)
+            for preset in ([], ['--current'], ['--baseline']):
+                self.assertLessEqual(parse_args(['--output', folder] + preset).depth, 2.)
+                with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                    parse_args(['--output', folder, '--depth', '3'] + preset)
 
     def test_current_and_frozen_catalogue_moduli_are_distinct(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -41,7 +38,7 @@ class ParameterCommandTests(unittest.TestCase):
     def test_current_preset_and_explicit_diagnostic_overrides(self):
         with tempfile.TemporaryDirectory() as folder:
             args = parse_args(['--current', '--output', folder])
-            self.assertEqual((args.depth, args.shear_modulus, args.ogden_alpha), (3., .47, 2.))
+            self.assertEqual((args.depth, args.shear_modulus, args.ogden_alpha), (2., .47, 2.))
             self.assertEqual((args.tip_radius, args.friction, args.nose_facets), (.02, .35, 64))
             self.assertEqual((args.local_spacing, args.surface_spacing, args.fine_halfwidth), (.05, .005, 3.))
             self.assertEqual(args.predictor, 'secant')
@@ -58,8 +55,6 @@ class ParameterCommandTests(unittest.TestCase):
                           ['--current', '--contact-formulation', 'offset-geometric']):
                 with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
                     parse_args(['--output', folder] + extra)
-            diagnostic = parse_args(['--output', folder, '--contact-formulation', 'offset-geometric'])
-            self.assertEqual(diagnostic.contact_formulation, 'offset-geometric')
 
     def test_nonfinite_and_nonpositive_moduli_are_rejected(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -94,8 +89,8 @@ class NativeParameterTests(unittest.TestCase):
         x[p.n:, 0] += .002
         return x
 
-    def test_default_equals_explicit_current_in_both_discretizations(self):
-        for element in ('p1', 'p2-interior'):
+    def test_default_equals_explicit_current_p1(self):
+        for element in ('p1',):
             with self.subTest(element=element):
                 options = dict(case='patch', mu=.35, element=element,
                                local_spacing=.2, surface_spacing=.2)

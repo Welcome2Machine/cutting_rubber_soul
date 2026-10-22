@@ -21,19 +21,10 @@ def signature(p):
                 mesh_sha256=hashlib.sha256(p.rest.tobytes()+p.mesh.triangles.tobytes()).hexdigest(),
                 contact_formulation=p.contact_formulation,dhat=p.dhat,
                 physical_force_tolerance_n=BASELINE['force_tolerance_n'])
-    if getattr(p, 'actual_affine_policy', False):
-        value['predictor_policy'] = 'actual-affine-stagnation-rule'
-    if hasattr(p, 'contact_control'):
-        value['contact_control'] = p.contact_control
-    if hasattr(p, 'material_kinematics'):
-        value['material_kinematics'] = p.material_kinematics
-    if getattr(p, 'shear_limit_mpa', None) is not None:
-        value['interface_law'] = dict(name='nodal-current-area-smooth-shear-limit',
-            strength_mpa=p.shear_limit_mpa,smooth_min_power=4,area='current rubber boundary dual area')
     return value
 
 def make_problem(*,angle,equilibrium_shear,maxwell_shear,relaxation_s,loading_rate,bulk_modulus=None,mu=.35,
-                 equilibrium_alpha=2.,maxwell_alpha=2.,actual_affine_policy=False,shear_limit_mpa=None,
+                 equilibrium_alpha=2.,maxwell_alpha=2.,
                  volumetric='quadratic_j'):
     """Shared construction for actual-angle runs and completed-reference audits."""
     if not all(np.isfinite(a) and 1 <= a <= 4 for a in (equilibrium_alpha,maxwell_alpha)):
@@ -46,17 +37,6 @@ def make_problem(*,angle,equilibrium_shear,maxwell_shear,relaxation_s,loading_ra
     p.stagnation_window=40
     if maxwell_alpha != 2.:
         p.material=replace(p.material,mu_ov=(2*maxwell_shear/maxwell_alpha,),alpha_ov=(float(maxwell_alpha),))
-    mixins=[]
-    if actual_affine_policy:
-        from tools.replay_affine_policy import ActualAffinePolicy
-        mixins.append(ActualAffinePolicy)
-        p.actual_affine_policy=True
-    if shear_limit_mpa is not None:
-        from prototype.shear_limited_contact import ShearLimitedContact
-        mixins.append(ShearLimitedContact)
-    if mixins:
-        p.__class__=type('ExplicitMaterialInterfaceCandidate',tuple(mixins)+ (ViscoelasticProblem,),{})
-    if shear_limit_mpa is not None:p.enable_shear_limit(shear_limit_mpa)
     return p
 
 def audit(p,out,report,*,destination=None,progress=None,deadline=None):
@@ -92,7 +72,7 @@ def resume_compatibility(old,report):
         raise ValueError('Resume requires identical material, angle, mesh, contact and acceptance')
     a,b=old['source_sha256'],report['source_sha256']
     changed=sorted(k for k in set(a)|set(b) if a.get(k)!=b.get(k))
-    allowed={'tools/run_material_candidate.py','tools/run_common_material_study.py'}
+    allowed={'tools/run_material_candidate.py'}
     if set(a)!=set(b) or set(changed)-allowed:
         raise ValueError('Resume physical source fingerprints differ: '+', '.join(changed))
     return dict(changed_runner_files=changed,physical_sources_identical=True,
@@ -102,9 +82,10 @@ def resume_compatibility(old,report):
 def resume(p,source,out,report):
     old=json.loads((source/'result.json').read_text(encoding='utf-8'))
     provenance=resume_compatibility(old,report)
-    for name,digest in old['source_sha256'].items():
-        if hashlib.sha256((source/'source'/name).read_bytes()).hexdigest()!=digest:
-            raise ValueError('Saved source snapshot differs: '+name)
+    root=Path(__file__).resolve().parents[1]
+    for name,digest in report['source_sha256'].items():
+        if hashlib.sha256((root/name).read_bytes()).hexdigest()!=digest:
+            raise ValueError('Current source fingerprint differs: '+name)
     if not old['steps']:raise ValueError('No accepted candidate prefix')
     print(f'RESUME_AUDIT source={source} accepted_states={len(old["steps"])}',flush=True)
     audit(p,source,old,destination=out/'resume_audit.json')

@@ -3,7 +3,8 @@ import numpy as np
 from mechanics.finite_strain import Material,response,elastic_response
 from prototype.material import bulk,from_config
 from prototype.model_config import FEMConfig
-from prototype.initiation import IntactProblem,InitiationOptions
+from types import SimpleNamespace
+from prototype.geometry import intact_mesh,GeometryOptions
 
 
 class SharedMaterialTests(unittest.TestCase):
@@ -18,7 +19,7 @@ class SharedMaterialTests(unittest.TestCase):
             np.testing.assert_allclose(fast[key],general[key],rtol=1e-10,atol=1e-10)
 
     def test_assembled_bulk_force_is_energy_gradient(self):
-        c=FEMConfig();p=IntactProblem(c,InitiationOptions(refinement_mm=.5,surface_spacing_mm=.1))
+        c=FEMConfig();p=SimpleNamespace(mesh=intact_mesh(c,GeometryOptions(refinement_mm=.5,surface_spacing_mm=.1))[0])
         u=np.column_stack((.15*p.mesh.reference_xy[:,0]+.07*p.mesh.reference_xy[:,1],-.04*p.mesh.reference_xy[:,1])).ravel()
         residual,_,dofs,_,_=bulk(p.mesh,u,c)
         direction=np.random.default_rng(12).normal(size=u.shape);eps=1e-6
@@ -59,7 +60,7 @@ class SharedMaterialTests(unittest.TestCase):
 
     def test_normal_indentation_geometry_is_supported(self):
         c=FEMConfig(inclination_deg=0.)
-        p=IntactProblem(c,InitiationOptions(refinement_mm=.5,surface_spacing_mm=.1))
+        p=SimpleNamespace(mesh=intact_mesh(c,GeometryOptions(refinement_mm=.5,surface_spacing_mm=.1))[0])
         np.testing.assert_allclose(p.mesh.reference_xy,p.mesh.local_sn,atol=1e-12)
 
 

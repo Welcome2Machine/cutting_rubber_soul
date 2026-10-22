@@ -63,7 +63,8 @@ def validate_loading_schedule(report, *, require_complete=False):
     """
     tolerance = 1e-10
     depths = np.asarray([step["depth_mm"] for step in report["steps"]], dtype=float)
-    increment, target = float(report["loading_increment_mm"]), float(report["target_mm"])
+    increment = float(report.get("loading_increment_mm", report.get("settings", {}).get("increment", np.nan)))
+    target = float(report["target_mm"])
     if (not np.isfinite(increment) or increment <= 0 or not np.isfinite(target) or target <= 0
             or len(depths) == 0 or not np.isfinite(depths).all()
             or abs(depths[0]) > tolerance or np.any(np.diff(depths) <= 0)
@@ -106,13 +107,21 @@ def export_trace(source, output):
     report_path = source / "result.json"
     report_bytes = report_path.read_bytes()
     report = json.loads(report_bytes)
-    if (report.get("status") != "completed" or report.get("completed") is not True
-            or report.get("case") != "oblique" or report["simplifications"].get("fracture") is not False):
+    signature = report.get("signature", {})
+    maxwell = signature.get("material", {}).get("viscous_flow") == "isochoric_maxwell"
+    intact = (maxwell or (report.get("case") == "oblique"
+                         and report.get("simplifications", {}).get("fracture") is False))
+    if (report.get("status") != "completed" or report.get("completed") is not True or not intact):
         raise ValueError("Offline export requires a completed intact oblique history")
     if output == source or source in output.parents or output in source.parents:
         raise ValueError("Export must be separate from the original run")
     if output.exists() and any(output.iterdir()):
         raise ValueError("Export directory must be empty")
+    config = signature.get("config", report.get("config"))
+    dhat = signature.get("dhat", report.get("dhat_mm"))
+    nose_facets = report.get("simplifications", {}).get("nose_facets", 64 if maxwell else None)
+    if config is None or dhat is None or nose_facets is None:
+        raise ValueError("Missing intact geometry metadata")
     steps = report["steps"]
     validate_loading_schedule(report, require_complete=True)
     tracker, prior, reference, triangles = None, None, None, None
@@ -129,12 +138,11 @@ def export_trace(source, output):
             n = int(state["body_nodes"])
             if tracker is None:
                 reference, triangles = state["reference_xy"].copy(), state["triangles"].copy()
-                tracker = TipContactTracker(reference, triangles, n, report["config"],
-                                            report["dhat_mm"], report["simplifications"]["nose_facets"])
+                tracker = TipContactTracker(reference, triangles, n, config, dhat, nose_facets)
                 body_nodes = n
                 prior = reference
                 zero_knife = x[n:].copy()
-                start = -2 * report["dhat_mm"] / max(np.cos(np.deg2rad(report["config"]["inclination_deg"])), .1)
+                start = -2 * dhat / max(np.cos(np.deg2rad(config["inclination_deg"])), .1)
                 np.testing.assert_allclose(zero_knife, reference[n:] + [0., start], atol=1e-9, rtol=0)
                 dm = np.stack((reference[triangles[:, 1]] - reference[triangles[:, 0]],
                                reference[triangles[:, 2]] - reference[triangles[:, 0]]), axis=2)

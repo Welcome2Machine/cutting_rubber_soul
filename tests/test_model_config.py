@@ -21,11 +21,15 @@ class ModelConfigTests(unittest.TestCase):
         restored = FEMConfig(**legacy.to_dict())
         self.assertEqual(restored.to_dict(), legacy.to_dict())
 
-    def test_target_loading_is_three_mm_and_fifteen_seconds(self):
+    def test_legacy_serialization_default_is_separate_from_two_mm_run_target(self):
         c=FEMConfig()
         c.validate()
         self.assertEqual(c.max_indentation_mm,3)
         self.assertAlmostEqual(c.max_indentation_mm/c.speed_mm_s,15.)
+        import json
+        from pathlib import Path
+        spec=json.loads((Path(__file__).resolve().parents[1]/'prototype/intact_2mm_baseline.json').read_text())
+        self.assertEqual(spec['depth_mm'],2.)
 
 
     def test_invalid_numerical_configuration_fails_closed(self):

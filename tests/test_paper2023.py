@@ -1,5 +1,4 @@
 import unittest
-from pathlib import Path
 import numpy as np
 from reproductions.dammass2023.material import Material,principal,response
 from reproductions.dammass2023.solver import Config,Problem
@@ -7,10 +6,13 @@ from reproductions.dammass2023.solver import Config,Problem
 
 class Paper2023Tests(unittest.TestCase):
     def test_crack_band_precision_regression(self):
-        if not (Path(__file__).parent/'fixtures'/'paper2023_large_stretch.npz').is_file():
-            self.skipTest('Local-only large-stretch state is not distributed; this regression was not run')
-        with np.load(Path(__file__).parent/'fixtures'/'paper2023_large_stretch.npz') as z:
-            F,A,dt=z['F'],z['metric'],float(z['dt'])
+        # Fixed large-stretch return-map regression, independent of local data.
+        F=np.array([[[4.056473675647802,-84.32662864044048],
+                     [-0.13744870883239102,17.46267124249576]]])
+        A=np.array([[[1.0635476362706662,.6637632208369567,0.],
+                     [.6637632208369567,.644419892648346,0.],
+                     [0.,0.,1.3169280455511032]]])
+        dt=.0046875
         q=response(F,A,dt)
         self.assertGreater(np.max(np.abs(F)),70.)
         self.assertLess(np.max(q['plane_stress_scaled_residual']),1e-12)

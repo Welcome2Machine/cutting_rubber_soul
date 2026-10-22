@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from prototype.contact_trace import validate_loading_schedule
 from prototype.material import response
+from mechanics.finite_strain import Material, response as maxwell_response
 from prototype.model_config import FEMConfig, local_to_lab
 from run_support import write_json
 
@@ -153,24 +154,32 @@ def plot_tip_contact(records, outputpath):
 
 def load_frames(source):
     report = json.loads((source / "result.json").read_text(encoding="utf-8"))
-    if report.get('discretization', {}).get('element') == 'p2-interior':
-        raise ValueError('P1 stress renderer cannot render P2 fields; use the element-study postprocessor')
-    if report.get('discretization', {}).get('element') == 'p1-macro-mixed':
-        raise ValueError('Mixed pressure stress requires its nonlocal correction; plain P1 stress rendering is disabled')
+    if report.get('discretization', {}).get('element', 'p1') != 'p1':
+        raise ValueError('This renderer supports native P1 states only')
     if not report.get("completed"):
         raise ValueError("This visualization expects a completed, continuous run")
     validate_loading_schedule(report, require_complete=True)
-    # Recompute stresses only when the constitutive implementation matches the run.
-    for name in ("prototype/material.py", "mechanics/finite_strain.py"):
+    is_maxwell = 'material' in report.get('signature', {})
+    material = None
+    if is_maxwell:
+        from tools.qualify_intact_baseline import verify_case
+        verify_case(source)
+        values = dict(report['signature']['material'])
+        for key in ('mu_eq','alpha_eq','mu_ov','alpha_ov'):values[key]=tuple(values[key])
+        material = Material(**values)
+    # Maxwell postprocessing calls the shared kernel directly; a retired elastic
+    # adapter is not a source dependency. A changed kernel still fails closed.
+    source_names = ('mechanics/finite_strain.py',) if is_maxwell else ('prototype/material.py','mechanics/finite_strain.py')
+    for name in source_names:
         if digest(ROOT / name) != report["source_sha256"][name]:
             raise ValueError(f"Material source differs from saved run: {name}")
-    config = FEMConfig(**report["config"])
+    config = FEMConfig(**report.get("config",report.get('signature',{}).get('config',{})))
     frames, hashes = [], {}
     reference = triangles = inverse_edges = None
     for i, step in enumerate(report["steps"]):
         path = source / "states" / f"{i:04d}.npz"
         hashes[path.relative_to(source).as_posix()] = digest(path)
-        with np.load(path) as state:
+        with np.load(path,allow_pickle=False) as state:
             count = int(state["body_nodes"])
             xy = state["positions"].copy()
             if i == 0:
@@ -184,10 +193,26 @@ def load_frames(source):
                 np.testing.assert_array_equal(state["reference_xy"], reference)
                 np.testing.assert_array_equal(state["triangles"], triangles)
             np.testing.assert_allclose(float(state["depth_mm"]), step["depth_mm"], atol=1e-12)
+            if is_maxwell:
+                previous_metric=state['previous_material_metric'].copy()
+                saved_metric=state['material_metric'].copy()
+                material_dt=float(state['material_dt_s'])
+                expected_metric=np.tile(np.eye(3),(len(triangles),1,1)) if i==0 else last_metric
+                np.testing.assert_array_equal(previous_metric,expected_metric)
+                last_metric=saved_metric
+
         x = xy[:count]
         edges = np.stack((x[triangles[:, 1]] - x[triangles[:, 0]],
                           x[triangles[:, 2]] - x[triangles[:, 0]]), axis=-1)
-        fields = response(edges @ inverse_edges, config, tangent=False)
+        F=edges @ inverse_edges
+        if is_maxwell:
+            fields=maxwell_response(F,previous_metric,material_dt,material,tangent=False,kinematics='plane_strain')
+            np.testing.assert_allclose(fields['metric'],saved_metric,rtol=1e-10,atol=1e-11)
+            cauchy=np.zeros((len(F),3,3))
+            cauchy[:,:2,:2]=(fields['P'] @ F.transpose(0,2,1))/fields['J'][:,None,None]
+            cauchy[:,2,2]=fields['plane_stress_residual']/fields['J']
+            fields['cauchy']=cauchy
+        else:fields=response(F,config,tangent=False)
         np.testing.assert_allclose(fields["J"].min(), step["min_j"], atol=1e-10)
         tensile = np.maximum(np.linalg.eigvalsh(fields["cauchy"])[:, -1], 0.)
         if not np.isfinite(tensile).all():
@@ -215,7 +240,7 @@ def main():
     args.output.mkdir(parents=True, exist_ok=True)
     max_stress = max(f["peak_mpa"] for f in frames)
     model_label = (f"有限应变平面应变 · 倾角 {config.inclination_deg:g}° · μ={config.friction_coefficient:g} · "
-                   f"刀尖半径 {report['simplifications']['tip_radius_mm']:g} mm · 位移不放大")
+                   "原始接受网格 · 位移不放大")
     friction_label = "无摩擦" if config.friction_coefficient == 0 else f"μ={config.friction_coefficient:g}"
     upper = max(.5, np.ceil(max_stress * 2) / 2)
     norm = colors.Normalize(0, upper)

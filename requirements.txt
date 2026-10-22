@@ -3,5 +3,6 @@
 numpy==2.2.6
 scipy==1.15.3
 threadpoolctl==3.6.0
+psutil==7.1.0
 matplotlib==3.10.6
 ipctk==1.6.0

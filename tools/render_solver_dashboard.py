@@ -1,8 +1,4 @@
-"""Read-only HTML for the matched normal-history study; never imports a solver.
-
-python -m tools.render_solver_dashboard --study outputs/angle_paths_20261018
-Add --watch for a bounded reporting-only process, or --launch-watch to detach it.
-"""
+"""Read-only HTML for any bounded material queue; no mechanics imports or solves."""
 from __future__ import annotations
 
 import argparse
@@ -119,14 +115,10 @@ def case_state(job):
 def collect(study):
     q = read_json(study/'queue_status.json')
     launch = read_json(study/'launch.json')
-    manifest = read_json(study/'manifest.json')
-    predecessor = manifest.get('predecessor', {}).get('output')
     return dict(observed_jst=stamp(), study=str(study), queue=q,
                 cases=[case_state(j) for j in q.get('jobs', [])],
                 worker=process_check(launch.get('worker_pid'), launch.get('command'), launch.get('started_utc')),
-                report=read_json(study/'study_report.json'),
-                predecessor=read_json(Path(predecessor)/'queue_status.json') if predecessor else {},
-                predecessor_path=predecessor, worker_stderr=tail(study/'worker.stderr.log'),
+                worker_stderr=tail(study/'worker.stderr.log'),
                 worker_log=tail(study/'worker.stdout.log', 12))
 
 
@@ -143,122 +135,51 @@ def shell(title, body, refresh=False):
             '</main></body></html>')
 
 
-def job_table(cases, study, normal=True):
+def job_table(cases, study):
     rows = []
     for j in cases:
         depth = j.get('accepted_depth', j.get('last_depth_mm'))
         force = j.get('fz', j.get('endpoint_fz_n'))
-        verified = ('终态复核通过' if j.get('mechanics_completed') else '已接受前缀复核通过') if j.get('evidence_verified') else ('待终态复核' if j['status'] in ACTIVE|{'pending'} else '未通过 / 未提供')
+        verified = '终态复核通过' if j.get('mechanics_completed') and j.get('fresh_audit_passed') else ('待终态复核' if j['status'] in ACTIVE|{'pending','starting'} else '未通过 / 未提供')
         status = LABELS.get(j['status'], j['status'])
         if j.get('process') and j['process']['matched'] is not True:
             status += '；进程未确认'
         title = (f'<a href="#log-{escape(j["name"], quote=True)}">{escape(j["name"])}</a>'
-                 if normal else link(Path(j['output'])/'run.log', j['name'], study))
+)
         rows.append(f'<tr><td>{title}</td><td>{escape(status)}</td><td>{number(depth)}</td>'
                     f'<td>{number(force,7)}</td><td>{escape(verified)}</td></tr>')
-    coordinate = '法向 q' if normal else '实验室下压 d'
+    coordinate = '竖直刀具行程 d'
     return ('<div class="table"><table><thead><tr><th>案例 / 原始日志</th><th>队列状态</th>'
             f'<th>已接受 {coordinate} / mm</th><th>Fz / N</th><th>证据状态</th></tr></thead><tbody>'
             + ''.join(rows) + '</tbody></table></div>')
 
 
-def analysis_section(data, study):
-    report = data['report']
-    controls = [j for j in data['cases'] if j.get('tag') != 'base']
-    controls_finished = len(controls) == 15 and all(j['status'] not in ACTIVE|{'pending'} for j in controls)
-    failed_bases = [j['name'] for j in data['cases'] if j.get('tag')=='base'
-                    and j['status'] not in ACTIVE|{'pending'} and not j.get('mechanics_completed')]
-    if failed_bases:
-        gate = ('主路径 '+', '.join(failed_bases)+' 已终结但未完成。当前版本不能取得完整成对资格；'
-                '其已接受前缀可供分析，后续数值控制仍可定位问题，不能把它仅标为“等待验证”。')
-    elif any(not c.get('passed') for c in report.get('controls', [])):
-        gate = '已有数值控制未通过；其余项目仍可继续诊断，当前不能宣称联合门槛通过。'
-    elif not controls_finished:
-        gate = '尚待验证：15 条数值控制尚未全部结束。报告中的 false 目前不能解释为已判定失败。'
-    elif report.get('joint_gate_passed'):
-        gate = '联合数值门槛通过；这仍不等于实验验证或全域网格收敛。'
-    elif report.get('status') != data['queue'].get('status'):
-        gate = '队列与分析文件尚未同步，等待终态分析写入。'
-    else:
-        gate = '联合数值门槛未通过或证据不完整；不得直接推广。'
-    pair_lines = []
-    for p in report.get('paired_contrasts', []):
-        rows = p.get('rows', [])
-        if not rows:
-            continue
-        r = rows[-1]
-        pair_lines.append('<li>'+escape(f"{p['angle']}°：已有 {len(rows)} 个匹配深度记录；"
-            f"两主路径完成={p.get('complete')}，配套数值控制通过={p.get('numerical_controls_passed')}。")+'</li>')
-    reviews = ''.join(' · '+link(study/path,label,study) for path,label in (
-        ('progress_review/index.html','最新进展与失效分析（HTML）'),
-        ('pair33_review/index.html','33°完整成对分析（HTML）')) if (study/path).is_file())
-    return f'''<section><h2>当前可以得出的结论</h2>
-<p>{gate}</p><p>本轮检验：在相同法向深度和法向速度下，加入切向运动是否降低法向承载，
-以及切向反力对竖直力与输入功的贡献。A0 是垂直基准，B 是纯法向运动，C 是法向＋切向运动。</p>
-<p>共同材料、μ=0.35、刀具和固定底面保持一致；无断裂。
-新路径 v<sub>n</sub>=0.1 mm/s，目标 q=0.1 mm。不能直接当作原 v=0.2 mm/s 实验室下压的实验拟合曲线。</p>
-<ul>{''.join(pair_lines) or '<li>两角度的成对路径结果尚不齐，暂不能判断角度机理或实验偏差是否改善。</li>'}</ul>
-<p class="sub">数值门槛同时检查 N/T/Fz/路径反力（2%）与整个原始顶面的材料位移（2 μm）。
-T 是反力的切向投影，不等于单独的库仑摩擦力。局部 P2 不是已经证明无锁定的混合元。</p>
-<p>{link(study/'study_report.json','分析机器证据',study)} · <a href="analysis.html">理论与本轮试验设计（HTML）</a>{reviews}</p></section>'''
-
-
 def render(data, study, refresh=False):
-    q, cases = data['queue'], data['cases']
-    running = [j for j in cases if j['status'] == 'running']
-    done = sum(bool(j.get('mechanics_completed')) for j in cases)
-    ended = sum(j['status'] not in ACTIVE|{'pending'} for j in cases)
-    status = LABELS.get(q.get('status'), q.get('status', '状态文件不可读'))
+    q=data['queue'];cases=data['cases']
+    done=sum(j.get('mechanics_completed') is True for j in cases)
+    status=LABELS.get(q.get('status'),q.get('status','状态文件不可读'))
     if q.get('status') in ACTIVE and data['worker']['matched'] is not True:
-        status += '（仅文件声明；工作进程未确认）'
-    active = running[0] if running else {}
-    cards = [('队列',status), ('当前工况', active.get('name','—')),
-             ('已接受法向深度 q', number(active.get('accepted_depth'))+' mm'),
-             ('完整求解完成', f'{done} / {len(cases)} 项')]
-    body = f'''<header><span class="pill">橡胶斜切 · 本地计算</span><h1>运行状态与证据</h1>
-<p class="sub">快照时间：{escape(data['observed_jst'])}　|　{escape(study.name)}</p>
-<nav><a href="#current">当前求解</a><a href="#queue">全部案例</a><a href="#logs">运行日志</a><a href="analysis.html">方法与分析</a></nav></header>
-<div class="cards">'''+''.join(f'<div class="card">{escape(k)}<span class="value">{escape(v)}</span></div>' for k,v in cards)+'</div>'
-    body += f'<p class="sub">已终结 {ended}/{len(cases)} 项（包括失败/超时），完成数量只计完整力学路径；终态审查另列。</p>'
-    if active:
-        proc = active['process']
-        body += f'''<section id="current"><h2>{escape(active['name'])} 当前进展</h2>
-<progress max="{active['target_mm']}" value="{active.get('accepted_depth') or 0}"></progress>
-<p>已接受 <b>{number(active.get('accepted_depth'))} mm</b> / 目标 {number(active['target_mm'])} mm；
-保存 {active['state_count']} 个接受态。最近日志涉及深度 <b>{number(active.get('attempted_depth'))} mm</b>；日志深度不额外计入进度。</p>
-<p>最后接受态：Fz = <b>{number(active.get('fz'),8)} N</b>；残差 {number(active.get('residual'),6)} N；min J = {number(active.get('min_j'),6)}。</p>
-<p class="sub">求解器 PID {active.get('solver_pid')}：{escape(proc['reason'])}。
-日志更新时间：{active['log_updated']}（距快照约 {number(active.get('log_age_s'),4)} 秒）。</p>
-<p>最新前缀通过求解器接受门槛；整条路径的独立终态重新组装还需等待该案例结束。</p></section>'''
-        if active.get('log_age_s', 0) and active['log_age_s'] > 300:
-            body += '<div class="notice">日志已超过 5 分钟未更新；仅据此不能判断是求解中、停滞还是终止，需结合进程与最终错误。</div>'
-    body += analysis_section(data, study)
-    body += '<section id="queue"><h2>主路径与数值控制</h2>'+job_table([j for j in cases if j.get('tag')=='base'], study)
-    body += '<details><summary>展开 15 条半步、积分与富集范围控制</summary>'+job_table([j for j in cases if j.get('tag')!='base'], study)+'</details></section>'
-    previous = data['predecessor']
-    if previous.get('jobs'):
-        body += '<section><h2>前置 0° 对照</h2><p>'+escape(
-            f"状态：{LABELS.get(previous.get('status'),previous.get('status'))}；"
-            f"全部完整求解={previous.get('all_cases_completed')}，终态哈希检查={previous.get('terminal_hash_check_passed')}。"
-            f"结束时间：{stamp(previous.get('finished_utc'))}。")+'</p>'
-        body += job_table(previous['jobs'], study, normal=False)
-        body += '<p class="sub">前置对照使用实验室速度 0.2 mm/s；新 A0 使用法向速度 0.1 mm/s，二者不是同一加载历史。</p></section>'
-    body += '<section id="logs"><h2>运行日志</h2><p><code>FRICTION_PTC_REJECT</code> 表示一个试步未通过，求解器仍可调整后重试；'
-    body += '它不同于终止错误。试步 residual 也不同于上方最后接受态的残差。</p>'
+        status+='（仅文件声明；工作进程未确认）'
+    body=f'<header><h1>橡胶斜切 · 运行状态</h1><p>快照：{escape(data["observed_jst"])} · {escape(study.name)}</p></header>'
+    body+=f'<section><h2>{escape(status)}</h2><p>完整求解完成：{done} / {len(cases)} 项。</p>'
+    body+='<p>深度统一为实验室竖直刀具行程 d。只显示接受状态；尝试深度不计为已完成。完整体计算不预测断裂。</p>'
+    body+=job_table(cases,study)+'</section>'
     for j in cases:
-        opened = ' open' if j['status'] == 'running' else ''
-        body += f'<details id="log-{escape(j["name"], quote=True)}"{opened}><summary>{escape(j["name"])} · 最近 28 行</summary><pre>{escape(j["log_tail"] or "尚无日志")}</pre>'
-        if j.get('terminal_error') or j.get('result_read_error'):
-            body += '<p class="bad">'+escape(str(j.get('terminal_error') or j['result_read_error']))+'</p>'
-        if j.get('stderr_tail'):
-            body += '<p class="bad">求解器标准错误（需结合最终状态判断）：</p><pre>'+escape(j['stderr_tail'])+'</pre>'
-        body += link(Path(j['output'])/'run.log', '原始完整日志', study)+'</details>'
-    body += '<details><summary>调度日志与标准错误</summary><pre>'+escape(data['worker_log'] or '调度日志为空')+'</pre>'
-    body += '<pre>'+escape(data['worker_stderr'] or '调度标准错误为空')+'</pre></details>'
-    body += link(study/'queue_status.json','原始队列状态',study)+' · '+link(study/'dashboard_snapshot.json','本页结构化快照',study)+'</section>'
-    update = '后台只读展示程序每 60 秒刷新此文件；页面每 60 秒重载，队列结束后展示程序自动退出。' if refresh else '这是一次静态状态快照。'
-    body += f'<footer>{update} 时间戳是数据新鲜度依据；不预测完成时间。HTML 不改写求解器、冻结源码、原始日志或检查点。<br>工作进程：{escape(data["worker"]["reason"])}。</footer>'
-    return shell('橡胶斜切 · 运行状态', body, refresh)
+        name=escape(j['name']);target=j.get('target_mm',q.get('target_mm',2))
+        body+=f'<section id="log-{name}"><h2>{name}</h2><p>已接受 {number(j.get("accepted_depth"))} / {number(target)} mm；{j.get("state_count",0)} 状态。'
+        body+=f' Fz={number(j.get("fz"),8)} N，残差={number(j.get("residual"),6)} N，min J={number(j.get("min_j"),6)}。</p>'
+        if j.get('attempted_depth') is not None:body+=f'<p>最新尝试深度：{number(j["attempted_depth"])} mm。</p>'
+        if j.get('process'):body+='<p>'+escape(j['process']['reason'])+'</p>'
+        if j.get('log_updated'):body+='<p>日志更新：'+escape(j['log_updated'])+'</p>'
+        body+='<details'+(' open' if j['status']=='running' else '')+'><summary>最近日志</summary><pre>'+escape(j.get('log_tail') or '尚无日志')+'</pre></details>'
+        for key in ('terminal_error','result_read_error','stderr_tail'):
+            if j.get(key):body+='<pre>'+escape(str(j[key]))+'</pre>'
+        body+=link(Path(j['output'])/'run.log','完整运行日志',study)+' · '+link(Path(j['output'])/'result.json','接受记录',study)+'</section>'
+    body+='<section><h2>调度日志</h2><pre>'+escape(data.get('worker_log') or '暂无')+'</pre><pre>'+escape(data.get('worker_stderr') or '标准错误为空')+'</pre>'
+    body+=link(study/'queue_status.json','机器可读队列状态',study)+'</section>'
+    body+='<footer>'+('后台报告定期刷新；页面每 60 秒重载。' if refresh else '本页为静态快照。')
+    body+='时间戳决定数据新鲜度；未完成或未经整路径复核的结果不标为完整成功。工作进程：'+escape(data['worker']['reason'])+'</footer>'
+    return shell('橡胶斜切 · 运行状态',body,refresh)
 
 
 def atomic_write(path, text):
@@ -280,14 +201,14 @@ def render_document(source, study):
         fragment = '#'+url.split('#',1)[1] if '#' in url else ''
         return match.group(1)+'"'+quote(absolute, safe='/.:')+fragment+'"'
     content = re.sub(r'(href=|src=)"([^"]+)"', relocate, content)
-    intro = '<nav><a href="status.html">返回运行状态</a></nav><p class="notice">理论与方案文档的 HTML 展示。文中启动时间是历史记录；实时进展以状态页快照为准。</p>'
+    intro = '<nav><a href="index.html">返回运行状态</a></nav><p class="notice">理论与方案文档的 HTML 展示。文中启动时间是历史记录；实时进展以状态页快照为准。</p>'
     atomic_write(study/'analysis.html', shell('角度力学机理与试验设计', intro+'<section class="document">'+content+'</section>'))
 
 
 def write_snapshot(study, refresh=False):
     data = collect(study)
     atomic_write(study/'dashboard_snapshot.json', json.dumps(data, ensure_ascii=False, indent=2))
-    atomic_write(study/'status.html', render(data, study, refresh))
+    atomic_write(study/'index.html', render(data, study, refresh))
     return data
 
 
@@ -321,9 +242,6 @@ def main():
     a = parser.parse_args(); study = a.study.resolve()
     if not (study/'queue_status.json').is_file() or not 0 < a.max_hours <= 48:
         parser.error('Require existing queue_status.json and 0 < max-hours <= 48')
-    names = {j.get('case') for j in read_json(study/'queue_status.json').get('jobs', [])}
-    if names != {'A0','B33','C33','B57','C57'}:
-        parser.error('This dashboard describes the matched-normal five-path study only; adapt labels before other studies')
     if a.report_md:
         render_document(a.report_md.resolve(), study)
     if a.launch_watch:

@@ -4,7 +4,6 @@ __pycache__/
 .venv/
 .runtime/
 .codex/
-contact_flow_overlay.mp4
 outputs/
 slurm-*.out
 slurm-*.err
@@ -23,9 +22,4 @@ slurm-*.err
 *.csv
 *.tsv
 *.zip
-tests/fixtures/
 reproductions/dammass2023/reference/
-references/citation_metadata.json
-docs/validation.json
-docs/video_observations.md
-docs/**/video_observations.md

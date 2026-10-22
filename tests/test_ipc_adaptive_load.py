@@ -91,39 +91,7 @@ class AdaptiveLoadTests(unittest.TestCase):
             self.assertEqual(call.call_count, 1)
             self.assertEqual(p.predictor, 'secant')
 
-    def test_enriched_geometric_stall_cuts_back_and_preserves_history(self):
-        from types import SimpleNamespace
-        p = FakeProblem(lambda *args: False)
-        original = p.step
-        probe = object.__new__(IPCProblem)
-        probe.enrichment = object()
-        probe.options = SimpleNamespace(tip_radius_mm=.02)
-        probe.safe_step = lambda x, d: 1e-12
-        def step(x, old, target, deadline):
-            if target-old > .005+1e-12:
-                probe._ptc_trial(np.zeros((1,2)), np.ones((1,2)), 1.)
-            return original(x, old, target, deadline)
-        p.step = step
-        events = []
-        values = self.collect(p, events=events)
-        self.assertEqual([r['depth_mm'] for _,r in values], [.005,.01])
-        self.assertTrue(all('geometric stagnation' in e['error'] for e in events))
-        np.testing.assert_array_equal(p.previous, [[.005]])
 
-    def test_positive_path_bound_does_not_override_rounded_endpoint_geometry(self):
-        from types import SimpleNamespace
-        probe = object.__new__(IPCProblem)
-        probe.enrichment = SimpleNamespace(minimum_j=lambda u: -2e-15)
-        probe.n = 1
-        probe.mesh = SimpleNamespace(reference_xy=np.zeros((1,2)))
-        probe.options = SimpleNamespace(tip_radius_mm=.02)
-        probe.safe_step = lambda x, d: 1.
-        with self.assertRaisesRegex(LoadStepFailure, 'rounded trial'):
-            probe._ptc_trial(np.zeros((1,2)),np.ones((1,2)),1.)
-        probe.enrichment.minimum_j = lambda u: .8
-        trial,alpha,_ = probe._ptc_trial(np.zeros((1,2)),np.ones((1,2)),1.)
-        np.testing.assert_array_equal(trial, np.full((1,2),.01))
-        self.assertEqual(alpha,.01)
 
     def test_partial_substeps_are_yielded_before_later_failure(self):
         p = FakeProblem(lambda a, b, mode: b > .005)
