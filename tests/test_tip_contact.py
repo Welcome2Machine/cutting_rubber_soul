@@ -35,6 +35,25 @@ def place_pole(tracker, reference, body_nodes, point):
 
 
 class CapsuleIntervalTests(unittest.TestCase):
+    def test_straight_blade_subdivision_preserves_shape_and_contact_identity(self):
+        from prototype.geometry import subdivide_blade
+        tracker,reference,triangles,n,config=fixture()
+        blade,edges=subdivide_blade(reference[n:],64,.01)
+        np.testing.assert_array_equal(blade[:69],reference[n:])
+        np.testing.assert_array_equal(np.bincount(edges.ravel()),np.full(len(blade),2))
+        old_length=np.linalg.norm(np.roll(reference[n:],-1,axis=0)-reference[n:],axis=1).sum()
+        new_length=np.linalg.norm(blade[edges[:,1]]-blade[edges[:,0]],axis=1).sum()
+        self.assertAlmostEqual(old_length,new_length,places=12)
+        refined=np.vstack((reference[:n],blade))
+        other=TipContactTracker(refined,triangles,n,config,.01,64)
+        a=place_pole(tracker,reference,n,[2.,1.005])
+        b=place_pole(other,refined,n,[2.,1.005])
+        self.assertEqual(tracker.observe(a,0.),other.observe(b,0.))
+        self.assertEqual(tracker.observe_footprint(a,0.),other.observe_footprint(b,0.))
+        invalid=refined.copy();invalid[-1]+=[.1,.2]
+        with self.assertRaisesRegex(ValueError,'Extra blade nodes'):
+            TipContactTracker(invalid,triangles,n,config,.01,64)
+
     def test_small_contact_in_middle_of_long_edge(self):
         a, b = np.array([-10., .05]), np.array([10., .05])
         c, d = np.array([-.1, 0.]), np.array([.1, 0.])

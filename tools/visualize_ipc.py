@@ -273,7 +273,8 @@ def main():
             mesh = PolyCollection(frame["xy"][:count][triangles], facecolors="#e0eef7",
                                   edgecolors="#37657d", linewidths=.27, rasterized=True)
         ax.add_collection(mesh)
-        knife = Polygon(frame["xy"][count:], facecolor="#8b9099", edgecolor="#333b43", linewidth=.9)
+        outline=report.get('blade_discretization',{}).get('outline_vertex_count',len(frame['xy'])-count)
+        knife = Polygon(frame["xy"][count:count+outline], facecolor="#8b9099", edgecolor="#333b43", linewidth=.9)
         ax.add_patch(knife)
         return mesh, knife
 

@@ -22,9 +22,71 @@ Historical notes do not authorize new runs.
 
 ## Current operational state
 
+LATEST2026-10-23 user requests PAUSE and analyze. Stopped common2mm supervisor
+32224 then33 solver59640 at12:37:42 JST, verified no remaining loading process.
+NO automatic resume/restart/extensions.33 last accepted1.28mm, trial1.29 unsaved.
+0 completed2mm/201states with full native audit;203 files verified.33 paused129
+states, fresh native full-prefix audit NOW passes,131 files verified. Standard
+33 audit.json published, result remains paused/completedFalse, not2mm success.
+57 loaded2mm/201states but full history NOT qualified: fresh postprocessing
+checks find ONLY1.26mm failing material metric reproduction (2 symmetric entries).
+Continuous qualified prefix1.25mm. All other200 state audits individually pass;
+this does NOT certify the entire path past1.26. Exact dual-history/dt/dissipation
+chains pass. First failed state's batch replay exact; whole-array max metric
+change2.8372e-11,stress1.0516e-11MPa; native residual2.13824e-5N,Fz identical.
+Local return-map residual8.5567e-12<original1e-11. Keep original gates; no fix or
+promotion yet. Diagnosis: batch stopping-scale reproducibility vs metric gate,
+not mechanical failure at1.26 or explanation of multi-N experimental bias.
+Same Ge=Gv=.345/tau1.7/K/mu/v/blade5um/batch2048/PARDISO4/IPC2/BLAS1;
+ALL actual physical increments.01, no cutbacks.57 .5->2 report2689.5s vs0
+2716.969s; shallow expensive windows do not characterize the later whole path.
+At1mm FE0/33/57=17.3447/16.9728/13.4191N; first-force-zero experiments
+18.29/16.45/17.18N.57 persistent early/mid-depth deficit remains,0/33 close.
+Later experiment includes fracture; do not fit intact late response blindly.
+57 experiment subtracts.51N,0/33 already0; original CSVs retained, no depth shift.
+20 sources/164 inputs match. Review used saved-field audits/plots ONLY; no new
+FE loading, code/parameters/solver changes or relaxed acceptance. Evidence:
+outputs/common_candidate_20261023/common2mm/pause_review/index.html and root HTML.
+Next prospective priority: material integration batch consistency under original
+criteria, then common G0/q/tau response fit in qualified early windows. This
+analysis does NOT authorize new runs. Keep paused until explicit user resume.
+
+2026-10-23 common.5 queue ENDED05:19:23 JST, all57/0/33 completed.5mm,
+51 states EACH, fresh full-chain native audits passed. User-requested result
+review verified159 case files plus20 sources/25 inputs, zero mismatches; no
+matching loading processes. Ge=Gv=.345/tau1.7/fixedK/mu/v, blade5um,
+physical.01 increments throughout; NO cutbacks.57 resumes its OWN audited.19,
+0/33 start at rest. Same batch2048/PARDISO4/IPC2/BLAS1 and original500/40->
+affine500/no40, force/J/CCD/boundaries/dissipation/history unchanged.
+Current.19-.5 window57=1699.375s, prior windows2209.188s SEPARATE;
+0/33 own-path reports650.797/554.656s.57 .19/.29 require482/424 iterations,
+but .3-.5 costs351.423s/290 reported iterations, no rejected predictors.
+Do not claim a universal speed fix or extrapolate worst-point cost to2mm.
+Actual.5 Fz0/33/57=7.868814/7.927619/5.796138N, experiments8.27/7.61/8.48.
+Common.1-.5 RMSE=.224350/.270487/2.319894N; pooled1.354671N.0/33 both
+secants within20%;57 first secant36.71% LOW, second7.81% LOW. At.5,
+F33-F0 FE+.058805 vs experiment-.660N; F57-F0 FE-2.072675 vs+.210N.
+Numerical short-window goal met; common fit NOT met, candidate not promoted.
+Do not infer whole Maxwell family insufficiency or introduce angle-only fits.
+No new runs/extensions authorized by this status review.
+Evidence/status: outputs/common_candidate_20261023/index.html and common05.
+Retained original geometry baseline still usesGe=.14/Gv1.24 and has3x2mm.
+
+Earlier same-history fine.16->.17 original affine500/no40 control passes364
+iterations; secant500/no40 also passes348 to same root.40 residual stagnation
+is not no-root proof. Gradient/history globalizers failed and were removed.
+Original join quadrature weight~302x neighbor; optional5um collinear blade
+subdivision keeps canonical polygon/nose/body.Independent.0-.16 attempt time
+saves23.4%, max force change.9%, NOT full-path equivalent acceleration.
+Coarse physical.02 control remains NOT qualified: strict metric reproducibility
+fails.10 from batch stopping-scale discrepancy; never promote/relax gates.
+Failure snapshots use failed_previous, not rolled-back previous.198 reusable
+regressions passed before launch; default equations match5039e54 at real field.
+No frozen source copies; necessary exact histories/failure evidence retained.
+
 User explicitly requested stopping computation and removing frozen source copies.
 Supervisor and accelerated57 solver were stopped2026-10-22 23:19:55 JST.
-No active queue; do not automatically resume. Accelerated57 did NOT complete2 mm.
+That old queue must not resume. Accelerated57 did NOT complete2 mm.
 Material batches2048/PARDISO4, IPC2/BLAS1 previously saved27.21% over three
 conditional increments. Their old evidence directory was retired; retain this
 as historical summary, not a full-path speed guarantee or new completion claim.
@@ -34,7 +96,8 @@ Current code may perform fresh baseline audits without requiring old source tree
 
 - Same rubber across angles; no angle-specific material, effective-width or force scaling.
 - Force inputs: docs/1008n0a2__Fz__curve_1.csv,1008n33a1__Fz__curve_2.csv,
-  1014n57a1__Fz__curve_0.csv. Preserve units, zeros and trial identity;57 starts0.51 N.
+  1014n57a1__Fz__curve_0.csv. Preserve raw files/units/trial identity. Comparison
+  targets subtract initial Fz;57 raw starts.51N, derived target starts0 by current user request.
   Do not use old V01 force channels.
 - Later experimental data include fracture.0-degree~1 mm estimate refers to a1,
   not current a2;33~1.2--1.3 mm is approximate;57 onset unknown.

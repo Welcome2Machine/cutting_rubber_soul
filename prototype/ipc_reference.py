@@ -24,7 +24,7 @@ from scipy.sparse.linalg import spsolve, splu, eigsh, LinearOperator, ArpackNoCo
 from threadpoolctl import threadpool_limits
 from run_support import write_json, save_npz, source_hashes, compute_process_policy
 from .model_config import FEMConfig, local_to_lab, _rotation_vectors
-from .geometry import GeometryOptions, intact_mesh, blade_boundary_vertices
+from .geometry import GeometryOptions, intact_mesh, blade_boundary_vertices,subdivide_blade
 from .material import bulk
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -120,6 +120,7 @@ class IPCProblem:
         contact_formulation="improved-max",
         predictor="affine",
         friction_globalization="model-error",
+        blade_spacing=None,
     ):
         if not np.isfinite(shear_modulus) or shear_modulus <= 0:
             raise ValueError("Shear modulus must be finite and positive (MPa)")
@@ -212,12 +213,16 @@ class IPCProblem:
                 (np.cos(theta), np.sin(theta))
             )
             blade = np.vstack((vertices[:2], arc, vertices[-2:]))
+        if case=='patch':
+            if blade_spacing is not None:raise ValueError('Blade subdivision requires a rounded blade')
+            knife_edges=np.column_stack((np.arange(len(blade)),np.roll(np.arange(len(blade)),-1)))
+        else:
+            blade,knife_edges=subdivide_blade(blade,self.nose_facets,blade_spacing)
+        self.blade_spacing=blade_spacing
         self.n = self.mesh.node_count
         self.rest = np.vstack((self.mesh.reference_xy, blade))
         self.total = self.rest.size
-        knife_edges = (
-            np.column_stack((np.arange(len(blade)), np.roll(np.arange(len(blade)), -1))) + self.n
-        )
+        knife_edges=knife_edges+self.n
         edges = np.vstack((edges, knife_edges))
         self.surface = np.unique(edges)
         self.surface_dofs = (2 * self.surface[:, None] + np.arange(2)).ravel()
@@ -292,9 +297,12 @@ class IPCProblem:
         if with_metric and not tangent:
             raise ValueError('A paired metric requires the tangent')
         u = (x[: self.n] - self.mesh.reference_xy).ravel()
+        phase_start = time.perf_counter()
         r, k, dofs, energy, minj = self.material_bulk(u, with_tangent=tangent)
+        self._record_phase('material_bulk', phase_start)
         g = np.zeros(self.total)
         np.add.at(g, dofs.ravel(), r.ravel())
+        phase_start = time.perf_counter()
         c = self.collisions(x)
         sx = x[self.surface]
         energy += self.barrier(c, self.cmesh, sx)
@@ -304,6 +312,8 @@ class IPCProblem:
             energy += self.friction(lag, self.cmesh, delta)
             cg += self.friction.gradient(lag, self.cmesh, delta)
         g[self.surface_dofs] += cg
+        self._record_phase('contact_force', phase_start)
+        phase_start = time.perf_counter()
         h = None
         metric = None
         if tangent:
@@ -323,24 +333,35 @@ class IPCProblem:
             h = assemble(kp if projected else k,projected)
             if with_metric:
                 metric = h if projected else assemble(kp,True)
+        self._record_phase('tangent_assembly', phase_start)
         if with_metric:
             return float(energy),g,h,minj,metric
         return float(energy), g, h, minj
+
+    def _record_phase(self, name, started):
+        """Optional exclusive phase totals within one loading attempt."""
+        if getattr(self, 'solver_diagnostics', False):
+            totals = self.__dict__.setdefault('phase_seconds', {})
+            totals[name] = totals.get(name, 0.) + time.perf_counter()-started
 
     def checkpoint_data(self):
         return {}
 
     def safe_step(self, x, direction):
+        phase_start = time.perf_counter()
         F = np.eye(2) + np.einsum(
             "eai,eaJ->eiJ", (x[: self.n] - self.mesh.reference_xy)[self.mesh.triangles], self.grad
         )
         D = np.einsum("eai,eaJ->eiJ", direction[: self.n][self.mesh.triangles], self.grad)
-        return min(
-            determinant_step(F, D),
-            self.ipc.compute_collision_free_stepsize(
-                self.cmesh, x[self.surface], (x + direction)[self.surface]
-            ),
-        )
+        j_fraction = determinant_step(F, D)
+        self._record_phase('positive_j', phase_start)
+        phase_start = time.perf_counter()
+        ccd_fraction = self.ipc.compute_collision_free_stepsize(
+            self.cmesh, x[self.surface], (x + direction)[self.surface])
+        self._record_phase('ccd', phase_start)
+        if getattr(self, 'solver_diagnostics', False):
+            self.step_limits = dict(j_fraction=float(j_fraction), ccd_fraction=float(ccd_fraction))
+        return min(j_fraction, ccd_fraction)
 
     def coupled_friction_tangent(self, x, lag, frozen_hessian):
         """Fresh force Jacobian: frozen Hessian plus contact-geometry coupling.
@@ -371,6 +392,7 @@ class IPCProblem:
         """Default arithmetic unchanged; explicit candidates may supply a checked backend."""
         return spsolve(matrix, rhs)
 
+
     def solve_friction(self, x, depth, deadline):
         """Preconditioned pseudo-transient continuation of fresh force balance.
 
@@ -389,7 +411,9 @@ class IPCProblem:
             if time.monotonic() > deadline:
                 raise TimeoutError("IPC friction pseudo-transient wall budget")
             self.trial = x.copy()
+            phase_start = time.perf_counter()
             lag = self.lag(x)
+            self._record_phase('friction_build', phase_start)
             assembly_start = time.perf_counter()
             assembly_cpu_start = time.process_time()
             # Share the exact tangent and PSD metric at the same state.
@@ -410,9 +434,11 @@ class IPCProblem:
                                       f"window={self.stagnation_window}")
             if iteration == self.max_iterations:
                 break
+            phase_start = time.perf_counter()
             A = self.coupled_friction_tangent(x, lag, H)[self.free][:, self.free]
             M = paired_metric[self.free][:,self.free]
             M += diags(np.full(len(self.free), BASELINE["hessian_regularization_n_mm"]))
+            self._record_phase('coupled_tangent', phase_start)
             for retry in range(18):
                 if time.monotonic() > deadline:
                     raise TimeoutError("IPC friction pseudo-transient wall budget")
@@ -423,6 +449,7 @@ class IPCProblem:
                     du, linear_info = linear.solve(A+shift*M,-r)
                     print('LINEAR '+json.dumps(linear_info,sort_keys=True),flush=True)
                 solve_seconds = time.perf_counter()-solve_start
+                self._record_phase('linear_solve', solve_start)
                 maximum = float(np.max(np.abs(du)))
                 if not np.all(np.isfinite(du)) or maximum == 0:
                     shift = max(initial_shift, 2*shift)
@@ -432,7 +459,10 @@ class IPCProblem:
                 direction = direction.reshape(-1, 2)
                 trial, alpha, geometric_fraction = self._ptc_trial(x, direction, maximum)
                 trial_start = time.perf_counter()
-                gt = self.evaluate(trial, self.lag(trial), tangent=False)[1][self.free]
+                phase_start = time.perf_counter()
+                trial_lag = self.lag(trial)
+                self._record_phase('friction_build', phase_start)
+                gt = self.evaluate(trial, trial_lag, tangent=False)[1][self.free]
                 nt = float(np.linalg.norm(gt))
                 # Safeguard the local force model, rather than requiring each
                 # auxiliary time step to reduce the physical residual monotonically.
@@ -441,8 +471,29 @@ class IPCProblem:
                 model_accept = error <= .25*max(norm, nt) or nt <= BASELINE["force_tolerance_n"]
                 merit_accept = (not model_accept and self.friction_globalization == 'residual-merit'
                                 and residual_merit_decrease(norm, nt, float(r@linear_action), alpha))
-                if (np.isfinite(nt) and not np.array_equal(trial, x)
-                        and (model_accept or merit_accept)):
+                accepted = (np.isfinite(nt) and not np.array_equal(trial, x)
+                            and (model_accept or merit_accept))
+                next_shift = ((max(initial_shift, shift) if merit_accept else
+                    max(1e-10, min(1e6, shift*nt/max(norm, 1e-15)/1.2))) if accepted
+                    else max(initial_shift, 2*shift))
+                if getattr(self, 'solver_diagnostics', False):
+                    detail = dict(depth_mm=float(depth), iteration=iteration, retry=retry,
+                        residual_n=norm, trial_residual_n=nt, residual_ratio=nt/norm,
+                        predicted_residual_n=float(np.linalg.norm(r+alpha*linear_action)),
+                        linear_relative_residual=float(np.linalg.norm((A+shift*M)@du+r)/norm),
+                        residual_squared_slope=float(r@linear_action),
+                        model_error_n=error, shift_used=shift, shift_next=next_shift,
+                        geometric_fraction=float(geometric_fraction),
+                        displacement_cap_alpha=float(.5*self.options.tip_radius_mm/maximum),
+                        alpha=float(alpha), displacement_inf_mm=float(alpha*maximum),
+                        criterion=('fresh_residual_merit' if merit_accept else 'model_error')
+                            if accepted else 'rejected',
+                        linear_s=solve_seconds, trial_s=time.perf_counter()-trial_start,
+                        **getattr(self,'step_limits',{}))
+                    self.ptc_state = dict(positions=x.copy(), direction=direction.copy(),
+                        residual=r.copy(), trial_residual=gt.copy(), **detail)
+                    print('PTC_DIAGNOSTIC '+json.dumps(detail, sort_keys=True), flush=True)
+                if accepted:
                     x = trial
                     self.trial = x.copy()
                     print(f"FRICTION_PTC_UPDATE alpha={alpha:.9g} residual_N={nt:.9g} "
@@ -450,8 +501,7 @@ class IPCProblem:
                           f"criterion={'fresh_residual_merit' if merit_accept else 'model_error'}", flush=True)
                     # A good actual decrease does not make an inaccurate local
                     # model trustworthy: retain stabilization for merit steps.
-                    shift = (max(initial_shift, shift) if merit_accept else
-                             max(1e-10, min(1e6, shift*nt/max(norm, 1e-15)/1.2)))
+                    shift = next_shift
                     break
                 print(f"FRICTION_PTC_REJECT retry={retry} metric_shift={shift:.9g} "
                       f"alpha={alpha:.9g} residual_N={nt:.9g} "
@@ -653,6 +703,8 @@ class IPCProblem:
         return best
 
     def step(self, x, old, depth, deadline):
+        self.phase_seconds = {}
+        self.ptc_state = {}
         self.previous = x.copy()
         x = self._loading_predictor(x, old, depth)
         self.trial = x.copy()
@@ -768,6 +820,9 @@ def adaptive_load_steps(p, x, old, target, deadline, minimum_increment, on_rejec
     for choice, friction_globalization in choices:
         p.attempted_depth = float(target)
         p.failed_previous = x.copy()
+        p.failed_context = dict(from_depth_mm=float(old), attempted_depth_mm=float(target),
+            nominal_target_mm=float(nominal_target), subdivision_level=level, predictor=choice,
+            friction_globalization=friction_globalization)
         before_previous = p.previous.copy()
         before_history = [(d, state.copy()) for d, state in p._accepted_predictor_history]
         started = time.monotonic()
@@ -785,7 +840,8 @@ def adaptive_load_steps(p, x, old, target, deadline, minimum_increment, on_rejec
                          nominal_target_mm=float(nominal_target), subdivision_level=level,
                          predictor=choice, elapsed_s=time.monotonic()-started,
                          friction_globalization=friction_globalization,
-                         error=f'{type(exc).__name__}: {exc}')
+                         error=f'{type(exc).__name__}: {exc}',
+                         phase_seconds=getattr(p, 'phase_seconds', {}).copy())
             p.previous = before_previous
             p._accepted_predictor_history = before_history
             print('LOAD_REJECT '+json.dumps(event, sort_keys=True), flush=True)
@@ -796,7 +852,9 @@ def adaptive_load_steps(p, x, old, target, deadline, minimum_increment, on_rejec
                                       increment_mm=float(target-old),
                                       nominal_target_mm=float(nominal_target),
                                       subdivision_level=level, predictor=choice,
-                                      friction_globalization=friction_globalization)
+                                      friction_globalization=friction_globalization,
+                                      elapsed_s=time.monotonic()-started,
+                                      phase_seconds=getattr(p, 'phase_seconds', {}).copy())
             p.predictor = predictor
             p.friction_globalization = globalization
             p.stagnation_window = stagnation_window

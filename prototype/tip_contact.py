@@ -97,8 +97,20 @@ class TipContactTracker:
         if (isinstance(nose_facets, (bool, np.bool_)) or not isinstance(nose_facets, (int, np.integer))
                 or nose_facets < 4 or nose_facets % 2):
             raise ValueError("An even nose facet count >= 4 is required")
-        if len(self.reference) - body_nodes != nose_facets + 5:
+        canonical=nose_facets+5
+        if len(self.reference) - body_nodes < canonical:
             raise ValueError("Unsupported blade topology; flat-punch patch cases have no rounded tip")
+        if len(self.reference)-body_nodes>canonical:
+            # Explicit straight-edge subdivision keeps canonical nose indices.
+            # Extra off-outline points cannot silently enter this observer.
+            blade=self.reference[body_nodes:body_nodes+canonical]
+            points=self.reference[body_nodes+canonical:]
+            distance=np.full(len(points),np.inf)
+            for i,j in ((0,1),(1,2),(canonical-3,canonical-2),(canonical-2,canonical-1)):
+                a,b=blade[[i,j]];edge=b-a
+                t=np.clip((points-a)@edge/(edge@edge),0.,1.)
+                distance=np.minimum(distance,np.linalg.norm(points-a-t[:,None]*edge,axis=1))
+            if np.max(distance)>1e-9:raise ValueError('Extra blade nodes must subdivide canonical straight edges')
         if (tri.ndim != 2 or tri.shape[1] != 3 or len(tri) == 0
                 or not np.issubdtype(tri.dtype, np.integer)
                 or np.any(tri < 0) or np.any(tri >= body_nodes)

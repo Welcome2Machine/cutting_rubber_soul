@@ -102,12 +102,20 @@ def make_command(manifest,job):
     policy=manifest.get('performance_policy', performance_policy())
     cmd += ['--material-batch-size',str(policy['material_batch_size']),
             '--linear-backend',policy['linear_backend'],'--linear-threads',str(policy['linear_threads'] or 4)]
+    if manifest.get('diagnostics'):cmd+=['--diagnostics']
+    if manifest.get('blade_spacing') is not None:cmd+=['--blade-spacing',str(manifest['blade_spacing'])]
+    # Legacy 'resume' remains ignored. Only the explicit, prequalified entry
+    # below is allowed; the candidate runner repeats its full resume audit.
+    if job.get('resume_source'):cmd+=['--resume',job['resume_source']]
     # Explicit per-input angles prevent cross-angle comparison.
     if job['angle']==manifest.get('reference_angle',60):
         if manifest.get('reference'):cmd+=['--reference',manifest['reference']]
     if job['angle']==manifest.get('image_angle',60) and manifest.get('image_estimates'):
         cmd+=['--image-estimates',manifest['image_estimates'],'--image-angle',str(job['angle'])]
-    if job['angle']==manifest.get('experiment_angle',60) and manifest.get('experiment'):
+    experiment=manifest.get('experiments',{}).get(f'{job["angle"]:g}')
+    if experiment:
+        cmd+=['--experiment',experiment,'--experiment-angle',str(job['angle'])]
+    elif job['angle']==manifest.get('experiment_angle',60) and manifest.get('experiment'):
         cmd+=['--experiment',manifest['experiment'],'--experiment-angle',str(job['angle'])]
     return cmd
 
@@ -240,6 +248,21 @@ def worker(out):
         except Exception as exc:
             state.setdefault('postprocessing_errors',[]).append(f'{job["name"]}: {type(exc).__name__}: {exc}')
         print(f"END angle={job['angle']} status={job['status']} accepted_mm={job.get('last_depth_mm')}",flush=True)
+    # Compare only actual, freshly audited curves after all case outcomes.
+    command=[manifest.get('python',sys.executable),'-X','utf8','-m','tools.plot_experiment_angles',
+             '--output',str(out/'experiment_comparison'),'--max-depth',str(manifest['target_mm'])]
+    for job in state['jobs']:
+        experiment=manifest.get('experiments',{}).get(f'{job["angle"]:g}')
+        if experiment and job.get('fresh_audit_passed') and job.get('accepted_states',0)>1:
+            command+=['--case',str(job['angle']),job['output'],experiment]
+    if '--case' in command:
+        try:
+            with (out/'experiment_comparison.log').open('wb') as log:
+                subprocess.run(command,cwd=manifest['source'],stdout=log,stderr=subprocess.STDOUT,
+                    check=True,timeout=120,**({'creationflags':subprocess.CREATE_NO_WINDOW} if os.name=='nt' else {}))
+            state['experiment_comparison']='experiment_comparison/index.html'
+        except Exception as exc:
+            state.setdefault('postprocessing_errors',[]).append(f'joint comparison: {type(exc).__name__}: {exc}')
     state.update(status='finished',finished_utc=now(),
         all_cases_completed=all(j.get('mechanics_completed') is True for j in state['jobs']))
     write_json(out/'queue_status.json',state)
@@ -261,6 +284,12 @@ def main():
     parser.add_argument('--loading-rate',type=float,default=.2)
     parser.add_argument('--mu',type=float,default=.35)
     parser.add_argument('--threads',type=int,default=2)
+    parser.add_argument('--diagnostics',action='store_true')
+    parser.add_argument('--blade-spacing',type=float)
+    parser.add_argument('--experiment-case',nargs=2,action='append',metavar=('ANGLE','CSV'),
+        help='Explicit original force CSV per angle; compare actual audited prefixes after the queue')
+    parser.add_argument('--resume-case',nargs=2,action='append',metavar=('ANGLE','DIRECTORY'),
+        help='Explicit own-source audited prefix; identical signature, performance and physical increment required')
     parser.add_argument('--material-batch-size',type=int,default=0)
     parser.add_argument('--linear-backend',choices=('native','pardiso'),default='native')
     parser.add_argument('--linear-threads',type=int,default=4)
@@ -276,6 +305,8 @@ def main():
     if not all(math.isfinite(v) and v>0 for v in (args.depth,args.increment,args.seconds,args.mu)) or args.depth>2:
         parser.error('Positive finite controls and target depth <= 2 mm required')
     if len(set(args.angles))!=len(args.angles):parser.error('Each angle occurs only once')
+    if args.blade_spacing is not None and (not math.isfinite(args.blade_spacing) or not 0<args.blade_spacing<=.05):
+        parser.error('Blade spacing must be in (0, .05] mm')
     material={k:getattr(args,k) for k in ('equilibrium_shear','bulk_modulus','maxwell_shear','relaxation_s','loading_rate')}
     if not all(math.isfinite(v) and v>0 for v in material.values()):
         parser.error('Positive finite material parameters required')
@@ -283,21 +314,60 @@ def main():
         policy=performance_policy(material_batch_size=args.material_batch_size,
             linear_backend=args.linear_backend,linear_threads=args.linear_threads,ipc_threads=args.threads)
     except ValueError as exc:parser.error(str(exc))
+    experiments={};inputs={}
+    from prototype.material_case import load_force_csv
+    for angle,path in args.experiment_case or []:
+        try:angle=int(angle)
+        except ValueError:parser.error('Experiment angle must be an integer case angle')
+        key=str(angle)
+        if angle not in args.angles or key in experiments:parser.error('Unique experiment angle must occur in the queue')
+        path=Path(path).resolve()
+        _,_,speed=load_force_csv(path)
+        if abs(speed-args.loading_rate)>1e-12:parser.error('Experimental loading rate differs')
+        experiments[key]=str(path);inputs[str(path)]=hashlib.sha256(path.read_bytes()).hexdigest()
+    resumes={}
+    if args.resume_case:
+        from prototype.material_case import make_problem,signature,resume_compatibility
+        from prototype.material_performance import require_same_performance
+        from tools.qualify_intact_baseline import verify_case
+        physical_sources=source_hashes(packages=('prototype','mechanics'))
+        repo=Path(__file__).resolve().parents[1]
+        for relative in ('tools/run_material_candidate.py','prototype/ipc_baseline.json'):
+            physical_sources[relative]=hashlib.sha256((repo/relative).read_bytes()).hexdigest()
+        for angle,path in args.resume_case:
+            try:
+                angle=int(angle);key=str(angle);path=Path(path).resolve()
+                if angle not in args.angles or key in resumes:raise ValueError('Unique resume angle must occur in queue')
+                old=read(path/'result.json');require_same_performance(old,policy)
+                if old['settings']['increment']!=args.increment:raise ValueError('Resume physical increment differs')
+                if not old['steps'] or old['steps'][-1]['depth_mm']>=args.depth-1e-12:
+                    raise ValueError('Resume needs an accepted prefix shorter than the requested target')
+                problem=make_problem(angle=angle,mu=args.mu,blade_spacing=args.blade_spacing,**material)
+                expected=dict(signature=json.loads(json.dumps(signature(problem))),source_sha256=physical_sources,
+                    solver_policy=dict(version=1,predictor='secant',affine_stagnation_window=0))
+                resume_compatibility(old,expected)
+                inputs.update(verify_case(path));resumes[key]=str(path)
+            except (ValueError,RuntimeError,OSError,KeyError) as exc:parser.error(str(exc))
     out.mkdir(parents=True,exist_ok=False)
     root=Path(__file__).resolve().parents[1]
     hashes=source_hashes(packages=('prototype','mechanics'))
     for relative in ('tools/run_material_candidate.py','tools/run_material_queue.py',
-                     'tools/render_solver_dashboard.py','tools/qualify_intact_baseline.py','prototype/ipc_baseline.json'):
+                     'tools/render_solver_dashboard.py','tools/qualify_intact_baseline.py',
+                     'tools/plot_experiment_angles.py','prototype/ipc_baseline.json'):
         hashes[relative]=hashlib.sha256((root/relative).read_bytes()).hexdigest()
     jobs=[dict(name=f'{i:02d}_angle{angle}',angle=angle,mu=args.mu,target_mm=args.depth,
         output=str(out/f'{i:02d}_angle{angle}'),status='pending',resume=None)
         for i,angle in enumerate(args.angles,1)]
+    for job in jobs:
+        if str(job['angle']) in resumes:job['resume_source']=resumes[str(job['angle'])]
     manifest=dict(created_utc=now(),python=sys.executable,source=str(root),source_sha256=hashes,
         runtime_path=str(root)+os.pathsep+str(root/'.runtime/ipc-python'),
         pardiso_runtime=str(root/'.runtime/pardiso'),target_mm=args.depth,increment=args.increment,
-        mu=args.mu,threads=args.threads,performance_policy=policy,
+        mu=args.mu,threads=args.threads,performance_policy=policy,diagnostics=args.diagnostics,
+        blade_spacing=args.blade_spacing,
         solve_seconds_per_case=args.seconds,audit_allowance_s=1800.,jobs=jobs,
-        material=material,input_sha256={},policy='Independent rest histories; one common material; bounded serial cases')
+        material=material,input_sha256=inputs,experiments=experiments,
+        policy='Independent rest histories unless explicit own-source prefix passed all resume guards; one common material; bounded serial cases')
     write_json(out/'manifest.json',manifest)
     if args.prepare_only:print('PREPARED '+str(out));return
     launch(out,manifest)

@@ -7,7 +7,7 @@
 | 模块 | 职责 |
 |---|---|
 | `model_config.py` | 几何、材料及 P1 网格配置；保留原路径的配置签名兼容性 |
-| `geometry.py` | 刀具和试样几何、分级 P1 网格生成 |
+| `geometry.py` | 刀具和试样几何、分级 P1 网格；可选直刃碰撞边细分保留原轮廓和刀尖编号 |
 | `material.py`、`../mechanics/finite_strain.py` | 平衡 Ogden 材料、有限应变 Maxwell 更新及切线；另保留 2023 论文复现所需材料律 |
 | `ipc_reference.py` | P1 力与切线装配、刀具及自接触、CCD、正 J 检查与 PTC 非线性求解 |
 | `ipc_viscoelastic.py` | 黏弹性增量问题、材料历史及耗散管理 |

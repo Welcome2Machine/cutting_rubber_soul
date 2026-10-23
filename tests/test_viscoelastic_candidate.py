@@ -155,21 +155,30 @@ class MaterialRunControlTests(unittest.TestCase):
             self.assertEqual('--experiment' in cmd,angle==57)
             self.assertEqual('--image-estimates' in cmd,angle==33)
             self.assertNotIn('--resume',cmd)
+        m['experiments']={'0':'0.csv','33':'33.csv','57':'57_new.csv'}
+        for angle in (0,33,57):
+            cmd=make_command(m,dict(angle=angle,target_mm=.5,output='new'))
+            self.assertEqual(cmd[cmd.index('--experiment')+1],m['experiments'][str(angle)])
 
     def test_queue_forwards_common_performance_policy_without_resume(self):
         from tools.run_material_queue import make_command
         from prototype.material_performance import performance_policy
         m=dict(python='python',solve_seconds_per_case=100,threads=2,
+               diagnostics=True,
                performance_policy=performance_policy(material_batch_size=2048,linear_backend='pardiso'))
         for angle in (0,33,57):
             command=make_command(m,dict(angle=angle,target_mm=2,output='unused',resume='ignored'))
             self.assertNotIn('--resume',command)
+            self.assertIn('--diagnostics',command)
             for flag,value in (('--material-batch-size','2048'),('--linear-backend','pardiso'),
                                ('--linear-threads','4'),('--threads','2')):
                 self.assertEqual(command[command.index(flag)+1],value)
         m['performance_policy']=performance_policy()
         command=make_command(m,dict(angle=57,target_mm=2,output='unused'))
         self.assertGreater(int(command[command.index('--linear-threads')+1]),0)
+        command=make_command(m,dict(angle=57,target_mm=.5,output='new',resume='foreign_legacy',resume_source='qualified_own_prefix'))
+        self.assertEqual(command[command.index('--resume')+1],'qualified_own_prefix')
+        self.assertNotIn('foreign_legacy',command)
 
     def test_comparison_inputs_reject_mutation(self):
         import hashlib
@@ -267,6 +276,7 @@ class MaterialRunControlTests(unittest.TestCase):
         self.assertTrue(resume_compatibility(old,new)['physical_sources_identical'])
         for candidate in (
             dict(new,signature=dict(new['signature'],angle=30.)),
+            dict(new,solver_policy=dict(version=1,predictor='affine',affine_stagnation_window=0)),
             dict(new,source_sha256=dict(new['source_sha256'],**{'mechanics/finite_strain.py':'changed'})),
             dict(new,source_sha256={'tools/run_material_candidate.py':'new'}),
         ):

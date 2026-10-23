@@ -164,6 +164,8 @@ def render(data, study, refresh=False):
     body+=f'<section><h2>{escape(status)}</h2><p>完整求解完成：{done} / {len(cases)} 项。</p>'
     body+='<p>深度统一为实验室竖直刀具行程 d。只显示接受状态；尝试深度不计为已完成。完整体计算不预测断裂。</p>'
     body+=job_table(cases,study)+'</section>'
+    if q.get('experiment_comparison'):
+        body+='<p>'+link(study/q['experiment_comparison'],'实验对照、分段斜率与角度差',study)+'</p>'
     for j in cases:
         name=escape(j['name']);target=j.get('target_mm',q.get('target_mm',2))
         body+=f'<section id="log-{name}"><h2>{name}</h2><p>已接受 {number(j.get("accepted_depth"))} / {number(target)} mm；{j.get("state_count",0)} 状态。'

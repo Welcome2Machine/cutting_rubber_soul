@@ -71,6 +71,9 @@ class ReportingTests(unittest.TestCase):
             self.assertAlmostEqual(summary['rmse_n'],.2)
             self.assertEqual(values[-1][0],.7)
             self.assertEqual(values[-2][0],.5)
+            self.assertIsNone(summary['short_window']['anchors'][1]['simulation_n'])
+            self.assertIsNone(summary['short_window']['secants'][0]['simulation_n_per_mm'])
+            self.assertFalse(summary['short_window']['full_window'])
             with self.assertRaisesRegex(ValueError,'angle'):comparison(33,folder,experiment,2.)
 
 

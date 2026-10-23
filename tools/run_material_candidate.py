@@ -18,7 +18,7 @@ from threadpoolctl import threadpool_limits
 from run_support import source_hashes,write_json,save_npz,compute_process_policy
 from prototype.ipc_reference import BASELINE,adaptive_load_steps,record_tip_contact,export_contact_table
 from prototype.material_case import (make_problem, signature, audit, resume,
-                                     resume_compatibility, load_force_csv)
+                                     resume_compatibility, load_force_csv, failure_checkpoint)
 from prototype.tip_contact import TipContactTracker
 from prototype.material_performance import (performance_policy, require_same_performance,
     enable_performance, performance_summary, close_performance, native_audit)
@@ -163,8 +163,12 @@ def main():
     parser.add_argument('--seconds',type=float,default=21600.)
     parser.add_argument('--resume',type=Path)
     parser.add_argument('--threads',type=int,default=2)
+    parser.add_argument('--diagnostics',action='store_true',
+        help='Log actual PTC directions, step limits and phase timings; save last paired direction on failure')
     parser.add_argument('--material-batch-size',type=int,default=0,
         help='Opt-in material point batches; 0 retains the original whole-array evaluation')
+    parser.add_argument('--blade-spacing',type=float,
+        help='Optional straight-blade subdivision (mm); preserves shape/nose and requires an independent history')
     parser.add_argument('--linear-backend',choices=('native','pardiso'),default='native')
     parser.add_argument('--linear-threads',type=int,default=4,
         help='Positive PARDISO thread count; unused by the native backend')
@@ -178,6 +182,8 @@ def main():
     if not all(np.isfinite(v) and v>0 for v in (args.depth,args.increment,args.seconds,args.mu)) or args.depth>2:
         parser.error('positive finite controls and target depth <= 2 mm required')
     if args.threads<1:parser.error('threads must be positive')
+    if args.blade_spacing is not None and (not np.isfinite(args.blade_spacing) or not 0<args.blade_spacing<=.05):
+        parser.error('Blade spacing must be in (0, .05] mm')
     try:
         performance=performance_policy(material_batch_size=args.material_batch_size,
             linear_backend=args.linear_backend,linear_threads=args.linear_threads,ipc_threads=args.threads)
@@ -197,6 +203,7 @@ def main():
     baseline=Path(__file__).resolve().parents[1]/'prototype/ipc_baseline.json'
     sources['prototype/ipc_baseline.json']=hashlib.sha256(baseline.read_bytes()).hexdigest()
     report=dict(status='initializing',completed=False,source_sha256=sources,steps=[],
+        solver_policy=dict(version=1,predictor='secant',affine_stagnation_window=0),
         target_mm=args.depth,rejected_load_attempts=[],force_tolerance_n=BASELINE['force_tolerance_n'],
         parameter_status='conditional material hypothesis; not independently calibrated',
         loading_rate_status='conditional inherited 0.2 mm/s unless explicitly replaced',
@@ -219,12 +226,16 @@ def main():
         started=time.monotonic();p=None;x=None
         try:
             construction={k:getattr(args,k) for k in ('angle','equilibrium_shear','maxwell_shear',
-                'relaxation_s','loading_rate','bulk_modulus','mu','equilibrium_alpha','maxwell_alpha')}
+                'relaxation_s','loading_rate','bulk_modulus','mu','equilibrium_alpha','maxwell_alpha','blade_spacing')}
             p=make_problem(**construction)
+            p.solver_diagnostics=args.diagnostics
             # JSON round trip makes signatures stable across tuples in Material.
             report['signature']=json.loads(json.dumps(signature(p)))
             report['reference_contact_check']=p.reference_contact_check
             report['mesh']=dict(nodes=p.n,elements=len(p.mesh.triangles))
+            report['blade_discretization']=dict(spacing_mm=args.blade_spacing,
+                outline_vertex_count=p.nose_facets+5,collision_vertices=len(p.rest)-p.n,
+                geometry='Same original polygon, canonical nose vertices retained; straight-edge splits only')
             x=p.rest.copy();old=p.start
             if args.resume:
                 report['status']='resuming';write_json(out/'result.json',report)
@@ -254,8 +265,13 @@ def main():
                           error=f'{type(exc).__name__}: {exc}')
             traceback.print_exc(file=log)
             if p is not None and x is not None and p.material_dt is not None:
-                save_npz(out/'failed_trial.npz',positions=getattr(p,'trial',x),
-                         previous_positions=p.previous,**p.checkpoint_data())
+                failed,context=failure_checkpoint(p,x)
+                save_npz(out/'failed_trial.npz',**failed)
+                report['failed_attempt']=context
+                if getattr(p,'ptc_state',None):
+                    state=dict(p.ptc_state,previous_positions=failed['previous_positions'],
+                               **p.checkpoint_data())
+                    save_npz(out/'last_ptc.npz',**state)
         report['elapsed_s']=time.monotonic()-started
         write_json(out/'result.json',report)
         try:

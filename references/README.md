@@ -67,7 +67,7 @@
 | R13 | Deuflhard（2011），*Newton Methods for Nonlinear Problems*，[DOI](https://doi.org/10.1007/978-3-642-23899-4)；PETSc NLEQERR | S（专著）/F（官方算法实现）；只核查修正量线搜索，未读完专著 |
 | R15 | Hassani、Hild、Ionescu、Sakki，*A mixed finite element method and solution multiplicity for Coulomb frictional contact*，[作者全文](https://www.math.univ-toulouse.fr/~phild/Publications/CMAME3.pdf) | F；多解与摩擦谱。刊年本次不补填，线弹性不证明当前发生分支变化 |
 | R16 | Qi、Sun（1998修订稿），*A Survey of Some Nonsmooth Equations and Smoothing Newton Methods*，[原文](https://defengwebsite.github.io/files/qsreview1.pdf) | F；根点/广义导数非奇异等局部前提 |
-| R17 | Li等（2023），*Convergent Incremental Potential Contact*，[作者稿](https://arxiv.org/abs/2307.15908) | F；面积权重/接触修正/线性碰撞几何；不覆盖材料、网格或实验验收 |
+| R17 | Li等（2023），*Convergent Incremental Potential Contact*，[作者稿](https://arxiv.org/abs/2307.15908)、[v1全文](https://arxiv.org/html/2307.15908v1) | F；§4.1节点积分权重为相邻参考边长之和的一半，§4.5说明max近似的几何误差条件，§9.2.1二维无摩擦平面滑动仍可有离散误差并随边界细分减小。本项目2026-10-23刀具直刃细分据此检验积分集中；不是新本构、解析刀具或当前求解成功的证明 |
 | R18 | Giacoma、Dureisseix、Gravouil（2016），*An efficient quasi-optimal space-time PGD application to frictional contact mechanics*，[DOI](https://doi.org/10.1186/s40323-016-0067-7) | F；LATIN局部—整体分解，非现成切割宿主 |
 | R19 | Both等（2022），*Iterative splitting schemes for a soft material poromechanics model*，[DOI](https://doi.org/10.1016/j.cma.2021.114183) | F；借鉴稳定化耦合分裂；孔压并非接触压力 |
 | R20 | Degroote等（2010），*Performance of partitioned procedures in fluid–structure interaction*，[DOI](https://doi.org/10.1016/j.compstruc.2009.12.006) | A（论文）/F（preCICE文档）；界面加速依赖内层收敛 |

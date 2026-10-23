@@ -101,3 +101,39 @@ def blade_boundary_vertices(config, options, depth):
                       [center[0]+w,shoulder_z],[center[0]+w,top]))
 
 
+def subdivide_blade(blade,nose_facets,spacing):
+    """Split straight edges without moving any original vertex or nose facet.
+
+    Original indices remain first, so the fixed pole and nose observers retain
+    their identity. Added vertices are connected by explicit collision edges.
+    Shanks use uniform spacing for 3 mm above each shoulder, then grade to 1 mm.
+    The subdivision changes contact quadrature, never the polygonal shape.
+    """
+    blade=np.asarray(blade,dtype=float)
+    count=nose_facets+5
+    if blade.shape!=(count,2):raise ValueError('Canonical rounded blade required')
+    if spacing is None:
+        return blade,np.column_stack((np.arange(count),np.roll(np.arange(count),-1)))
+    if not np.isfinite(spacing) or spacing<=0 or spacing>.05:
+        raise ValueError('Blade spacing must be in (0, .05] mm')
+    extra=[];edges=[]
+    for i in range(count):
+        j=(i+1)%count;length=float(np.linalg.norm(blade[j]-blade[i]))
+        if i in (1,count-3):
+            fractions=np.linspace(0.,1.,int(np.ceil(length/spacing))+1)[1:-1]
+        elif i in (0,count-2):
+            distance=0.;step=spacing;locations=[]
+            while distance+step<length-1e-12:
+                distance+=step;locations.append(distance/length)
+                if distance>=3.:step=min(1.,1.5*step)
+            fractions=np.asarray(locations)
+            if i==0:fractions=1.-fractions[::-1]
+        else:fractions=[]
+        chain=[i]
+        for fraction in fractions:
+            chain.append(count+len(extra))
+            extra.append(blade[i]+fraction*(blade[j]-blade[i]))
+        chain.append(j);edges.extend(zip(chain[:-1],chain[1:]))
+    return np.vstack((blade,np.asarray(extra).reshape(-1,2))),np.asarray(edges,dtype=int)
+
+

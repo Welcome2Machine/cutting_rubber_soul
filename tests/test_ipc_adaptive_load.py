@@ -74,6 +74,24 @@ class AdaptiveLoadTests(unittest.TestCase):
         np.testing.assert_array_equal(p.failed_previous, [[0.]])
         self.assertTrue(all(b-a >= .0025-1e-12 for a, b, _ in p.calls))
 
+    def test_failed_material_checkpoint_uses_attempt_start_after_controller_rollback(self):
+        from prototype.material_case import failure_checkpoint
+        p = FakeProblem(lambda *args: True)
+        p.trial = np.array([[.003]])
+        metric = np.eye(3)[None]
+        p.checkpoint_data = lambda: dict(material_metric=metric,
+            previous_material_metric=metric.copy(), material_dt_s=.05)
+        with self.assertRaises(LoadStepFailure):
+            self.collect(p, minimum=.01)
+        np.testing.assert_array_equal(p.previous, [[-1.]])
+        failed, context = failure_checkpoint(p, np.array([[0.]]))
+        np.testing.assert_array_equal(failed['previous_positions'], [[0.]])
+        np.testing.assert_array_equal(failed['positions'], p.trial)
+        np.testing.assert_array_equal(failed['previous_material_metric'], metric)
+        self.assertEqual(context['from_depth_mm'], 0.)
+        self.assertEqual(context['attempted_depth_mm'], .01)
+        self.assertAlmostEqual(failed['material_dt_s'], (.01-0.)/.2)
+
     def test_unrepresentable_bisection_is_terminal_even_with_tiny_minimum(self):
         p = FakeProblem(lambda *args: True)
         with contextlib.redirect_stdout(io.StringIO()), \
