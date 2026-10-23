@@ -22,6 +22,33 @@ Historical notes do not authorize new runs.
 
 ## Current operational state
 
+LATEST user request supersedes pause for NEW57-priority candidate studies:
+current code published to main91702c2, research/joint-history-sensitivity-20261022
+local+remote branch deleted after remote-main hash verified. Old common2mm stays
+paused; no history is transplanted to new material. New3 bounded queues launched
+2026-10-23 15:56:50 JST, outputs/angle57_priority_20261023:
+reference57 Ge=.14/Gv1.24/tau1.7 worker61656;
+balanced57 Ge=.20/Gv.90/tau1.7 worker38688;
+fast57 Ge=.14/Gv1.24/tau.85 worker40796.
+EACH serial57/0/33, all independent REST->1mm histories, .01 physical increment,
+5400s solve+1800s setup/audit/case, up to3 workers in parallel. SameK/mu/v/blade5um/
+body/contact/force/J/CCD/dissipation/history acceptance, original500/40->affine500/
+no40 and cutbacks. NEW performance batch0/PARDISO4/IPC2/BLAS1 avoids known
+batch/native metric replay discrepancy without weakening gates or altering law.
+Primary selection57 .1-.5 RMSE/shape, .5-1 separate; small-angle worsening allowed
+and quantified, NO angle-specific material. No automatic2mm extension/retry.
+Old57 original-blade1mm17.279N vs zeroed experimental17.18 motivates reference;
+not a new fine-blade result. Balanced candidate interpolates branch partition;
+fast candidate isolates half tau, not a claimed improvement. No new physical
+model terms justified yet. Physical source code unchanged from published91702c2;
+198 reusable regressions pass. Current only docs/run-config changes afterwards.
+Status and plan: outputs/angle57_priority_20261023/index.html. ONE startup
+15:58:50 JST confirms all3 workers/solvers exact commands/creation/executables,
+stderr0; each20 source/6 input hashes match.57 prefixes at observation ONLY:
+reference/balanced.02mm3states,fast.03mm4states; batch0/material parameters match.
+No final path audit/completion claimed. Leave detached, no duplicate/monitoring.
+
+PRIOR paused common-candidate review (not current active-run authorization):
 LATEST2026-10-23 user requests PAUSE and analyze. Stopped common2mm supervisor
 32224 then33 solver59640 at12:37:42 JST, verified no remaining loading process.
 NO automatic resume/restart/extensions.33 last accepted1.28mm, trial1.29 unsaved.
