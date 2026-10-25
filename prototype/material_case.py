@@ -136,16 +136,19 @@ def _probe_ptc_state(p,state):
 
 def make_problem(*,angle,equilibrium_shear,maxwell_shear,relaxation_s,loading_rate,bulk_modulus=None,mu=.35,
                  equilibrium_alpha=2.,maxwell_alpha=2.,
-                 volumetric='quadratic_j',blade_spacing=None):
+                 volumetric='quadratic_j',blade_spacing=None,blade_thickness=None,blade_angle=None,
+                 tip_radius=.02,local_spacing=.05,surface_spacing=.005,nose_facets=64,
+                 fine_halfwidth=3.,coarse_spacing=None):
     """Shared construction for actual-angle runs and completed-reference audits."""
     if not all(np.isfinite(a) and 1 <= a <= 4 for a in (equilibrium_alpha,maxwell_alpha)):
         raise ValueError('Explicit candidate exponents must be in [1, 4]')
     p=ViscoelasticProblem(maxwell_shear=maxwell_shear,relaxation_s=relaxation_s,
         loading_rate=loading_rate,bulk_modulus=bulk_modulus,volumetric=volumetric,case='oblique',mu=mu,
-        shear_modulus=equilibrium_shear,ogden_alpha=equilibrium_alpha,dhat=.0025,local_spacing=.05,
-        surface_spacing=.005,nose_facets=64,inclination=angle,tip_radius=.02,
-        fine_halfwidth=3.,max_iterations=500,predictor='secant',hessian_mode='regularized',element='p1',
-        blade_spacing=blade_spacing)
+        shear_modulus=equilibrium_shear,ogden_alpha=equilibrium_alpha,dhat=.0025,local_spacing=local_spacing,
+        surface_spacing=surface_spacing,nose_facets=nose_facets,inclination=angle,tip_radius=tip_radius,
+        fine_halfwidth=fine_halfwidth,max_iterations=500,predictor='secant',hessian_mode='regularized',element='p1',
+        blade_spacing=blade_spacing,blade_thickness=blade_thickness,blade_angle=blade_angle,
+        coarse_spacing=coarse_spacing)
     p.stagnation_window=40
     if maxwell_alpha != 2.:
         p.material=replace(p.material,mu_ov=(2*maxwell_shear/maxwell_alpha,),alpha_ov=(float(maxwell_alpha),))

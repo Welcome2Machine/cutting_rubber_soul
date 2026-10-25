@@ -1,6 +1,38 @@
 # 光流数据接口与力学对照约定
 
-当前外部交付目录：`D:\Doctoral Research\Softcutting\0910imaging\rec_inc_soft_cut\results\20261012_optical_flow_exchange`。包内README、DATA_DICTIONARY、metadata与quality_report定义实际数据；本文件是仿真端接入规则，不把期望字段当已测量数据。
+当前有两类外部交付：20261024的前1 mm固定ID位移包，以及20261012的完整轨迹接口包。各包元数据定义实际字段；本文件是仿真端接入规则，不把期望字段当已测量数据。
+
+## 20261024前1 mm固定ID位移包
+
+目录：`D:\Doctoral Research\Softcutting\0910imaging\rec_inc_soft_cut\results\20261024_n_group_first_1mm`。仅含1014n33a1与1014n57a1；每组有原始/去阴影/位移展示视频、`material_displacements.npz`、`frames.csv`、`metadata.json`及零点核查。NPZ使用`allow_pickle=False`读取，位移已按固定材料ID重新参考到所选接触帧，不套用旧CSV的`reference_frame_id`字段。
+
+- 端点比较使用`displacement_endpoint_supported`；连续轨迹使用`all_intermediate_measurement_supported`，同时剔除参考/当前或全历史的`tracker_inferred`、`tracker_ambiguous`、`tracker_blade_occluded`标记。跨深度趋势优先用全片共同合格ID，避免换点引入假趋势。
+- `contact_image_xright_yup_mm`为初始位置，`displacement_from_contact_xright_yup_mm`为位移；是图像轴下x向右/y向上的条件毫米坐标，不是已注册实验室坐标。约3 mm总行程提供条件比例尺；所选零点是材料运动起始，未独立确认机械首触。
+- `capture_time_from_contact_s`采用源AVI时基200 fps；展示视频12 fps不是加载时间。`indentation_estimate_mm`来自刀尖图像竖直下移，实际末端约0.99818/0.99721 mm；57°存在很小的局部非单调深度，不排序后冒充时序。
+- 本次FE比较按初始刀尖平移一次、固定三角形重心映射、接受态间深度插值，域外点保留为缺失，不用最近节点替代。实验侧面投影与平面应变内部场的等价性、相机运动、尺度和角度差异单列。
+- 刀具相对位移`u_material-u_blade`与绝对位移分别报告。它不等于接触界面滑移；点阵模长也不是累计滑程。视频未保证前1 mm完整无裂，不能由光流或局部暗痕自行认证。
+
+[已完成的视频—FE比较HTML及数值证据](../outputs/video_fe_1mm_20261024/index.html)。33°视频1014n33a1不同于力目标1008n33a1；57°同名1014n57a1也未独立完成力—视频同步。原文件只读，不以模型最佳拟合反向修改尺度/零点。
+
+### 固定区域的候选评价约定
+
+[刀路/侧面可比性及区域运动核查](../outputs/video_fe_1mm_20261024/kinematic_check/index.html)已建立可复用指标，定义与源指纹在`kinematic_check/regional/regional_analysis.json`，固定ID与权重在同目录`fixed_cohorts.csv`。两角度、各模型、所有检查点使用同一持续有效ID；区域由初始坐标固定：中心r≤.25 mm、左右环带.25<r≤1 mm按x符号分开、远场1<r≤2 mm、更远外场r>2 mm。点等权为主，固定.25 mm空间格等权作敏感性，不按候选重新调整。
+
+同时输出绝对/刀具相对位移、相邻窗口增量和区域平均位移差。后者抵消共同平移；固定点位置均值之间的距离变化`ΔL=|mean(X+u)_A−mean(X+u)_B|−|mean(X)_A−mean(X)_B|`还对共同二维旋转不变。该量不是局部应变、体积、界面滑移或裂缝张开，仍受尺度、投影和材料映射影响。没有静止实物参照时，不以叠加网格/文字或变形橡胶估计相机校正。
+
+后续共同材料候选沿用相同观测算子及掩膜，分别报告Fz/斜率与上述运动误差；未知实验不确定度时保留阈值缺失，不给任意加权总分或宣称标定通过。平面应变内部截面与自由侧面尚未等价，运动指标先作为条件诊断约束。
+
+### 有限标距变形约定
+
+[变形量化报告](../outputs/video_fe_1mm_20261024/deformation_review/index.html)在上述固定ID比较上增加二维仿射拟合`x_i=F2 X_i+t`。预设中心间距.4 mm、半径.25/.4/.6 mm；点等权，仅按初始点数、协方差条件数、角覆盖和中心外推程度判定资格，不按实验/模型误差挑区域。FE与视频使用同一成员、权重和拟合，不能拿FE原生单元极值直接对比经过平滑的测量量。完整定义及缺失理由在`deformation_review/patches/patch_analysis.json`、`patch_geometry.csv`；逐点区域身份在`patch_memberships.csv`。
+
+`lambda_max/min`为F2奇异值，`green_E_*`为有限标距Green量，`log_lambda_*`为对数主伸长；它们不是已经认证的点应变。`projected_area_ratio_detF2`为投影仿射面积比，不是3D J，不用于直接标定K或认定裂纹。`polar_rotation_deg`包含未去除的相机转动；`affine_residual_rms_mm`混合非仿射真实变形与跟踪误差，不直接作为噪声方差。重叠区域和密集点不是独立试次，不按点数构造虚假置信区间。
+
+下一步观测资格检查需使用原光流程序及同参数：输入已知位移变形后的初始纹理、对应真值和遮挡，输出同一字段/固定ID规则；另设刚体运动和非FE光滑变形控制。评价左右/近远距离、同标距主伸长及支持点丢失，避免仅在生成FE插值上自证。合成平面图像通过不能排除真实面外运动/透视影响。未完成此检查前，视频作为条件运动约束，不把剩余误差全部归入FE物理模型。
+
+## 20261012完整轨迹接口包
+
+目录：`D:\Doctoral Research\Softcutting\0910imaging\rec_inc_soft_cut\results\20261012_optical_flow_exchange`。包内README、DATA_DICTIONARY、metadata与quality_report定义实际数据。以下`tracks.csv`和`reference_frame_id`约定适用于此包；新NPZ包按上节接入。
 
 ## 用途和限制
 

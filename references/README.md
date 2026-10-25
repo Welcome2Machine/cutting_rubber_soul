@@ -139,9 +139,42 @@
 | [SciPy splu](https://docs.scipy.org/doc/scipy/reference/generated/scipy.sparse.linalg.splu.html)、[NVIDIA cuDSS](https://docs.nvidia.com/cuda/cudss/latest/index.html) | 稀疏线性子问题的后端能力；不迁移材料/IPC/CCD，也不自动解决非线性方向困难。本项目未启用GPU。 |
 | [dolfin-adjoint](https://dolfin-adjoint.github.io/dolfin-adjoint/documentation/maths/2-problem.html) | 已读问题定义/求解方法；时间相关目标依赖全部状态层，区别全历史导数与条件偏导。 |
 | [Bleyer广义平面应变教程](https://bleyerj.github.io/comet-fenicsx/tours/linear_problems/generalized_plane_strain/generalized_plane_strain.html) | 位移场、整体面外自由度与合力约束正文；常数GPS、局部PS与有限宽三维不同。 |
+| [COMSOL二维约束说明](https://www.comsol.com/blogs/what-is-the-difference-between-plane-stress-and-plane-strain/)、[Solid Mechanics接口](https://doc.comsol.com/6.4/doc/com.comsol.help.sme/sme_ug_solid.07.002.html?type=ext) | 2026-10-24核读Plane Strain/Plane Stress及2D Approximation：F33约束、非零面外应力、自由侧面与内部截面的差别。支持视频侧面可比性审查，不证明本试验三维效应大小，也不支持直接把全域模型改成平面应力。 |
 | [Abaqus时间域黏弹性](https://docs.software.vt.edu/abaqusv2025/English/SIMACAEMATRefMap/simamat-c-timevisco.htm) | 瞬时/长期参数定义与材料时间；不证明当前CR参数已识别。 |
 | [COMSOL氯丁橡胶压缩基准](https://www.comsol.com/model/download/1389851/models.nsm.chloroprene_rubber_compression_test.pdf)、[BB模型技术说明](https://www.ansys.com/content/dam/resource-center/datasheet/bergstrom-boyce-model.pdf) | 分别核读2–9页、2–5页文字；平衡/非平衡网络、保持和卸载检验。未照搬材料或复现，COMSOL尺寸文字需复核。 |
 | [Maxell Kureha CB245NE报告](https://www.kurehae.maxell.co.jp/dl/test_report/CB245NE.pdf) | 原图核对23°C静态剪切模量0.47 MPa及“测定值非规格值”。不是本批样品G0/G∞标定；99755尺寸仍以用户截图为准。 |
+
+## 2026-10-24：完整体下压响应的定向证据核查
+
+本节为针对当前力、位移、接触及能量解释的定向核查，不是穷尽检索或首创性检索。已重新打开下列原文、作者稿或机构摘要；其他条目的阅读等级保持原记录。检索日期为2026-10-24，检索入口为网页学术检索，交叉核对出版社、作者/机构库及PubMed记录；未以聚合网站内容替代原文结论。使用的英文题名查询包括：`Cutting soft materials: how material differences shape the response`、`Cutting Characteristics of Silicone Rubber Sheet`、`Slicing Softly with Shear`、`Viscoelasticity in simple indentation-cycle experiments`、`Friction and adhesion in rigid surface indentation of nitrile rubber`、`Rubber friction on smooth surfaces`、`Finite deformations govern the anisotropic shear-induced area reduction`、`Identifiability of soft tissue constitutive parameters from in-vivo macro-indentation`、`Phase-field modelling and analysis of rate-dependent fracture phenomena at finite deformation`。逐项证据见本地分析结果中的`mechanism_review/literature_evidence.json`。
+
+| 文献与本次核读位置 | 可支持的解释 | 对当前项目的限制 |
+|---|---|---|
+| R30 Kojima等2020，[出版全文](https://www.jstage.jst.go.jp/article/sosei/61/708/61_1/_pdf)，第3页§3.1、第4–5页§3.3 | 在其硅胶薄片/硬硅胶垫层/13.9°刀工况中，首次转折前的无表面损伤压入近线性，斜率对所测速度近乎不敏感；转折后的损伤由图像辅助确认。 | 近线性不是黏弹主导的唯一指纹。其尺寸、支承、硅胶与当前CR不同；不能直接移植斜率或把当前力曲线转折等同起裂。 |
+| R04 Moreno-Mateos与Steinmann2026，[正式版机构全文](https://d-nb.info/1386915076/34)，第3–8页、表1 | 弹性体可从压入平滑进入切割；表1将库仑摩擦列为压入和紧密接触的重要作用。裂后低压接触的切向阻力可主要来自黏附/磨损。 | 不得从其裂后结论推出当前完整体高压接触可忽略库仑摩擦。当前模型没有裂面、黏附或磨损，不能解释整个裂后下压过程。 |
+| Reyssat等2012，[作者托管全文](https://softmath.seas.harvard.edu/wp-content/uploads/2019/10/2012-24.pdf)，PDF第4–7页为论文正文，前3页为评论 | 沿切割线施加剪切可改变全局压缩与局部拉伸分布，降低达到局部起裂条件的法向载荷；滑动会限制剪切传递。 | 该文沿金属丝轴向拉切；当前为截面内倾斜试样竖直下刀。起裂时载荷随角度变化不等于相同竖直行程下Fz必须单调。 |
+| R29 Efremov等2020，[出版全文](https://www.nature.com/articles/s41598-020-70361-y.pdf)，第4–6、11–13页 | 压入曲线形状受几何、加载时间和松弛谱共同影响；加载/卸载及不同速率有助区分响应。 | 其线性黏弹、小压入和恒泊松比假设不等同当前有限应变、固定K的模型；不能用总力乘指数衰减替代FE历史。 |
+| Jerrams2005，[作者机构摘要](https://arrow.tudublin.ie/cerart/2/)，本次仍为A | HNBR/钢压头实验联合测量载荷、松弛、黏附与表面轮廓；界面黏附可在短期载荷松弛时保持。 | 仅核实摘要，未取得完整原文；其材料、压头和粗糙度不同。当前固定库仑系数不等于已识别真实界面黏附。 |
+| Persson与Volokitin2006，[作者稿](https://arxiv.org/pdf/cond-mat/0607084)，摘要、引言、结论 | 光滑硬基底上橡胶界面剪应力可随滑动速度和温度变化，微观脱钉与体黏弹性相联系。 | 不能由此指定当前刀具μ的速度/温度函数；需界面信息或独立实验。宏观正则平滑区不是这种微观机制的直接观测。 |
+| Lengiewicz等2020，[作者稿](https://arxiv.org/pdf/2005.02107)，§3、§5 | 非黏附、非黏性有限应变模型及示踪实验支持剪切下局部脱离、进入接触和面内变形共同改变接触面积。 | 球/平面、Tresca界面与当前楔刀/库仑不同；表面形变或接触缩小本身不能证明黏附，更不能移植面积比例。 |
+| R26 Oddes与Solav2023，[PubMed原始摘要记录](https://pubmed.ncbi.nlm.nih.gov/36801779/)，本次仍为A | 在其合成压入辨识研究中，仅力–深度不足以可靠识别两参数；加入表面位移改善辨识，但部分本构仍不唯一。 | 不是本项目不可辨识的证明；当前侧视光流的标定、遮挡、同步与初始参考资格仍需独立检查。 |
+| R03 Dammaß等2023，[出版全文](https://link.springer.com/article/10.1007/s00466-023-02310-1)，§2.2、§3.2 | 乘法分解有限黏弹框架区分平衡储能、非平衡储能与黏性耗散；内变量必须随真实加载历史演化。 | 本地主线不是该论文完整Ogden/相场模型；耗散不是可恢复储能，不能直接把累计耗散作为当前未定义的起裂阈值。 |
+
+上述内容支持有限变形、黏弹性与接触共同参与的解释框架，不确定本批实验各机制的占比。当前模型中的“黏着”应明确指正则库仑界面的近零相对滑动状态，不等于具有吸引牵引或界面分离功的“黏附”。力分解是同一解的账目，不等于去掉某物理机制后的因果贡献。
+
+可研究的项目问题包括：同一材料在不同角度的表面材料点迁移与局部停留历史是否改变松弛/受力分配；近线性是否来自接触几何增刚与历史松弛的相互抵消；是否存在可由力和表面运动共同支持的接触状态转变。这些目前属于待证伪假说或项目条件下的数值观察，不是经独立实验确认的首次发现。首创性必须针对具体结论进行更完整的先行工作检索，并排除数值接触作用和参数补偿。
+
+## 2026-10-24：视频变形与高精度比较的定向依据
+
+本次仅针对观测误差、侧面可比性及离散资格，非系统综述。详细核读范围与来源指纹见本地`outputs/video_fe_1mm_20261024/deformation_review/model_review/sources.json`。既有COMSOL二维约束说明和Lengiewicz软接触论文继续使用上方条目，不重复建文献副本。
+
+| 来源与实际阅读范围 | 支持内容与适用限制 |
+|---|---|
+| Sutton等（2008），*The effect of out-of-plane motion on 2D and 3D digital image correlation measurements*，[DOI](https://doi.org/10.1016/j.optlaseng.2008.05.005)，出版社索引摘要/片段；直连全文403，未宣称读完 | 单相机面外平移/转动可能进入表观面内运动及梯度。支持保留投影不确定性，不给出本视频误差的大小、符号或可直接应用的校正。 |
+| Reu等（2022），*DIC Challenge 2.0: Developing Images and Guidelines for Evaluating Accuracy and Resolution of 2D Analyses: Focus on the Metrological Efficiency Indicator*，[NIST原始记录](https://www.nist.gov/publications/dic-challenge-20-developing-images-and-guidelines-evaluating-accuracy-and-resolution-2d)，DOI 10.1007/s11340-021-00806-6；核读机构摘要，PDF未完整核读 | 已知合成图像场可检验位移/应变准确度、空间分辨率及噪声权衡。支持向原光流管线输入已知变形的检查，不认证本项目光流算法，也不排除真实三维投影。 |
+| [SIMULIA Abaqus：Hyperelastic Behavior of Rubberlike Materials](https://docs.software.vt.edu/abaqusv2025/English/SIMACAEMATRefMap/simamat-c-hyperelastic.htm)，官方文档中的可压缩性、材料试验与混合单元相关章节 | 受约束橡胶对体积响应敏感，近不可压场需要合适离散。支持跨模式/K/混合离散资格检查，不证明当前P1已锁定；超弹混合算法不能未经验证直接等同当前有限应变Maxwell接触实现。 |
+
+当前项目已观察到相同有限标距下近刀尖投影伸长偏大、压缩偏多；原因仍待在测量过滤、有限宽侧面、接触传力和材料/离散之间区分。这是条件数值—实验比较结果，不是已认证的新物理发现。现有全域平面应力对照的局限仍保留，不能因侧面自由就直接替换整个模型。
 
 ## 本地原文映射
 

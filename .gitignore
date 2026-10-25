@@ -1,12 +1,22 @@
+# Local runtimes, editor state and Python caches.
 __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
 .runtime/
 .codex/
+.env
+.env.*
+*.pem
+*.key
+
+# Generated runs and reports; never publish saved histories or runtime logs.
 outputs/
 slurm-*.out
 slurm-*.err
+*.log
+*.tmp
+*.bak
 
 # Remote repository contains code and documentation only. Local originals stay here.
 *.pdf
@@ -17,9 +27,14 @@ slurm-*.err
 *.mp4
 *.avi
 *.mov
+*.webm
+*.gif
 *.npz
 *.npy
+*.h5
+*.hdf5
 *.csv
 *.tsv
 *.zip
+docs/video/
 reproductions/dammass2023/reference/

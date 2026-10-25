@@ -6,3 +6,5 @@ threadpoolctl==3.6.0
 psutil==7.1.0
 matplotlib==3.10.6
 ipctk==1.6.0
+# Reusable solver and workbench regression suite.
+pytest==9.1.1

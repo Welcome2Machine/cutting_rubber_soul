@@ -6,13 +6,38 @@
 
 | 工具 | 用途 |
 |---|---|
+| `workbench.py` | 本机 HTML 调参、单任务运行、标准结果包/CSV/MP4 导出及多曲线/保存场比较 |
 | `run_material_candidate.py` | 单角度完整体计算，准确材料/摩擦历史、刀尖材料身份与独立物理审查 |
 | `run_material_queue.py` | 同一材料的独立初态串行队列；各组成功或失败后继续下一组，HTML 自动记录 |
 | `qualify_intact_baseline.py` | 校验保留的三角度 2 mm 基线报告及检查点；可用当前原方程逐态重新审查 |
 | `plot_experiment_angles.py` | 显式指定实验与 FE 路径，输出叠图、共同区间 CSV、分段斜率及 HTML |
 | `visualize_ipc.py` | 接受状态的原始变形网格、完整三维 Cauchy 最大主拉应力和刀尖接触偏移视频 |
 | `render_solver_dashboard.py` | 任意上述队列的只读 HTML 快照、日志与有界后台更新 |
-| `check_publish.py` | 检查可发布的代码/文档文件类型；不上传原始数据、论文 PDF 或结果 |
+| `check_publish.py` | 检查暂存区或提交历史的发布白名单；只允许代码、文字文档、已批准配置与工作台静态源码 |
+
+## HTML 工作台
+
+```powershell
+python -m tools.workbench --background --open
+```
+
+默认打开 `http://127.0.0.1:8765/`，仅本机访问。核查配置不启动加载，点击启动后才从独立初态计算；一次一个计算任务，固定速度 0.2 mm/s、行程不超过 2 mm。刀具/材料可选择或导入 JSON，油润滑目前只以给定正 μ 的库仑摩擦近似。默认材料为共同基线，标准网格远场为 1 mm；完整物理验收保持锁定。
+
+结果页支持多个标准包叠图/隐藏、Fz/Fy/Fyz、接触/能量诊断、真实比例变形动画及原始单元应力/应变/J 云图。Fy 对应旧 `reaction_x_n`；标准包对未合格历史留空，不拼接后续孤立通过态。完整使用方式、配置/结果字段和已知边界见[工作台说明](../docs/workbench.md)，研究依据见[研究导读](../docs/research_guide.md)。
+
+已有结果的独立导出只做后处理，不启动 FE：
+
+```powershell
+python -m tools.workbench --export outputs/baseline/angle57 --output outputs/workbench/baseline57_view --frames 11 --movie
+```
+
+## 发布检查
+
+暂存明确的代码、文档和配置后，执行 `python -m tools.check_publish --staged`，核对本次将提交的精确文件。提交后执行 `python -m tools.check_publish --ref HEAD`，检查全部可达历史。白名单允许两个配置目录文件及三个工作台静态源文件，不因支持JSON/HTML而放行运行配置、结果或报告。检查同时拒绝二进制内容及未合并项；它不替代源码、机密信息和科学结论审阅。
+
+原始实验CSV、论文PDF、图像/视频、结果、状态文件、日志和运行库留在本地；即使被`.gitignore`排除，也应审阅`git diff --cached --stat`后再推送。文件职责与命名规范见[仓库首页](../README.md)。
+
+生成 `result.bundle.json`、`curves.csv` 及可选 `indentation.mp4`。导出复用已有审查并核对选中状态的指纹/J/储能，不替代新鲜全路径审查；视频编码失败单列于包内，JSON/CSV 仍保留。原结果目录不改写。
 
 ## 共同基线计算
 

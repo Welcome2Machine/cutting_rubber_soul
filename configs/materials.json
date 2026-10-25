@@ -1,0 +1,32 @@
+[
+  {
+    "id": "cr_baseline",
+    "label": "CR 橡胶 · 可计算基线",
+    "law": "isochoric_maxwell",
+    "Ginf_MPa": 0.14,
+    "Gv_MPa": 1.24,
+    "tau_s": 1.7,
+    "K_MPa": 23.34333333333331,
+    "source_note": "同一材料三角度2 mm可计算基线；探索参数，尚未完成实验标定。"
+  },
+  {
+    "id": "cr_balanced",
+    "label": "CR 橡胶 · balanced 研究候选",
+    "law": "isochoric_maxwell",
+    "Ginf_MPa": 0.2,
+    "Gv_MPa": 0.9,
+    "tau_s": 1.7,
+    "K_MPa": 23.34333333333331,
+    "source_note": "共同材料折中候选，已有0/33/57度1 mm路径；非独立标定。"
+  },
+  {
+    "id": "cr_q25",
+    "label": "CR 橡胶 · q25 研究候选",
+    "law": "isochoric_maxwell",
+    "Ginf_MPa": 0.275,
+    "Gv_MPa": 0.825,
+    "tau_s": 1.7,
+    "K_MPa": 23.34333333333331,
+    "source_note": "57度力值较接近、小角度偏高的共同候选；不是通用最优材料。"
+  }
+]

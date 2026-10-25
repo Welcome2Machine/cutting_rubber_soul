@@ -121,6 +121,9 @@ class IPCProblem:
         predictor="affine",
         friction_globalization="model-error",
         blade_spacing=None,
+        blade_thickness=None,
+        blade_angle=None,
+        coarse_spacing=None,
     ):
         if not np.isfinite(shear_modulus) or shear_modulus <= 0:
             raise ValueError("Shear modulus must be finite and positive (MPa)")
@@ -157,6 +160,12 @@ class IPCProblem:
                               inclination_deg=inclination,
                               shear_modulus_n_mm2=float(shear_modulus),
                               ogden_alpha=float(ogden_alpha))
+        geometry = {name: value for name, value in (
+            ('blade_thickness_mm', blade_thickness),
+            ('blade_tip_angle_deg', blade_angle),
+            ('mesh_size_mm', coarse_spacing)) if value is not None}
+        if geometry:
+            self.config = replace(self.config, **geometry)
         self.config.validate()
         if element != "p1":
             raise ValueError("The maintained cutting model uses P1 triangles")

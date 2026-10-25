@@ -155,7 +155,7 @@ def main():
     parser.add_argument('--maxwell-alpha',type=float,default=2.,help='Common relaxing-branch shape; Gv and small-shear tau unchanged')
     parser.add_argument('--relaxation-s',type=float,required=True)
     parser.add_argument('--loading-rate',type=float,required=True)
-    parser.add_argument('--angle',type=float,choices=(0.,30.,33.,57.,60.),default=60.)
+    parser.add_argument('--angle',type=float,default=60.,help='Specimen inclination in [0, 75] degrees')
     parser.add_argument('--mu',type=float,default=.35,
         help='Common positive Coulomb coefficient; exact-history resume requires an identical value')
     parser.add_argument('--depth',type=float,default=2.)
@@ -169,6 +169,14 @@ def main():
         help='Opt-in material point batches; 0 retains the original whole-array evaluation')
     parser.add_argument('--blade-spacing',type=float,
         help='Optional straight-blade subdivision (mm); preserves shape/nose and requires an independent history')
+    parser.add_argument('--blade-thickness',type=float,help='Symmetric blade thickness (mm)')
+    parser.add_argument('--blade-angle',type=float,help='Full included symmetric wedge angle (degrees)')
+    parser.add_argument('--tip-radius',type=float,default=.02,help='Circular nose radius (mm), not a flat chamfer')
+    parser.add_argument('--local-spacing',type=float,default=.05)
+    parser.add_argument('--surface-spacing',type=float,default=.005)
+    parser.add_argument('--coarse-spacing',type=float)
+    parser.add_argument('--fine-halfwidth',type=float,default=3.)
+    parser.add_argument('--nose-facets',type=int,default=64)
     parser.add_argument('--linear-backend',choices=('native','pardiso'),default='native')
     parser.add_argument('--linear-threads',type=int,default=4,
         help='Positive PARDISO thread count; unused by the native backend')
@@ -182,6 +190,19 @@ def main():
     if not all(np.isfinite(v) and v>0 for v in (args.depth,args.increment,args.seconds,args.mu)) or args.depth>2:
         parser.error('positive finite controls and target depth <= 2 mm required')
     if args.threads<1:parser.error('threads must be positive')
+    if not np.isfinite(args.angle) or not 0<=args.angle<=75:parser.error('Angle must be in [0,75] degrees')
+    thickness=args.blade_thickness if args.blade_thickness is not None else BASELINE['model']['blade_thickness_mm']
+    blade_angle=args.blade_angle if args.blade_angle is not None else BASELINE['model']['blade_tip_angle_deg']
+    if not np.isfinite(thickness) or thickness<=0 or not np.isfinite(blade_angle) or not 0<blade_angle<180:
+        parser.error('Blade thickness and included angle must be finite and positive')
+    if args.angle+blade_angle/2>=90:parser.error('Initial circular-nose contact requires angle + half blade angle < 90 degrees')
+    if not np.isfinite(args.tip_radius) or not 0<args.tip_radius<thickness/2:
+        parser.error('Tip radius must be positive and smaller than half blade thickness')
+    if not all(np.isfinite(v) and v>0 for v in (args.local_spacing,args.surface_spacing,args.fine_halfwidth)):
+        parser.error('Mesh spacings and fine halfwidth must be positive')
+    if args.coarse_spacing is not None and (not np.isfinite(args.coarse_spacing) or args.coarse_spacing<=0):
+        parser.error('Coarse mesh spacing must be positive')
+    if args.nose_facets<4 or args.nose_facets%2:parser.error('Nose facets must be even and >=4')
     if args.blade_spacing is not None and (not np.isfinite(args.blade_spacing) or not 0<args.blade_spacing<=.05):
         parser.error('Blade spacing must be in (0, .05] mm')
     try:
@@ -226,7 +247,9 @@ def main():
         started=time.monotonic();p=None;x=None
         try:
             construction={k:getattr(args,k) for k in ('angle','equilibrium_shear','maxwell_shear',
-                'relaxation_s','loading_rate','bulk_modulus','mu','equilibrium_alpha','maxwell_alpha','blade_spacing')}
+                'relaxation_s','loading_rate','bulk_modulus','mu','equilibrium_alpha','maxwell_alpha','blade_spacing',
+                'blade_thickness','blade_angle','tip_radius','local_spacing','surface_spacing','coarse_spacing',
+                'fine_halfwidth','nose_facets')}
             p=make_problem(**construction)
             p.solver_diagnostics=args.diagnostics
             # JSON round trip makes signatures stable across tuples in Material.
