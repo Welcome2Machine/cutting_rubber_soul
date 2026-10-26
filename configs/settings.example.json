@@ -1,0 +1,6 @@
+{
+  "simulation_python": "C:/path/to/python310/python.exe",
+  "video_python": "C:/path/to/video-venv/Scripts/python.exe",
+  "simulation_port": 8876,
+  "video_timeout_s": 3600
+}

@@ -1,0 +1,11 @@
+{
+  "registration": "tip_translation",
+  "rotation_deg": 0.0,
+  "translation_y_mm": null,
+  "translation_z_mm": null,
+  "depth_offset_mm": 0.0,
+  "max_depth_mm": 1.0,
+  "fe_reference_index": 0,
+  "support_mode": "continuous",
+  "intact_status": "unknown"
+}
