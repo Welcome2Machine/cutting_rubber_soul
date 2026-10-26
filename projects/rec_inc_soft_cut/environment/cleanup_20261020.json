@@ -1,0 +1,44 @@
+{
+  "date": "2026-10-20",
+  "authorization": "User requested cleanup, preservation of the latest complete segmentation/tracking/slip results, commit and push to main.",
+  "python": "D:\\Doctoral Research\\AcademicForge\\softcutting0731\\.venv\\Scripts\\python.exe",
+  "environment_exception": "No local .venv; used the alternate AcademicForge environment already documented in README. No dependencies installed.",
+  "formal_artifacts_manifest": "configs/retained_results.json",
+  "retained_result_directories": 12,
+  "removed_old_result_directories": 25,
+  "removed_obsolete_scripts": 24,
+  "removed_obsolete_audit_tests": 2,
+  "diagnostic_scripts_moved": 9,
+  "reclaimed_bytes": 10124979257,
+  "integrity": {
+    "ok": true,
+    "protected_files": 1206,
+    "retained_files_checked": 64222,
+    "sha256_checked": 79,
+    "errors": []
+  },
+  "results_validation": {
+    "ok": true,
+    "read_only": true,
+    "counts": {
+      "html_links": 537,
+      "npz_archives": 255,
+      "cases": 23,
+      "presentations": 5
+    },
+    "errors": [],
+    "numerical_accuracy_certified": false
+  },
+  "validation": {
+    "full_pytest": "987 passed, 1 skipped, 6 subtests passed",
+    "followup_real_data_test": "1 passed after pointing the test at the retained current preparation",
+    "fixture_repair": "Rendering clock comes from prepared frame_mapping.npz, not the historical acquisition-rate assumption",
+    "preflight": "passed; no inference or external drive access",
+    "syntax": "all current Python sources parse"
+  },
+  "calculation_rerun": false,
+  "existing_results_numerically_modified": false,
+  "data_results_models_uploaded": false,
+  "local_evidence": "environment/local_maintenance/",
+  "algorithm_change_during_cleanup": false
+}

@@ -1,0 +1,86 @@
+{
+  "date": "2026-10-26",
+  "scope": "Lossless CSV format migration, transparent NTFS JSON compression and disposable browser cache cleanup",
+  "python": "D:\\Doctoral Research\\AcademicForge\\softcutting0731\\.venv\\Scripts\\python.exe",
+  "interpreter_exception": "Repository .venv absent; reuse documented existing AcademicForge environment without installing packages.",
+  "before": {
+    "files": 66655,
+    "logical_bytes": 42522412859,
+    "disk_bytes": 42522412859,
+    "initial_ntfs_compression": false
+  },
+  "after": {
+    "files": 65908,
+    "logical_bytes": 39150118738,
+    "disk_bytes": 36189352626
+  },
+  "saved_disk_bytes": 6333060233,
+  "saved_logical_bytes": 3372294121,
+  "precision_changed": false,
+  "original_data_modified": false,
+  "inference_rerun": false,
+  "protected_count": 62309,
+  "protected_unchanged": true,
+  "exchange_verification": {
+    "all_members_read": true,
+    "files": 14258,
+    "unchanged_members_match_previous_checksums": true,
+    "table_payloads_match_previous_checksums": true,
+    "prior_manifest_sha256": "606fb8cc852ec6f32a7e510445b52c407e5d0ba06b625695b8c0f4491b1072fe"
+  },
+  "validation": {
+    "full_tests_passed": 724,
+    "subtests_passed": 3,
+    "final_fast_compression_tests": 28,
+    "retained_html_links": 633,
+    "retained_npz_archives": 270,
+    "retained_cases": 23,
+    "retained_presentations": 5,
+    "identity_cases": 5
+  },
+  "gzip_tables": 25,
+  "ntfs_json_files": 89,
+  "gzip_saving_bytes": 3350982539,
+  "ntfs_saving_bytes": 2961965373,
+  "deleted_caches": [
+    {
+      "path": "D:\\Doctoral Research\\Softcutting\\0910imaging\\rec_inc_soft_cut\\results\\20261015_declared_fracture_sliding\\report_review\\browser_profile",
+      "files": 254,
+      "bytes": 7108829,
+      "reason": "Disposable automated browser review cache"
+    },
+    {
+      "path": "D:\\Doctoral Research\\Softcutting\\0910imaging\\rec_inc_soft_cut\\results\\20261016_contact_gap_interpolation\\review\\browser_profile",
+      "files": 238,
+      "bytes": 7098466,
+      "reason": "Disposable automated browser review cache"
+    },
+    {
+      "path": "D:\\Doctoral Research\\Softcutting\\0910imaging\\rec_inc_soft_cut\\results\\20261016_contact_gap_interpolation\\review\\table_profile",
+      "files": 256,
+      "bytes": 7117411,
+      "reason": "Disposable automated browser review cache"
+    },
+    {
+      "path": "D:\\Doctoral Research\\Softcutting\\0910imaging\\rec_inc_soft_cut\\results\\20261012_optical_flow_exchange\\0930l30a1\\tracks.csv.gz.46llhvpm.tmp",
+      "files": 1,
+      "bytes": 9340773,
+      "reason": "Temporary output from interrupted compression attempt; verified final gzip retained"
+    },
+    {
+      "path": "D:\\Doctoral Research\\Softcutting\\0910imaging\\rec_inc_soft_cut\\results\\20261012_optical_flow_exchange\\0930l30a2\\tracks.csv.gz.6n2xk1yk.tmp",
+      "files": 1,
+      "bytes": 4473116,
+      "reason": "Temporary output from interrupted compression attempt; verified final gzip retained"
+    }
+  ],
+  "formal_assets": [
+    "docs/results_storage.md",
+    "results/20261012_optical_flow_exchange/README.md",
+    "results/20261012_optical_flow_exchange/storage_migration.json",
+    "results/20261012_optical_flow_exchange/SHA256SUMS.json",
+    "configs/retained_results.json"
+  ],
+  "local_evidence": "environment/local_maintenance/storage_20261026.json",
+  "exclusion": "Pre-existing user edits in docs/reliable_pipeline_methods.md were preserved; data/models untouched."
+}

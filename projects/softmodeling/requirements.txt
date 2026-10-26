@@ -1,0 +1,10 @@
+# Core runtime versions used locally; see README for verified IPC API requirements.
+# Optional multicore PARDISO is provided by the local .runtime/pardiso environment.
+numpy==2.2.6
+scipy==1.15.3
+threadpoolctl==3.6.0
+psutil==7.1.0
+matplotlib==3.10.6
+ipctk==1.6.0
+# Reusable solver and workbench regression suite.
+pytest==9.1.1

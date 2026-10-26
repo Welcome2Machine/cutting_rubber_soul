@@ -1,0 +1,175 @@
+{
+  "date": "2026-10-24",
+  "scope": "Reference archive only; does not execute tracking or change measurements",
+  "authorization": "User requested a reference folder with organized literature and reading guide; public-source retrieval is within that task. No forms submitted, accounts created, data uploaded, dependencies installed, or weights downloaded.",
+  "interpreter": "D:\\Doctoral Research\\AcademicForge\\softcutting0731\\.venv\\Scripts\\python.exe",
+  "environment_exception": "Repository .venv absent; existing project-approved AcademicForge softcutting0731 interpreter used. Standard library plus already installed pypdf; fitz probe failed with ModuleNotFoundError and no package was installed.",
+  "sources": "Publisher, author institution, German National Library, arXiv and CVF URLs listed per entry; primary dataset landing page registered without downloading dataset.",
+  "retained_assets": [
+    "reference/READING_GUIDE.md",
+    "reference/bibliography.json",
+    "reference/execution_evidence.json",
+    "reference/papers/*.pdf (local only; excluded from Git)"
+  ],
+  "catalog_count": 19,
+  "downloaded_pdf_count": 11,
+  "pdf_bytes": 49876060,
+  "content_checks": [
+    {
+      "id": "idics2018",
+      "pages": 110,
+      "header_ok": true,
+      "sha256_ok": true,
+      "title_keyword_matches": 6,
+      "title_keyword_count": 6,
+      "first_page_title_check": true
+    },
+    {
+      "id": "genet2023",
+      "pages": 31,
+      "header_ok": true,
+      "sha256_ok": true,
+      "title_keyword_matches": 13,
+      "title_keyword_count": 13,
+      "first_page_title_check": true
+    },
+    {
+      "id": "rethore2007",
+      "pages": 7,
+      "header_ok": true,
+      "sha256_ok": true,
+      "title_keyword_matches": 7,
+      "title_keyword_count": 8,
+      "first_page_title_check": true
+    },
+    {
+      "id": "poissant2010",
+      "pages": 12,
+      "header_ok": true,
+      "sha256_ok": true,
+      "title_keyword_matches": 10,
+      "title_keyword_count": 10,
+      "first_page_title_check": true
+    },
+    {
+      "id": "tapvid2022",
+      "pages": 34,
+      "header_ok": true,
+      "sha256_ok": true,
+      "title_keyword_matches": 4,
+      "title_keyword_count": 4,
+      "first_page_title_check": true
+    },
+    {
+      "id": "tapir2023",
+      "pages": 12,
+      "header_ok": true,
+      "sha256_ok": true,
+      "title_keyword_matches": 7,
+      "title_keyword_count": 7,
+      "first_page_title_check": true
+    },
+    {
+      "id": "bootstap2024",
+      "pages": 18,
+      "header_ok": true,
+      "sha256_ok": true,
+      "title_keyword_matches": 5,
+      "title_keyword_count": 5,
+      "first_page_title_check": true
+    },
+    {
+      "id": "cotracker2025",
+      "pages": 10,
+      "header_ok": true,
+      "sha256_ok": true,
+      "title_keyword_matches": 8,
+      "title_keyword_count": 9,
+      "first_page_title_check": true
+    },
+    {
+      "id": "tapnext2025",
+      "pages": 11,
+      "header_ok": true,
+      "sha256_ok": true,
+      "title_keyword_matches": 6,
+      "title_keyword_count": 6,
+      "first_page_title_check": true
+    },
+    {
+      "id": "raft2020",
+      "pages": 21,
+      "header_ok": true,
+      "sha256_ok": true,
+      "title_keyword_matches": 7,
+      "title_keyword_count": 7,
+      "first_page_title_check": true
+    },
+    {
+      "id": "prevost2013",
+      "pages": 11,
+      "header_ok": true,
+      "sha256_ok": true,
+      "title_keyword_matches": 8,
+      "title_keyword_count": 8,
+      "first_page_title_check": true
+    }
+  ],
+  "link_only": [
+    {
+      "id": "idics2025",
+      "status": "link_only_registration_form",
+      "reason": "Official page permits unaltered distribution with full attribution; no form was submitted on the user's behalf."
+    },
+    {
+      "id": "reu2022",
+      "status": "link_only_subscription",
+      "reason": "Publisher subscription article; link only; no paywall bypass."
+    },
+    {
+      "id": "mendoza2019",
+      "status": "link_only_no_verified_open_pdf",
+      "reason": "Publisher article; no verified open PDF downloaded."
+    },
+    {
+      "id": "spagnoli2018",
+      "status": "link_only_no_verified_open_pdf",
+      "reason": "Publisher article; no verified open PDF downloaded."
+    },
+    {
+      "id": "zhao2025",
+      "status": "link_only_download_failed",
+      "reason": "Public URL did not return a PDF; no HTML challenge saved"
+    },
+    {
+      "id": "lava2020",
+      "status": "link_only_no_verified_open_pdf",
+      "reason": "Publisher article; no verified open PDF downloaded."
+    },
+    {
+      "id": "moreno2026",
+      "status": "link_only_download_failed",
+      "reason": [
+        {
+          "url": "https://www.nature.com/articles/s41524-025-01869-y.pdf",
+          "error": "Public URL returned non-PDF; access challenge not bypassed"
+        },
+        {
+          "url": "https://d-nb.info/1386915076/34",
+          "error": "<urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate in certificate chain (_ssl.c:1006)>"
+        }
+      ]
+    },
+    {
+      "id": "spagnoli2019",
+      "status": "link_only_subscription",
+      "reason": "Publisher subscription article; institution lists all rights reserved and closed copy. No access request or paywall bypass."
+    }
+  ],
+  "limits": [
+    "No access-control or certificate-check bypass. The expired www.idics.org certificate was avoided by using its independently valid official idics.org hostname.",
+    "Evidence scope is stated per article. Link-only entries generally have abstract/bibliographic verification; Moreno 2026 is an explicit exception with full-text Methods read via the web tool but no local PDF.",
+    "Downloaded PDFs remain unchanged reading copies; copyright and model/code licenses are distinct.",
+    "This evidence verifies reference integrity, not algorithm validity."
+  ]
+}

@@ -1,0 +1,6 @@
+[
+  {"id":"99755","label":"99755 · 23° 双刃","shape":"symmetric_wedge","thickness_mm":0.245,"included_angle_deg":23,"source_note":"用户规格截图；微观圆鼻半径另设，表面涂层不单独建模。"},
+  {"id":"02003","label":"02003 · 22° 双刃","shape":"symmetric_wedge","thickness_mm":0.245,"included_angle_deg":22,"source_note":"用户规格截图；仅使用几何尺寸，涂层不自动换算摩擦。"},
+  {"id":"99086","label":"99086 · 24° 双刃","shape":"symmetric_wedge","thickness_mm":0.245,"included_angle_deg":24,"source_note":"用户规格截图；仅使用几何尺寸，涂层不自动换算摩擦。"},
+  {"id":"98007","label":"98007 · 30° 双刃","shape":"symmetric_wedge","thickness_mm":0.245,"included_angle_deg":30,"source_note":"用户规格截图；仅使用几何尺寸，涂层不自动换算摩擦。"}
+]

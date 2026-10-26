@@ -1,0 +1,25 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>MMT-v1 / OBT-v1 双方法定义</title>
+<style>body{max-width:1100px;margin:30px auto;padding:0 20px;font:17px/1.7 system-ui}table{border-collapse:collapse;width:100%}td,th{border:1px solid #bbb;padding:10px}code{font-size:15px}pre{white-space:pre-wrap;background:#f2f4f5;padding:15px}</style>
+<h1>MMT-v1 / OBT-v1 双方法接触地址计算</h1>
+<p>共同目标是：每个压入深度下，登记刀尖所接触材料在初始自由表面上的地址相对首次接触地址的变化。它仍以持续接触原始表面为条件；断裂后接触新裂面时，原始自由表面地址可能不再适用。</p>
+<table><tr><th>方法</th><th>MMT-v1</th><th>OBT-v1</th></tr>
+<tr><td>名称</td><td>混合模型输运法<br>Mixed-model transport</td><td>客观边界输运法<br>Objective boundary transport</td></tr>
+<tr><td>以前的标记</td><td>Baseline；粉色 P</td><td>Trial candidate；橙色 Q</td></tr>
+<tr><td>材料映射</td><td>Cartesian 映射与当前边界弧长映射保守组合；三次迭代</td><td>图像边界弧长映射；同一个位置模型与对应速度模型联合检查；固定初始接触地址软耦合</td></tr>
+<tr><td>运动模型</td><td>保留原切向/法向投影速度拟合</td><td>加入共同刚体转动基函数，避免曲线旋转产生假输运；刀尖和刀速统一作为参考</td></tr>
+<tr><td>端点导数</td><td>保留历史中心窗口速度及无效标记</td><td>只恢复原本无效的速度：同一连续 ID、双尺度二次拟合、三折留出和跨尺度一致性检查</td></tr>
+<tr><td>时间求解</td><td>共享绝对地址偏差状态；过程尺度按该方法观测确定</td><td>相同共享偏差求解器；过程参数按合格旧边界控制观测确定，冻结当前修复定义</td></tr>
+<tr><td>资格判断</td><td>明确保留历史提前返回的资格行为，仅用于复现旧比较方法</td><td>不得用未通过速度资格的替代位置模型授权当前观测；几何不足时保留预测</td></tr></table>
+<p>两方法共享输入轨迹、固定材料 ID、登记刀尖、接触零点、标尺、源帧和截止范围。最终曲线分别保存，不做平均，不根据显微镜结果选择方法或调参数。两条曲线一致也不自动排除共同身份漂移。</p>
+<h2>截止与输出</h2>
+<p>A 系列默认处理截止：l30 1.0 mm、l60 1.4 mm、n60 1.5 mm，a1/a2 相同。截止值来自实验任务设定，不是由算法推断的起裂时刻。新导数和时间融合仅使用截止内的数据；光流原有历史依赖保留。未知工况在独立入口必须指定截止，主流程则显式取全下压 3 mm。</p>
+<p>每组的 <code>MMT-v1.npz/json</code> 与 <code>OBT-v1.npz/json</code> 分别包含地址、位移、模型敏感度、观测来源和方法参数。<code>comparison.csv</code> 逐源帧列出两种估计及各自预测标记。<code>complete.json</code> 记录方法版本、输入和代码指纹、截止范围。点阵不重新编号，材料点和轨迹源只读。</p>
+<p>视频沿用当前图/初始图并排模板：灰色显示完整材料 ID，初始图上的粉色 P 为 MMT-v1 地址，橙色 Q 为 OBT-v1 地址，绿色 P0 为首次接触参考。各曲线独立以虚线标记没有合格更新的区间。有限预测位置不是看见了真实接触材料。</p>
+<h2>当前调用</h2>
+<p>上文保留 v1 的历史数学定义与对照参数。当前代码将两种方法与有界/恢复窗口策略分别组织，默认 bounded 输出 MMT-v2/OBT-v2。旧命令已合并到 softcut.py，已交付结果不因整理改变。</p>
+<pre>python softcut.py slip --names 0930l60a1 --source results/my_batch/tracks --measurements results/my_batch/measurements --stop-mm 1.4 --out results/l60_dual --render
+
+python softcut.py slip --out results/l60_dual --report-only</pre>
+<p>局部图像匹配、内部留出和数值客观性检查各有作用，但都不能单独标定隐藏刀尖的材料身份。两方法仍输出条件模型估计；曲线平稳或接近显微镜数值不能当作高置信度验证。后续改变核心定义时升级版本标识，保留原版本用于可比性。</p>
+</html>

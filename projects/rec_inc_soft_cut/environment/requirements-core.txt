@@ -1,0 +1,9 @@
+# Current runtime and regression-test dependencies (Python 3.11).
+# PyTorch is installed separately by setup.ps1 for the chosen CPU/CUDA backend.
+numpy>=1.26,<3
+scipy>=1.11,<2
+pandas>=2.1,<4
+matplotlib>=3.8,<4
+opencv-python>=4.8,<5
+psutil>=5.9,<8
+pytest>=8,<10

@@ -1,0 +1,76 @@
+{
+  "schema": "material_optimization_boundary_ablation_1",
+  "seed": 20261024,
+  "maximum_nodes": 100,
+  "reference_lag_frames": 12,
+  "near_tip_radius_px": 100,
+  "pilot_depths_mm": [
+    0.25,
+    0.5,
+    0.75,
+    1.0
+  ],
+  "surface_pilot_depths_mm": [
+    0,
+    0.25,
+    0.5,
+    0.75,
+    1.0
+  ],
+  "surface": {},
+  "candidate": {},
+  "cases": [
+    {
+      "name": "1014n57a1",
+      "role": "development_only",
+      "tracks": "results/20261014_1005_1014_batch/tracks/1014n57a1",
+      "measurements": "results/20261014_1005_1014_batch/measurements/1014n57a1",
+      "prepared": "results/20261016_slip_bias_audit/recalculated/1014n57a1",
+      "contact_audit": "results/20261016_slip_bias_audit/1014n57a1/contact_audit.json",
+      "stop_mm": 1.0
+    },
+    {
+      "name": "1014n33a1",
+      "role": "development_only",
+      "tracks": "results/20261014_1005_1014_batch/tracks/1014n33a1",
+      "measurements": "results/20261014_1005_1014_batch/measurements/1014n33a1",
+      "prepared": "results/20261016_slip_bias_audit/recalculated/1014n33a1",
+      "contact_audit": "results/20261016_slip_bias_audit/1014n33a1/contact_audit.json",
+      "stop_mm": 1.0
+    },
+    {
+      "name": "1014n33a3",
+      "role": "development_only",
+      "tracks": "results/20261014_1005_1014_batch/tracks/1014n33a3",
+      "measurements": "results/20261014_1005_1014_batch/measurements/1014n33a3",
+      "prepared": "results/20261016_slip_bias_audit/recalculated/1014n33a3",
+      "contact_audit": "results/20261016_slip_bias_audit/1014n33a3/contact_audit.json",
+      "stop_mm": 1.0
+    },
+    {
+      "name": "1008n60a2",
+      "role": "development_only",
+      "tracks": "results/20261014_1005_1014_batch/tracks/1008n60a2",
+      "measurements": "results/20261014_1005_1014_batch/measurements/1008n60a2",
+      "prepared": "results/20261016_slip_bias_audit/recalculated/1008n60a2",
+      "contact_audit": "results/20261016_slip_bias_audit/1008n60a2/contact_audit.json",
+      "stop_mm": 1.0
+    },
+    {
+      "name": "1014l57a2",
+      "role": "development_only",
+      "tracks": "results/20261014_1005_1014_batch/tracks/1014l57a2",
+      "measurements": "results/20261014_1005_1014_batch/measurements/1014l57a2",
+      "prepared": "results/20261016_slip_bias_audit/recalculated/1014l57a2",
+      "contact_audit": "results/20261016_slip_bias_audit/1014l57a2/contact_audit.json",
+      "stop_mm": 1.0
+    }
+  ],
+  "surface_models": [
+    "affine",
+    "surface-quadratic",
+    "surface-curve"
+  ],
+  "purpose": "Development ablations: mask-separated features and one-dimensional original surface transport",
+  "historical_cases_are_not_blind_validation": true
+}

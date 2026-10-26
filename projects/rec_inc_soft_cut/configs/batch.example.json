@@ -1,0 +1,7 @@
+{
+  "cases": [
+    {"name": "0930l30a1", "contact_to_reversal_mm": 3, "stroke_status": "user_confirmed", "contact_analysis_stop_mm": 1.0},
+    {"name": "0930l60a1", "contact_to_reversal_mm": 3, "stroke_status": "user_confirmed", "contact_analysis_stop_mm": 1.4},
+    {"name": "0930n60a1", "contact_to_reversal_mm": 3, "stroke_status": "user_confirmed", "contact_analysis_stop_mm": 1.5}
+  ]
+}

@@ -1,0 +1,106 @@
+{
+  "date": "2026-10-24",
+  "timezone": "Asia/Tokyo",
+  "decision": "Preserve accepted baseline; deploy and test optional research candidates without promoting them to default",
+  "user_authorization": "Back up current code, write complete optimization plan, deploy modules, create reference folder and reading guide",
+  "baseline_commit": "45a98ca371a92d487c85e70140e5f91eeaf86c3a",
+  "remote_backup_tag": "backup/pre-optimization-20261024",
+  "interpreter": "D:/Doctoral Research/AcademicForge/softcutting0731/.venv/Scripts/python.exe",
+  "interpreter_exception": "Repository .venv absent; reuse previously documented project virtual environment, not global Python",
+  "scope": [
+    "synthetic truth benchmarks",
+    "bounded saved-video pilot",
+    "topology-aware finite-deformation image registration",
+    "original-surface forward mapping and observability",
+    "primary-source literature guide"
+  ],
+  "new_dependencies": [],
+  "new_model_weights": [],
+  "training": false,
+  "data_upload": false,
+  "full_video_retracking": false,
+  "old_results_changed": false,
+  "default_tracker_changed": false,
+  "outputs": "results/20261024_optimization_deployment",
+  "validation_status": "passed software regression and bounded pilot; candidate not promoted",
+  "interpretation": "Implementation and consistency tests do not establish physical accuracy or independent fracture/contact truth",
+  "validation": {
+    "full_regression": {
+      "passed": 557,
+      "subtests_passed": 3,
+      "seconds": 34.39
+    },
+    "subsequent_cli_and_workflow_checks": {
+      "passed": 29,
+      "seconds": 0.62
+    },
+    "known_synthetic_scenarios": 6,
+    "real_mesh_snapshots": 8,
+    "surface_model_ablation_snapshots": 4,
+    "npz_files_read_without_pickle": 38,
+    "affine_extension_real_equivalence": [
+      {
+        "case": "1014n57a1",
+        "frame": 392,
+        "affine_mapping_after_optional_quadratic_extension_unchanged": true
+      },
+      {
+        "case": "1014n57a1",
+        "frame": 492,
+        "affine_mapping_after_optional_quadratic_extension_unchanged": true
+      },
+      {
+        "case": "1014n33a1",
+        "frame": 468,
+        "affine_mapping_after_optional_quadratic_extension_unchanged": true
+      },
+      {
+        "case": "1014n33a1",
+        "frame": 569,
+        "affine_mapping_after_optional_quadratic_extension_unchanged": true
+      }
+    ],
+    "deployed_source_sha256": {
+      "src\\workflows\\optimize.py": "ef8abd238ffc97ddce1520033028208dc07eeba74ec45ce0c8a6a3fd8d5c2c79",
+      "src\\tracking\\finite_deformation.py": "a1161aedf8d22585cef46eabca078a8effcb3b813d6f6bfbc89d6fd8589fa8b6",
+      "src\\analysis\\surface_observability.py": "814cfd95a0c1914a365e48a33d0618beaf23c94bfe3d415d71a102c821a3bf48",
+      "src\\exchange\\source.py": "3c88189658b6831af29715ce260030ad7fb81337c63befbf09459c712a910038"
+    },
+    "default_tracker_changed": false,
+    "physical_accuracy_validated": false,
+    "promoted_to_default": false,
+    "source_immutability_checks": [
+      {
+        "case": "1014n57a1",
+        "verified_unchanged_source_files": 17
+      },
+      {
+        "case": "1014n33a1",
+        "verified_unchanged_source_files": 17
+      }
+    ]
+  },
+  "formal_assets": [
+    "docs/material_tracking_optimization_plan.md",
+    "reference/READING_GUIDE.md",
+    "reference/bibliography.json",
+    "reference/execution_evidence.json",
+    "src/tracking/finite_deformation.py",
+    "src/analysis/surface_observability.py",
+    "src/workflows/optimize.py",
+    "configs/optimization.example.json",
+    "results\\20261024_optimization_deployment"
+  ],
+  "deployed_modules": [
+    "finite deformation image registration with kinematic regularization",
+    "forward original-surface affine and near-surface quadratic models",
+    "observability and independent support prediction diagnostics",
+    "synthetic and real comparison runner",
+    "cross-batch finite-element source selection"
+  ],
+  "not_deployed": [
+    "new pretrained tracking weights",
+    "finite-strain constitutive equilibrium-gap backend",
+    "replacement of default production pipeline"
+  ]
+}

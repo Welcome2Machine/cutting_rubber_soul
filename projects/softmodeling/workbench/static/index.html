@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Softcut · 橡胶压入研究台</title>
+  <link rel="stylesheet" href="/app.css">
+  <script defer src="/app.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="brand-mark" aria-hidden="true">S</span><div><strong>SOFTCUT</strong><span>橡胶压入研究台</span></div></div>
+  <div class="header-meta"><span class="status-dot" id="server-dot"></span><span id="server-state">连接本地服务…</span><span class="pill">完整体 · 有限应变</span></div>
+</header>
+<main>
+  <div class="page-heading"><div><p class="eyebrow">MECHANICS WORKBENCH</p><h1>从工况到可比较的结果</h1><p class="lede">配置刀具与界面，运行受控的压入计算，检查力、变形和场量。</p></div><a class="text-link" href="/guide" target="_blank" rel="noopener">研究导读 ↗</a></div>
+  <nav class="tabs" aria-label="工作区">
+    <button class="tab active" data-panel="setup" aria-selected="true">01 <span>设置与运行</span></button>
+    <button class="tab" data-panel="results" aria-selected="false">02 <span>结果比较</span><span id="result-count" class="count">0</span></button>
+  </nav>
+  <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+
+  <section id="panel-setup" class="panel">
+    <div class="setup-layout">
+      <form id="config-form">
+        <section class="card">
+          <div class="section-heading"><div><p class="eyebrow">01 / GEOMETRY</p><h2>刀具与入侵角度</h2></div><label class="button secondary small file-label">导入刀具 JSON<input id="blade-import" type="file" accept=".json,application/json" hidden></label></div>
+          <div class="form-grid">
+            <label class="span-2">刀具配置<select id="blade-select" required></select></label>
+            <label>圆鼻半径 <span class="unit">mm</span><input id="tip-radius" type="number" step="0.001" min="0.001" max="0.1" required></label>
+            <label>入侵角度 <span class="unit">°</span><input id="angle" type="number" step="1" min="0" max="75" required></label>
+          </div>
+          <p id="blade-details" class="help"></p>
+          <p class="help">角度定义为初始橡胶表面相对水平的倾角；刀具始终竖直下行。锋利度用圆鼻半径表示，尚不支持平倒角或任意刃形。</p>
+        </section>
+        <section class="card">
+          <div class="section-heading"><div><p class="eyebrow">02 / MATERIAL & INTERFACE</p><h2>材料与接触</h2></div><label class="button secondary small file-label">导入材料 JSON<input id="material-import" type="file" accept=".json,application/json" hidden></label></div>
+          <label>材料配置<select id="material-select" required></select></label>
+          <div id="material-values" class="metric-strip"></div>
+          <div class="form-grid">
+            <label>界面条件<select id="lubrication"><option value="dry">干接触</option><option value="oil">硅油润滑</option><option value="custom">其他 / 待标定</option></select></label>
+            <label>库仑摩擦系数 μ <span class="unit">当前入口要求 &gt; 0</span><input id="mu" type="number" min="0.000001" max="2" step="any" required></label>
+          </div>
+          <p class="help">润滑条件作为工况标签记录，实际影响由 μ 控制。选择硅油不会自动指定摩擦系数；当前不包含油膜流动、黏附或温度依赖。</p>
+        </section>
+        <section class="card">
+          <div class="section-heading"><div><p class="eyebrow">03 / LOADING & MESH</p><h2>加载与离散</h2></div><span class="pill">速度固定 0.2 mm/s</span></div>
+          <div class="form-grid">
+            <label>总竖直行程 <span class="unit">mm，≤ 2</span><input id="depth" type="number" min="0.01" max="2" step="0.01" required></label>
+            <label>名义物理增量 <span class="unit">mm</span><input id="increment" type="number" min="0.000625" max="0.05" step="any" required></label>
+            <label class="span-2">网格预设<select id="mesh-preset"></select></label>
+          </div>
+          <p id="mesh-details" class="help"></p>
+          <details><summary>网格、刀具离散与资源预算</summary><div class="advanced-fields form-grid">
+            <label>局部体网格 <span class="unit">mm</span><input id="mesh-near" type="number" min="0.01" max="0.5" step="0.005"></label>
+            <label>表面间距 <span class="unit">mm</span><input id="mesh-surface" type="number" min="0.001" max="0.1" step="0.001"></label>
+            <label>细区半宽 <span class="unit">mm</span><input id="mesh-width" type="number" min="1" max="7" step="0.5"></label>
+            <label>远场网格 <span class="unit">mm</span><input id="mesh-coarse" type="number" min="0.05" max="2" step="0.05"></label>
+            <label>圆鼻面片数<input id="tip-facets" type="number" min="16" max="256" step="2"></label>
+            <label>直刃细分间距 <span class="unit">mm，留空为原分段</span><input id="blade-spacing" type="number" min="0.001" max="0.05" step="0.001"></label>
+            <label>求解预算 <span class="unit">s</span><input id="solve-budget" type="number" min="60" max="86400" step="60"></label>
+            <label>总运行预算 <span class="unit">s，含准备与审查</span><input id="setup-budget" type="number" min="60" max="86400" step="60"></label>
+            <label>线性后端<select id="linear-backend"><option value="native">SuperLU</option><option value="pardiso">PARDISO（需本地可用）</option></select></label>
+            <label>线性线程数<input id="linear-threads" type="number" min="1" max="64" step="1"></label>
+            <label>IPC 线程数<input id="ipc-threads" type="number" min="1" max="32" step="1"></label>
+          </div><p class="help">物理增量同时决定 Maxwell 的时间步。细化或改变刀具离散需重新从初态计算，不能跨配置续用历史。预算到期保留已接受前缀，不自动追加预算。</p></details>
+        </section>
+        <div class="config-actions"><button type="button" id="save-config" class="button secondary">导出运行配置</button><label class="button secondary file-label">载入运行配置<input id="config-import" type="file" accept=".json,application/json" hidden></label><button type="button" id="reset-config" class="button quiet">恢复默认</button></div>
+      </form>
+      <aside class="setup-aside">
+        <section class="card preview-card">
+          <p class="eyebrow">CASE PREVIEW</p><h2>本次工况</h2>
+          <label>工况名称<input id="case-name" type="text" maxlength="80" placeholder="用于识别与比较"></label>
+          <svg id="geometry-preview" viewBox="0 0 300 205" role="img" aria-label="刀具竖直压入倾斜橡胶的示意图"></svg>
+          <dl class="summary-list" id="case-summary"></dl>
+          <p class="help">示意图非网格。当前为二维平面应变完整体；不预测起裂、切开或裂后掉力。</p>
+          <button id="validate-config" class="button secondary wide">核查配置与运行指令</button>
+          <button id="start-run" class="button primary wide" disabled>核查后启动本地计算</button>
+          <p id="validation-status" class="help" aria-live="polite">配置变更后需重新核查。点击启动才会执行计算。</p>
+          <details id="command-details" hidden><summary>运行指令 / 核查摘要</summary><pre id="command-preview"></pre></details>
+        </section>
+        <section class="card small-card"><h3>保持的物理验收</h3><p class="help">自由力残差 ≤ 10⁻⁴ N、正 J、完整 CCD、边界、耗散与材料／摩擦历史一致性。运行结束与全路径审查通过分别显示。</p></section>
+      </aside>
+    </div>
+    <section class="card run-card">
+      <div class="section-heading"><div><p class="eyebrow">LOCAL JOBS</p><h2>运行记录</h2></div><button id="refresh-runs" class="button secondary small">刷新</button></div>
+      <div id="runs-empty" class="empty compact">没有本工作台创建的运行。已有结果可在“结果比较”中导入。</div>
+      <div id="runs-list"></div>
+      <details id="log-panel" hidden open><summary id="log-title">运行日志</summary><pre id="run-log" class="log-output"></pre></details>
+    </section>
+  </section>
+
+  <section id="panel-results" class="panel" hidden>
+    <section class="card import-card">
+      <div><p class="eyebrow">COMPARE & INSPECT</p><h2>导入已保存的计算结果</h2><p class="help">标准结果包包含曲线和经审查的保存场。旧 result.json 仅导入曲线，资格标记为未核查。</p></div>
+      <label class="button primary file-label">导入结果 JSON<input id="result-import" type="file" accept=".json,application/json" multiple hidden></label>
+    </section>
+    <details class="card local-export"><summary>从本仓库已保存状态生成标准结果包 / MP4</summary>
+      <div class="export-grid"><label>计算结果目录<select id="saved-results"><option value="">正在读取…</option></select></label><label>导出帧数<input id="export-frames" type="number" min="2" max="41" step="1" value="11"></label><label class="checkbox"><input id="export-movie" type="checkbox">同时生成 MP4</label><button id="export-result" class="button secondary">审查并导出</button></div>
+      <p class="help">仅后处理已有状态，不推进加载。大网格审查和视频生成可能需要时间；动画帧率仅用于播放，不代表求解时间步。</p><div id="export-status" role="status" aria-live="polite"></div>
+    </details>
+    <div id="results-empty" class="empty large"><div class="empty-symbol" aria-hidden="true">↗</div><h2>让工况在同一张图上比较</h2><p>导入一个或多个标准结果包，即可叠加力曲线、逐条隐藏，并查看保存场的压入过程。</p><p class="help">不生成示例数据，也不外推未完成的行程。</p></div>
+    <div id="result-workspace" hidden>
+      <section class="card"><div class="section-heading"><h2>比较中的工况</h2><button id="download-curves" class="button secondary small">导出可见曲线 CSV</button></div><div id="datasets-list"></div><p class="help">Fy 为截面内水平有符号反力（原 reaction_x_n）；Fz 为竖直阻力；Fyz = √(Fy² + Fz²)。缺失或不合格数据不连线，不进行零点偏置。</p></section>
+      <div class="plot-grid"><section class="card plot-card"><h3>竖直反力 Fz</h3><canvas id="plot-fz" aria-label="Fz 随竖直行程的曲线"></canvas></section><section class="card plot-card"><h3>水平反力 Fy</h3><canvas id="plot-fy" aria-label="Fy 随竖直行程的曲线"></canvas></section><section class="card plot-card"><h3>面内合力 Fyz</h3><canvas id="plot-fyz" aria-label="Fyz 随竖直行程的曲线"></canvas></section></div>
+      <div id="plot-readout" class="plot-readout" aria-live="polite">将鼠标移到曲线上查看最近的实际采样点。</div>
+      <details class="card diagnostic-card"><summary>接触、能量与数值诊断</summary><label>比较量<select id="diagnostic-quantity"><option value="contact_reference_offset_mm">刀尖接触参考材料偏移 / mm</option><option value="stored_energy_Nmm">材料储能 / N·mm</option><option value="viscous_dissipation_Nmm">累计黏性耗散 / N·mm</option><option value="friction_work_increment_Nmm">单步摩擦功 / N·mm</option><option value="normal_fz_N">局部法向接触贡献 Fz / N</option><option value="friction_fz_N">摩擦贡献 Fz / N</option><option value="min_J">最小 J</option><option value="residual_N">自由力残差 / N</option></select></label><canvas id="plot-diagnostic" aria-label="所选接触或力学诊断量随行程"></canvas><p class="help">参考材料偏移不是累计滑移；接触缺失或多义时留空。力分量占比不等于耗散占比；单步摩擦功不可直接当作累计能量。</p></details>
+      <section class="card field-card">
+        <div class="section-heading"><div><p class="eyebrow">SAVED FIELDS</p><h2>变形与场量</h2></div><span class="pill">真实比例 · 不放大位移</span></div>
+        <div class="field-controls"><label>工况<select id="field-dataset"></select></label><label>场量<select id="field-quantity"></select></label><label>观察范围<select id="field-view"><option value="tip">刀尖附近 ± 2.5 mm</option><option value="full">完整截面</option></select></label><label class="checkbox"><input id="show-mesh" type="checkbox">网格边线</label></div>
+        <details class="range-settings"><summary>显示色标范围</summary><div class="form-grid"><label>显示下限（留空使用全部帧极值）<input id="range-min" type="number" step="any" placeholder="自动"></label><label>显示上限（留空使用全部帧极值）<input id="range-max" type="number" step="any" placeholder="自动"></label></div><p class="help">自定义范围只截断显示颜色，不更改数值或极值。不同工况比较场量时可设置相同范围。</p></details>
+        <div id="field-empty" class="empty compact">当前工况没有保存场。请从本地状态导出标准结果包。</div>
+        <div id="field-content" hidden><div class="field-canvas-wrap"><canvas id="field-canvas" aria-label="保存的变形网格与场量"></canvas><div id="field-overlay" class="field-overlay"></div></div>
+          <div class="color-scale"><span id="field-min"></span><span class="color-bar"></span><span id="field-max"></span><span id="field-unit"></span></div>
+          <div class="playback"><button id="play-fields" class="button secondary small" aria-label="播放压入动画">▶ 播放</button><input id="frame-slider" aria-label="保存帧" type="range" min="0" max="0" value="0"><output id="frame-label"></output></div>
+          <div class="field-footer"><p id="field-description" class="help"></p><div class="button-row"><button id="download-frame" class="button secondary small">保存 PNG</button><button id="record-animation" class="button secondary small">导出动画 WebM</button></div></div>
+        </div>
+      </section>
+    </div>
+  </section>
+</main>
+<footer>Softcut · 本地研究工具 <span>mm · N · s · MPa</span><a href="/guide" target="_blank" rel="noopener">模型、证据与使用边界 ↗</a></footer>
+</body>
+</html>

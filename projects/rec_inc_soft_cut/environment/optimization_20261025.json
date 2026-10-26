@@ -1,0 +1,164 @@
+{
+  "date": "2026-10-25",
+  "authorization": "User requested completing contact crosscheck -> material identity recovery -> boundary matching -> neural and mechanics deployment, with traceable reliable methods. This authorizes bounded local inference, official pretrained model downloads and isolated required dependencies; no training or upload.",
+  "python": "D:/Doctoral Research/AcademicForge/softcutting0731/.venv/Scripts/python.exe",
+  "environment_exception": "Repository .venv absent; reuse previously authorized existing interpreter without modifying its packages.",
+  "model_assets": [
+    "models/point_tracking/cotracker3",
+    "models/point_tracking/tapnextpp"
+  ],
+  "dependencies": "einops only in ignored TAPNext++ assets dependency directory; official version/hash recorded there",
+  "model_sources": [
+    "https://github.com/facebookresearch/co-tracker",
+    "https://github.com/google-deepmind/tapnet",
+    "https://tap-next-plus-plus.github.io/"
+  ],
+  "licenses": [
+    "CoTracker3 CC-BY-NC-4.0: academic research only",
+    "TAPNext++ Apache-2.0 per official repository/model terms"
+  ],
+  "formal_assets": [
+    "configs/optimization.reliability.json",
+    "docs/reliable_pipeline_methods.md",
+    "results/20261025_reliable_pipeline",
+    "models/point_tracking/*/provenance.json"
+  ],
+  "unchanged": [
+    "data",
+    "production tracker defaults",
+    "historical trajectories",
+    "user fracture cutoffs"
+  ],
+  "promotion": "Requires independent held-out evidence; historical development cases cannot establish physical accuracy.",
+  "baseline_commit": "ff573e6033dc0e86904812addc0bdec1453d2765",
+  "formal_report": "results/20261025_reliable_pipeline/final/index.html",
+  "final_config_sha256": "5052a4b041147dd630d54adb20db519a7af5c137f7210e625e14019eb1cb5be2",
+  "validation": {
+    "tests": {
+      "passed": 659,
+      "subtests_passed": 3
+    },
+    "npz_files_loaded_without_pickle": 175,
+    "html_local_links_checked": 55,
+    "accepted_mechanics_steps": 40,
+    "every_accepted_mechanics_trial_safe": true,
+    "identity": {
+      "legacy_boundary": {
+        "selected": 240,
+        "baseline_supported": 232,
+        "original_accepted": 32,
+        "recent_accepted": 226,
+        "identity_consistent": 20,
+        "recovered": 0,
+        "ambiguous": 0
+      },
+      "masked_boundary": {
+        "selected": 240,
+        "baseline_supported": 232,
+        "original_accepted": 24,
+        "recent_accepted": 204,
+        "identity_consistent": 15,
+        "recovered": 0,
+        "ambiguous": 0
+      },
+      "cotracker3": {
+        "selected": 240,
+        "baseline_supported": 232,
+        "original_accepted": 24,
+        "recent_accepted": 204,
+        "identity_consistent": 15,
+        "recovered": 0,
+        "ambiguous": 0
+      },
+      "tapnextpp": {
+        "selected": 240,
+        "baseline_supported": 232,
+        "original_accepted": 26,
+        "recent_accepted": 204,
+        "identity_consistent": 15,
+        "recovered": 0,
+        "ambiguous": 0
+      }
+    },
+    "mechanics": {
+      "kinematic_baseline": {
+        "accepted": 10,
+        "total": 10,
+        "holdout_improved": 10,
+        "mean_holdout_before": 0.7322236945101795,
+        "mean_holdout_after": 0.6859268670148226,
+        "mean_median_correction_px": 0.4114571586251259,
+        "supported": 492,
+        "interior_nodes": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "equilibrium_Kmu_2": {
+        "accepted": 10,
+        "total": 10,
+        "holdout_improved": 10,
+        "mean_holdout_before": 0.7322236945101795,
+        "mean_holdout_after": 0.6858587516829908,
+        "mean_median_correction_px": 0.5240994729101658,
+        "supported": 506,
+        "interior_nodes": [
+          71,
+          70,
+          74,
+          67,
+          75,
+          70,
+          70,
+          67,
+          73,
+          73
+        ],
+        "equilibrium_improved": 10
+      },
+      "equilibrium_Kmu_20": {
+        "accepted": 10,
+        "total": 10,
+        "holdout_improved": 10,
+        "mean_holdout_before": 0.7322236945101795,
+        "mean_holdout_after": 0.7025593247102683,
+        "mean_median_correction_px": 0.29764344412833454,
+        "supported": 465,
+        "interior_nodes": [
+          71,
+          70,
+          74,
+          67,
+          75,
+          70,
+          70,
+          67,
+          73,
+          73
+        ],
+        "equilibrium_improved": 10
+      }
+    },
+    "code_fingerprints_match": true,
+    "physical_accuracy_not_established": true
+  },
+  "repository_check": {
+    "ok": true,
+    "html_links": 569,
+    "npz_archives": 255,
+    "cases": 23,
+    "presentations": 5
+  },
+  "default_tracker_original_definitions_ast_identical": 12,
+  "candidate_acceptance": "Four branches deployed; no promotion. No newly verified identity recovery on sampled development endpoints.",
+  "adaptive_change": "After full-step rejection diagnostics, added opt-in feasible backtracking with unchanged safety thresholds; comparison repeated on all five development cases, not a blind test.",
+  "source_count_policy": "Two new source modules: one shared neural adapter and one integrated research workflow; existing kernels/audit/mesh modules extended; no root task scripts."
+}

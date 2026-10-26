@@ -1,0 +1,61 @@
+{
+  "date": "2026-10-24",
+  "scope": "User-requested removal and consolidation of duplicate, obsolete and one-off code; obsolete local model weights removed",
+  "python": "D:\\Doctoral Research\\AcademicForge\\softcutting0731\\.venv\\Scripts\\python.exe",
+  "environment_exception": "No project .venv exists; existing documented AcademicForge virtual environment reused. No installation or model download.",
+  "before": {
+    "production": {
+      "files": 190,
+      "lines": 49613
+    },
+    "tests": {
+      "files": 121,
+      "lines": 13863
+    }
+  },
+  "after": {
+    "production": {
+      "files": 58,
+      "lines": 17513
+    },
+    "tests": {
+      "files": 47,
+      "lines": 6698
+    }
+  },
+  "root_python_scripts_before": 47,
+  "root_python_scripts_after": [
+    "softcut.py"
+  ],
+  "obsolete_model_bytes_removed": 587684606,
+  "retained_checkpoint": "models/segmentation/clean_roi_20260909/checkpoint_best.pt",
+  "retained_checkpoint_sha256": "2a6e30c368a29ea729d1613efd3e29c4d31db85adbf7cc12bdf2999abbb2f5dd",
+  "validation": {
+    "full_suite": "518 passed, 3 subtests passed; 132.91 seconds",
+    "final_changed_workflow_tests": "53 passed; gallery, CLI and batch tests after the final gallery fix",
+    "static_checks": "All source modules import; all 10 CLI help commands pass; F401/F811/F821 checks pass; no identical function bodies of six or more lines",
+    "segmentation": "52 parameter keys loaded strictly; old/new outputs bitwise equal for two input sizes; preprocessing and cleanup equivalent",
+    "contact_filters": "Bounded and recovered-window modes each matched old arrays/metadata for 60 random cases; real saved input comparison also matched",
+    "exchange": "CSV and preview PNG exports byte-identical on synthetic fixtures",
+    "existing_tracks": {
+      "cases": 23,
+      "frames": 32184,
+      "all_full_reuse_fingerprints_pass": true
+    },
+    "gallery": "Five retained display arrays unchanged; one bounded estimate availability checked; real five-frame master and one-frame PPT samples encoded/decoded",
+    "retained_outputs": {
+      "files_checked": 65349,
+      "path_size_mtime_unchanged": true,
+      "html_links": 537,
+      "npz_archives": 255,
+      "latest_cases": 23,
+      "presentation_cases": 5
+    },
+    "tracker_source_bytes_unchanged": true
+  },
+  "no_full_tracking_or_measurement_recalculation": true,
+  "data_uploaded": false,
+  "retained_results_manifest": "configs/retained_results.json",
+  "local_evidence": "environment/local_maintenance/",
+  "limits": "Software equivalence and artifact integrity checks do not validate experimental measurement accuracy."
+}

@@ -1,0 +1,52 @@
+# Local Python environment and transient tooling output
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Locally downloaded model checkpoints and caches
+models/
+.cache/
+
+# Disposable agent execution noise: never use the repository root as a log sink.
+/*.out
+/*.err
+/.annotator_start_*.txt
+/scratch/
+
+# Local acquisition data, annotations and generated artifacts stay on disk
+# only. In particular data/ must never be staged or uploaded.
+/video/
+/data/
+/results/
+/annotation/
+/annotations/
+/.codex/
+
+# Reproducible local runs are never part of the source distribution.
+/runs/
+*.npz
+*.npy
+/*.log
+*.log
+*.tmp
+*.temp
+*.encoding.mp4
+*.encoding.mkv
+
+# Presentation build products; keep the final method notes separately.
+/docs/**/_build/
+/docs/**/_build_*/
+/docs/**/deliverables/
+/docs/**/.codex-finalizer/
+/docs/**/output/
+/docs/**/renders/
+node_modules/
+
+/agent/
+/environment/local_maintenance/
+
+# Literature full texts stay local; catalog, checksums and reading guide are tracked.
+/reference/papers/*.pdf

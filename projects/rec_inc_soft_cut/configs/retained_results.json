@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "reviewed_on": "2026-10-26",
+  "protected_directories": [
+    "data",
+    ".git",
+    "models/segmentation/clean_roi_20260909",
+    "models/point_tracking/cotracker3",
+    "models/point_tracking/tapnextpp"
+  ],
+  "results": {
+    "20261005_0930_all": "Complete 0930 tracking and measurement sources for the delivered finite-element exchange.",
+    "20261007_two_layer_surface": "Source surface/contact observations cited by the 0930 a2 exchange.",
+    "20261008_named_dual_contact": "Latest paired 0930 a1 estimates cited by the exchange.",
+    "20261012_optical_flow_exchange": "Delivered local finite-element exchange; large tables migrated losslessly to CSV.gz, current paths in metadata.files and checksum lineage in storage_migration.json.",
+    "20261014_1005_1014_batch": "Complete 23-case segmentation, shadow normalization, material tracking and measurements.",
+    "20261015_declared_fracture_sliding": "Paired sliding estimates at the user-declared fracture cutoffs.",
+    "20261015_method_freeze": "Small frozen source snapshot establishing the retained calculation baseline.",
+    "20261015_missing_case_recovery": "Completion and provenance records for the recovered cases.",
+    "20261016_contact_gap_interpolation": "Latest complete 23-case reporting layer and endpoint summary.",
+    "20261016_slip_bias_audit": "Candidate calculations and prepared inputs required by the latest five-case presentation.",
+    "20261016_five_group_sliding": "Latest five-case HTML, static English plots and text-free master/PPT videos.",
+    "20261016_four_group_slip_limits": "Latest diagnostic evidence explaining remaining discrepancies.",
+    "20261024_n_group_first_1mm": "Delivered n57/n33 fixed-view first-millimetre videos and contact-referenced displacement data for FE comparison.",
+    "20261024_optimization_deployment": "Research candidate benchmarks, negative results, source fingerprints and surface-model ablation; not production replacements.",
+    "20261024_boundary_followup": "Five-case masked-feature and original-surface curve ablations, zero-depth geometry diagnostics and validation evidence; production unchanged.",
+    "20261025_reliable_pipeline": "Contact geometry audit, fixed-ID boundary/neural candidate checks, finite-strain equilibrium sensitivity and bounded safe-update diagnostics; development evidence only.",
+    "20261025_surface_identity": "One-sided material support, initial-rooted keyframes, initial-query neural proposals and cumulative-risk diagnostics; frozen strict controls and five-case bounded validation. Development evidence, not a production replacement."
+  },
+  "entry_points": [
+    "20261014_1005_1014_batch/index.html",
+    "20261015_declared_fracture_sliding/index.html",
+    "20261016_contact_gap_interpolation/index.html",
+    "20261016_five_group_sliding/index.html",
+    "20261012_optical_flow_exchange/README.md",
+    "20261024_n_group_first_1mm/README.txt",
+    "20261024_optimization_deployment/index.html",
+    "20261024_boundary_followup/index.html",
+    "20261025_reliable_pipeline/index.html",
+    "20261025_surface_identity/validated/index.html"
+  ],
+  "validation_groups": [
+    {
+      "manifest": "20261014_1005_1014_batch/manifest.json",
+      "case_key": "name",
+      "counter": "cases",
+      "expected_cases": 23,
+      "npz": [
+        "20261014_1005_1014_batch/tracks/{name}/tracking/tracks.npz",
+        "20261014_1005_1014_batch/tracks/{name}/queries.npz",
+        "20261014_1005_1014_batch/tracks/{name}/geometry.npz",
+        "20261014_1005_1014_batch/tracks/{name}/frame_mapping.npz",
+        "20261014_1005_1014_batch/measurements/{name}/measurement_support.npz",
+        "20261014_1005_1014_batch/measurements/{name}/blade_contact_geometry.npz",
+        "20261014_1005_1014_batch/measurements/{name}/initial_surface_extended.npz",
+        "20261014_1005_1014_batch/measurements/{name}/motion_measurements.npz",
+        "20261015_declared_fracture_sliding/{name}/MMT-v2.npz",
+        "20261015_declared_fracture_sliding/{name}/OBT-v2.npz"
+      ],
+      "files": [
+        "20261014_1005_1014_batch/tracks/{name}/geometry.json",
+        "20261014_1005_1014_batch/tracks/{name}/plan.json",
+        "20261014_1005_1014_batch/tracks/{name}/normalized_lossless.mkv",
+        "20261014_1005_1014_batch/tracks/{name}/segmentation",
+        "20261014_1005_1014_batch/tracks/{name}/{name}_material_tracking.mp4",
+        "20261014_1005_1014_batch/tracks/{name}/{name}_tip_tracking.mp4",
+        "20261015_declared_fracture_sliding/{name}/repaired_contact.mp4"
+      ]
+    },
+    {
+      "manifest": "20261016_five_group_sliding/summary.json",
+      "case_key": "case",
+      "counter": "presentations",
+      "expected_cases": 5,
+      "npz": [
+        "20261016_five_group_sliding/{name}/sliding.npz",
+        "20261016_slip_bias_audit/recalculated/{name}/input.npz",
+        "20261016_slip_bias_audit/recalculated/{name}/geometry.npz",
+        "20261016_slip_bias_audit/recalculated/{name}/origin.npz",
+        "20261016_slip_bias_audit/recalculated/{name}/temporal_motion.npz"
+      ],
+      "files": [
+        "20261016_five_group_sliding/{name}/review.mp4",
+        "20261016_five_group_sliding/{name}/curve.png",
+        "20261016_five_group_sliding/{name}/calculation.json",
+        "20261016_five_group_sliding/ppt_videos/{name}.mp4"
+      ]
+    },
+    {
+      "manifest": "20261025_surface_identity/validated/summary.json",
+      "case_key": "case",
+      "counter": "identity_cases",
+      "expected_cases": 5,
+      "npz": [
+        "20261025_surface_identity/validated/{name}/rooted_saved_proposal.npz",
+        "20261025_surface_identity/validated/{name}/rooted_initial_network.npz",
+        "20261025_surface_identity/validated/{name}/initial_tapnextpp.npz"
+      ],
+      "files": [
+        "20261025_surface_identity/validated/{name}/summary.json",
+        "20261025_surface_identity/validated/{name}/provenance.json",
+        "20261025_surface_identity/validated/{name}/support_curves.png"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "date": "2026-10-25",
+  "baseline_commit": "98ec115",
+  "authorization": "User requests executing the complete boundary and initial-rooted identity optimization with concurrent technical documentation.",
+  "python": "D:/Doctoral Research/AcademicForge/softcutting0731/.venv/Scripts/python.exe",
+  "interpreter_exception": "Repository .venv absent; use established documented interpreter, no global or shared-environment changes.",
+  "model_assets": "Reuse pinned local TAPNext++ and saved CoTracker3 candidates; no new downloads or training.",
+  "scope": "Five historical development cases, entire initial-to-1mm prefix; default and old results frozen.",
+  "formal_assets": [
+    "configs/optimization.identity.json",
+    "docs/surface_identity_optimization.md",
+    "results/20261025_surface_identity",
+    "results/20261025_surface_identity/validated",
+    "results/20261025_surface_identity/final/RUN_STATUS.json",
+    "results/20261025_surface_identity/default_equivalence.json",
+    "results/20261025_surface_identity/validated/audits/identity_diagnostics.json",
+    "results/20261025_surface_identity/validated/validation.json",
+    "results/20261025_surface_identity/boundary_analysis.json",
+    "results/20261025_surface_identity/validated/presentation.json"
+  ],
+  "criteria": "No hallucinated observations; preserve IDs, rejected candidates and boundary reasons. Chain connection is conditional, not independent physical truth. Record excluded cases and false positives on known warps.",
+  "test_results": {
+    "pytest": 717,
+    "subtests": 3,
+    "default_arrays_exact_on_declared_synthetic_regression": 154
+  },
+  "cycle_policy_decision": "Accumulated correlated forward/backward residuals are not a calibrated error bound; replace the absorption-causing 8px hard stop with explicit risk diagnostics, preserving per-edge image/geometry/reference gates. First two strict-policy cases retained as controls.",
+  "completed": {
+    "cases": 5,
+    "source_frames_including_precontact": 3024,
+    "fixed_ids_across_cases": 340,
+    "point_array_archives": 215,
+    "report_local_links": 64,
+    "tests": 717,
+    "subtests": 3,
+    "source_and_input_hashes_match": true,
+    "videos": 5,
+    "video_total_MiB": 4.9544,
+    "reference_chain_seconds_both_variants": 1345.8549,
+    "initial_query_network_seconds": 91.7289
+  },
+  "outcome": "Separated geometric boundary admission from photometric support; deployed initial-rooted reference chains and initial-query network proposals. Fixed unjustified cumulative-cycle hard stops. New conditional coverage remains limited near the tip; neural proposals have no consistent near-tip coverage gain and do not establish physical accuracy. Production defaults and prior measurements unchanged."
+}

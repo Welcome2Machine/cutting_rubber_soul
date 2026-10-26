@@ -1,0 +1,68 @@
+{
+  "schema": "surface_identity_optimization_1",
+  "seed": 20261024,
+  "cases": [
+    {
+      "name": "1014n57a1",
+      "role": "development_only",
+      "tracks": "results/20261014_1005_1014_batch/tracks/1014n57a1",
+      "measurements": "results/20261014_1005_1014_batch/measurements/1014n57a1",
+      "prepared": "results/20261016_slip_bias_audit/recalculated/1014n57a1",
+      "contact_audit": "results/20261016_slip_bias_audit/1014n57a1/contact_audit.json",
+      "stop_mm": 1.0
+    },
+    {
+      "name": "1014n33a1",
+      "role": "development_only",
+      "tracks": "results/20261014_1005_1014_batch/tracks/1014n33a1",
+      "measurements": "results/20261014_1005_1014_batch/measurements/1014n33a1",
+      "prepared": "results/20261016_slip_bias_audit/recalculated/1014n33a1",
+      "contact_audit": "results/20261016_slip_bias_audit/1014n33a1/contact_audit.json",
+      "stop_mm": 1.0
+    },
+    {
+      "name": "1014n33a3",
+      "role": "development_only",
+      "tracks": "results/20261014_1005_1014_batch/tracks/1014n33a3",
+      "measurements": "results/20261014_1005_1014_batch/measurements/1014n33a3",
+      "prepared": "results/20261016_slip_bias_audit/recalculated/1014n33a3",
+      "contact_audit": "results/20261016_slip_bias_audit/1014n33a3/contact_audit.json",
+      "stop_mm": 1.0
+    },
+    {
+      "name": "1008n60a2",
+      "role": "development_only",
+      "tracks": "results/20261014_1005_1014_batch/tracks/1008n60a2",
+      "measurements": "results/20261014_1005_1014_batch/measurements/1008n60a2",
+      "prepared": "results/20261016_slip_bias_audit/recalculated/1008n60a2",
+      "contact_audit": "results/20261016_slip_bias_audit/1008n60a2/contact_audit.json",
+      "stop_mm": 1.0
+    },
+    {
+      "name": "1014l57a2",
+      "role": "development_only",
+      "tracks": "results/20261014_1005_1014_batch/tracks/1014l57a2",
+      "measurements": "results/20261014_1005_1014_batch/measurements/1014l57a2",
+      "prepared": "results/20261016_slip_bias_audit/recalculated/1014l57a2",
+      "contact_audit": "results/20261016_slip_bias_audit/1014l57a2/contact_audit.json",
+      "stop_mm": 1.0
+    }
+  ],
+  "purpose": "Separate boundary gating from material identity; fixed geometric cohort from frame0, complete prefix through 1mm, anchored keyframes and initial-query TAPNext++ candidates. No target-slip fitting.",
+  "initial_neighbourhood_px": 180.0,
+  "identity_boundary_tolerance_px": 1.5,
+  "identity_blade_core_erosion_px": 2,
+  "identity_prefix_stride": 1,
+  "identity_network_crop_side_px": 512,
+  "identity_network_max_frames": 1200,
+  "regression_evidence": "results/20261025_reliable_pipeline/final",
+  "original_surface_band_px": 8.0,
+  "identity_agreement_px": 1.5,
+  "identity_chain": {
+    "keyframe_interval": 12,
+    "root_check_interval": 12,
+    "maximum_cycle_budget_px": 8.0,
+    "maximum_correction_px": 8.0,
+    "cycle_budget_policy": "diagnostic"
+  }
+}

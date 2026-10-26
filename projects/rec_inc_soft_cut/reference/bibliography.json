@@ -1,0 +1,744 @@
+{
+  "schema_version": 1,
+  "verified_on": "2026-10-25",
+  "purpose": "Evidence for improving material tracking, contact-address inference, and independent finite-element validation in soft-cutting videos.",
+  "policy": "Primary sources only. Public PDFs are local reading copies, excluded from Git. A public URL does not imply redistribution rights. No experimental data, model weights or credentials are uploaded. No papers are presented as validating oil-contaminated blade-contact measurements in this repository.",
+  "entries": [
+    {
+      "id": "idics2025",
+      "title": "A Good Practices Guide for Digital Image Correlation, Edition 2",
+      "authors": [
+        "International Digital Image Correlation Society",
+        "E. M. C. Jones (editor)",
+        "M. A. Iadicola (editor)"
+      ],
+      "year": 2025,
+      "venue": "iDICs",
+      "doi": "10.32720/idics/gpg.ed2",
+      "url": "https://idics.org/guide/",
+      "pdf_url": null,
+      "module": [
+        "measurement_validation",
+        "calibration"
+      ],
+      "priority": "essential",
+      "evidence_scope": "Official guide page verifies edition, scope and citation; full Edition 2 not downloaded because official access uses a registration form.",
+      "relevance": "Plan image acquisition, reporting, displacement/strain processing and validation before comparing algorithms.",
+      "limitation": "Scope is common laboratory DIC; it does not certify this project's contact, oil, occlusion or large-compression estimates.",
+      "rights": "Official page permits unaltered distribution with full attribution; no form was submitted on the user's behalf.",
+      "local_status": "link_only_registration_form"
+    },
+    {
+      "id": "idics2018",
+      "title": "A Good Practices Guide for Digital Image Correlation",
+      "authors": [
+        "International Digital Image Correlation Society",
+        "E. M. C. Jones (editor)",
+        "M. A. Iadicola (editor)"
+      ],
+      "year": 2018,
+      "venue": "iDICs",
+      "doi": "10.32720/idics/gpg.ed1/print.format",
+      "url": "https://idics.org/guide/",
+      "pdf_url": "https://idics.org/guide/DICGoodPracticesGuide_PrintVersion-V5h-181024.pdf",
+      "module": [
+        "measurement_validation",
+        "calibration"
+      ],
+      "priority": "supporting",
+      "evidence_scope": "Official first-edition PDF and copyright page.",
+      "relevance": "Immediately available practical background on image quality, setup, calibration and uncertainty.",
+      "limitation": "Superseded by the 2025 second edition; retained as an accessible reading copy, not described as the latest guide.",
+      "rights": "Copyright iDICs 2018; unaltered reproduction with full attribution permitted by guide.",
+      "local_status": "downloaded_public_reading_copy",
+      "resolved_pdf_url": "https://idics.org/guide/DICGoodPracticesGuide_PrintVersion-V5h-181024.pdf",
+      "local_path": "reference/papers/idics2018.pdf",
+      "bytes": 2940710,
+      "sha256": "2946151c586c59bfd6e3ab89aa6bb90c0238d718bd3b2a40c25970af25c2bf2c",
+      "downloaded_on": "2026-10-24",
+      "pdf_pages": 110
+    },
+    {
+      "id": "reu2022",
+      "title": "DIC Challenge 2.0: Developing Images and Guidelines for Evaluating Accuracy and Resolution of 2D Analyses: Focus on the Metrological Efficiency Indicator",
+      "authors": [
+        "P. L. Reu",
+        "B. Blaysat",
+        "E. Andó",
+        "K. Bhattacharya",
+        "C. Couture",
+        "V. Couty",
+        "D. Deb",
+        "S. S. Fayad",
+        "M. A. Iadicola",
+        "S. Jaminion",
+        "M. Klein",
+        "A. K. Landauer",
+        "P. Lava",
+        "M. Liu",
+        "L. K. Luan",
+        "S. N. Olufsen",
+        "J. Réthoré",
+        "E. Roubin",
+        "D. T. Seidl",
+        "T. Siebert",
+        "O. Stamati",
+        "E. Toussaint",
+        "D. Turner",
+        "C. S. R. Vemulapati",
+        "T. Weikert",
+        "J. F. Witz",
+        "O. Witzel",
+        "J. Yang"
+      ],
+      "year": 2022,
+      "venue": "Experimental Mechanics 62, 639–654",
+      "doi": "10.1007/s11340-021-00806-6",
+      "url": "https://link.springer.com/article/10.1007/s11340-021-00806-6",
+      "pdf_url": null,
+      "data_url": "https://idics.org/challenge/",
+      "module": [
+        "measurement_validation",
+        "strain"
+      ],
+      "priority": "essential",
+      "evidence_scope": "Publisher abstract, date and bibliographic record; publisher full text requires subscription.",
+      "relevance": "Measure noise together with effective spatial resolution; use standardized synthetic images to distinguish smoothing from real accuracy gains.",
+      "limitation": "Challenge patterns do not reproduce severe blade occlusion or liquid interference. Benchmark gains must be retested on local imagery.",
+      "rights": "Publisher subscription article; link only; no paywall bypass.",
+      "local_status": "link_only_subscription"
+    },
+    {
+      "id": "mendoza2019",
+      "title": "Complete mechanical regularization applied to digital image and volume correlation",
+      "authors": [
+        "Arturo Mendoza",
+        "Jan Neggers",
+        "François Hild",
+        "Stéphane Roux"
+      ],
+      "year": 2019,
+      "venue": "Computer Methods in Applied Mechanics and Engineering 355, 27–43",
+      "doi": "10.1016/j.cma.2019.06.005",
+      "url": "https://www.sciencedirect.com/science/article/abs/pii/S0045782519303457",
+      "pdf_url": null,
+      "module": [
+        "mechanical_regularization",
+        "boundary_conditions"
+      ],
+      "priority": "essential",
+      "evidence_scope": "Publisher abstract and bibliographic record; not a full-text review.",
+      "relevance": "Treat interior and boundary conditions distinctly when regularizing a displacement field.",
+      "limitation": "The stated reference behavior is linear elastic. This is not a ready-made finite-strain hyperelastic contact/sliding model.",
+      "rights": "Publisher article; no verified open PDF downloaded.",
+      "local_status": "link_only_no_verified_open_pdf"
+    },
+    {
+      "id": "genet2023",
+      "title": "Finite strain formulation of the discrete equilibrium gap principle: application to mechanically consistent regularization for large motion tracking",
+      "authors": [
+        "Martin Genet"
+      ],
+      "year": 2023,
+      "venue": "Comptes Rendus. Mécanique 351, 429–458",
+      "doi": "10.5802/crmeca.228",
+      "url": "https://comptes-rendus.academie-sciences.fr/mecanique/articles/10.5802/crmeca.228/",
+      "pdf_url": "https://comptes-rendus.academie-sciences.fr/mecanique/item/10.5802/crmeca.228.pdf",
+      "module": [
+        "mechanical_regularization",
+        "large_deformation"
+      ],
+      "priority": "essential",
+      "evidence_scope": "Publisher open article, abstract, license and full PDF.",
+      "relevance": "Finite-strain equilibrium-gap regularization and boundary traction treatment motivate an optional mechanically consistent branch.",
+      "limitation": "Published demonstrations on synthetic motion/noise do not establish accuracy for cutting, occlusion, oil or crack initiation. Constitutive assumptions introduce bias.",
+      "rights": "CC BY 4.0; publisher states authors retain copyright.",
+      "local_status": "downloaded_public_reading_copy",
+      "local_path": "reference/papers/genet2023.pdf",
+      "bytes": 8010467,
+      "sha256": "d48a48f664b3942212a29e289aad8aaeeffafac30045f752ab1bee22ef55c61c",
+      "downloaded_on": "2026-10-24",
+      "resolved_pdf_url": "https://comptes-rendus.academie-sciences.fr/mecanique/item/10.5802/crmeca.228.pdf",
+      "pdf_pages": 31
+    },
+    {
+      "id": "rethore2007",
+      "title": "From pictures to extended finite elements: extended digital image correlation (X-DIC)",
+      "authors": [
+        "Julien Réthoré",
+        "Stéphane Roux",
+        "François Hild"
+      ],
+      "year": 2007,
+      "venue": "Comptes Rendus. Mécanique 335(3), 131–137",
+      "doi": "10.1016/j.crme.2007.02.003",
+      "url": "https://comptes-rendus.academie-sciences.fr/mecanique/articles/10.1016/j.crme.2007.02.003/",
+      "pdf_url": "https://comptes-rendus.academie-sciences.fr/mecanique/item/10.1016/j.crme.2007.02.003.pdf",
+      "module": [
+        "discontinuity",
+        "blade_interface"
+      ],
+      "priority": "essential",
+      "evidence_scope": "Publisher abstract, bibliographic record and openly served archived PDF.",
+      "relevance": "Enriched displacement representations can keep opposing sides of a sliding interface independent.",
+      "limitation": "Bolted-interface slip demonstration; no direct validation of rubber fracture onset or original-surface contact identity.",
+      "rights": "Public publisher archive reading copy; redistribution license not asserted.",
+      "local_status": "downloaded_public_reading_copy",
+      "local_path": "reference/papers/rethore2007.pdf",
+      "bytes": 386501,
+      "sha256": "1dd81498b71d860bb61e8a767988c7966071ac7e0473a7877592e691c9841705",
+      "downloaded_on": "2026-10-24",
+      "resolved_pdf_url": "https://comptes-rendus.academie-sciences.fr/mecanique/item/10.1016/j.crme.2007.02.003.pdf",
+      "pdf_pages": 7
+    },
+    {
+      "id": "poissant2010",
+      "title": "A Novel Subset Splitting Procedure for Digital Image Correlation on Discontinuous Displacement Fields",
+      "authors": [
+        "J. Poissant",
+        "F. Barthelat"
+      ],
+      "year": 2010,
+      "online_year": 2009,
+      "venue": "Experimental Mechanics 50, 353–364",
+      "doi": "10.1007/s11340-009-9220-2",
+      "url": "https://experts.colorado.edu/display/pubid_247907",
+      "pdf_url": "https://barthelat-lab.mcgill.ca/files/papers/EM2010.pdf",
+      "module": [
+        "discontinuity",
+        "local_matching"
+      ],
+      "priority": "essential",
+      "evidence_scope": "Author-laboratory PDF and author institution bibliographic record.",
+      "relevance": "Local subsets spanning a discontinuity should be split or selected on one side instead of enforcing one affine motion.",
+      "limitation": "Recovering hidden texture is not achieved by splitting; available pixels and discontinuity geometry remain limiting.",
+      "rights": "Author-laboratory hosted reading copy; original publisher copyright retained, redistribution license not asserted.",
+      "local_status": "downloaded_public_reading_copy",
+      "local_path": "reference/papers/poissant2010.pdf",
+      "bytes": 1021164,
+      "sha256": "3ed3849027891c98d50b7f7adfc8177f7dbf8878c94d9abb926ee153ff94c6e1",
+      "downloaded_on": "2026-10-24",
+      "resolved_pdf_url": "https://barthelat-lab.mcgill.ca/files/papers/EM2010.pdf",
+      "pdf_pages": 12
+    },
+    {
+      "id": "spagnoli2018",
+      "title": "The fracture mechanics in cutting: A comparative study on hard and soft polymeric materials",
+      "authors": [
+        "A. Spagnoli",
+        "M. Terzano",
+        "R. Brighenti",
+        "F. Artoni",
+        "P. Ståhle"
+      ],
+      "year": 2018,
+      "venue": "International Journal of Mechanical Sciences 148, 554–564",
+      "doi": "10.1016/j.ijmecsci.2018.09.013",
+      "url": "https://www.sciencedirect.com/science/article/pii/S0020740318322665",
+      "institutional_record_url": "https://portal.research.lu.se/sv/publications/the-fracture-mechanics-in-cutting-a-comparative-study-on-hard-and/",
+      "pdf_url": null,
+      "module": [
+        "cutting_physics",
+        "large_deformation",
+        "fracture"
+      ],
+      "priority": "essential",
+      "evidence_scope": "Publisher abstract and author-university record; no full PDF obtained.",
+      "relevance": "Directly relevant cutting experiments combine insertion force and full-field finite-strain DIC; blade tip and crack tip must be distinguished.",
+      "limitation": "Steady cutting and tested polymers do not provide a universal threshold or prove the same onset/sliding behavior in these oblique rubber experiments.",
+      "rights": "Publisher article; no verified open PDF downloaded.",
+      "local_status": "link_only_no_verified_open_pdf"
+    },
+    {
+      "id": "zhao2025",
+      "title": "Why cutting is easier than tearing elastomers",
+      "authors": [
+        "Donghao Zhao",
+        "Alex Cartier",
+        "Tetsuharu Narita",
+        "Frederic Lechenault",
+        "Costantino Creton",
+        "Matteo Ciccotti"
+      ],
+      "year": 2025,
+      "venue": "Nature Communications 16, 3203",
+      "doi": "10.1038/s41467-025-58483-1",
+      "url": "https://www.nature.com/articles/s41467-025-58483-1",
+      "archive_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC11968795/",
+      "pdf_url": "https://www.nature.com/articles/s41467-025-58483-1.pdf",
+      "module": [
+        "cutting_physics",
+        "fracture"
+      ],
+      "priority": "supporting",
+      "evidence_scope": "Publisher and PubMed abstract/bibliographic record; public PDF retrieval returned an HTML access challenge. No access challenge bypassed.",
+      "relevance": "Use independent molecular-damage evidence to separate cutting physics from simple geometric motion arguments.",
+      "limitation": "PDMS and mechanofluorophore experiments; intensity or visible recoil in this repository is not a molecular-damage measurement.",
+      "rights": "Open-access article; exact downloaded-copy license must be checked before redistribution.",
+      "local_status": "link_only_download_failed",
+      "download_error": "Public URL did not return a PDF; no HTML challenge saved",
+      "institutional_record_url": "https://www.lpens.ens.psl.eu/research/flu-int/equipe-14/publications/?annee=2025&lang=en"
+    },
+    {
+      "id": "lava2020",
+      "title": "Validation of finite-element models using full-field experimental data: Levelling finite-element analysis data through a digital image correlation engine",
+      "authors": [
+        "Pascal Lava",
+        "Elizabeth M. C. Jones",
+        "Lukas Wittevrongel",
+        "Fabrice Pierron"
+      ],
+      "year": 2020,
+      "venue": "Strain 56(4), e12350",
+      "doi": "10.1111/str.12350",
+      "url": "https://onlinelibrary.wiley.com/doi/10.1111/str.12350",
+      "pdf_url": null,
+      "module": [
+        "finite_element_validation",
+        "measurement_validation"
+      ],
+      "priority": "essential",
+      "evidence_scope": "Publisher abstract, bibliographic record and conclusions in the accessible abstract; no full PDF obtained.",
+      "relevance": "Compare FE and experiment after matching coordinates, strain definitions, data locations, spatial resolution and filtering; synthetic-image levelling is a useful check.",
+      "limitation": "Matching the measurement operator removes a comparison artifact; it does not prove the constitutive model or contact law is correct.",
+      "rights": "Publisher article; no verified open PDF downloaded.",
+      "local_status": "link_only_no_verified_open_pdf"
+    },
+    {
+      "id": "tapvid2022",
+      "title": "TAP-Vid: A Benchmark for Tracking Any Point in a Video",
+      "authors": [
+        "Carl Doersch",
+        "Ankush Gupta",
+        "Larisa Markeeva",
+        "Adrià Recasens",
+        "Lucas Smaira",
+        "Yusuf Aytar",
+        "João Carreira",
+        "Andrew Zisserman",
+        "Yi Yang"
+      ],
+      "year": 2022,
+      "venue": "NeurIPS 2022 Datasets and Benchmarks",
+      "doi": "10.48550/arXiv.2211.03726",
+      "doi_type": "arxiv_record",
+      "url": "https://arxiv.org/abs/2211.03726",
+      "pdf_url": "https://arxiv.org/pdf/2211.03726",
+      "module": [
+        "measurement_validation",
+        "long_term_identity"
+      ],
+      "priority": "supporting",
+      "evidence_scope": "Authors' arXiv paper and benchmark description.",
+      "relevance": "Separate tracking position accuracy, occlusion and physical point identity across long sequences.",
+      "limitation": "AJ and pixel thresholds on general scenes are not a micrometre uncertainty statement for rubber.",
+      "rights": "Author arXiv reading copy; follow paper-specific arXiv license, no redistribution assumption.",
+      "local_status": "downloaded_public_reading_copy",
+      "local_path": "reference/papers/tapvid2022.pdf",
+      "bytes": 6621848,
+      "sha256": "fa9e9e81d0736850f868829f7bf5217719841b56e20ded6d3ce2d0cfaaf4528b",
+      "downloaded_on": "2026-10-24",
+      "resolved_pdf_url": "https://arxiv.org/pdf/2211.03726",
+      "pdf_pages": 34
+    },
+    {
+      "id": "tapir2023",
+      "title": "TAPIR: Tracking Any Point with Per-Frame Initialization and Temporal Refinement",
+      "authors": [
+        "Carl Doersch",
+        "Yi Yang",
+        "Mel Vecerik",
+        "Dilara Gokay",
+        "Ankush Gupta",
+        "Yusuf Aytar",
+        "João Carreira",
+        "Andrew Zisserman"
+      ],
+      "year": 2023,
+      "venue": "ICCV 2023",
+      "doi": "10.48550/arXiv.2306.08637",
+      "doi_type": "arxiv_record",
+      "url": "https://arxiv.org/abs/2306.08637",
+      "pdf_url": "https://openaccess.thecvf.com/content/ICCV2023/papers/Doersch_TAPIR_Tracking_Any_Point_with_Per-Frame_Initialization_and_Temporal_Refinement_ICCV_2023_paper.pdf",
+      "code_url": "https://github.com/google-deepmind/tapnet",
+      "module": [
+        "proposal_tracking",
+        "reacquisition",
+        "long_term_identity"
+      ],
+      "priority": "supporting",
+      "evidence_scope": "Authors' paper and official DeepMind publication page.",
+      "relevance": "Independent framewise matching plus temporal refinement provides alternative candidates when sequential local matching drifts.",
+      "limitation": "A learned candidate still requires local image, blade-exclusion and identity checks; occluded predictions are not observations.",
+      "rights": "CVF public reading copy; copyright retained by authors or other holders under CVF terms.",
+      "local_status": "downloaded_public_reading_copy",
+      "local_path": "reference/papers/tapir2023.pdf",
+      "bytes": 5121558,
+      "sha256": "3d7037e57e9def5171235d472d1fa219d872456a939ac65e03031ea3905ba77a",
+      "downloaded_on": "2026-10-24",
+      "resolved_pdf_url": "https://openaccess.thecvf.com/content/ICCV2023/papers/Doersch_TAPIR_Tracking_Any_Point_with_Per-Frame_Initialization_and_Temporal_Refinement_ICCV_2023_paper.pdf",
+      "pdf_pages": 12
+    },
+    {
+      "id": "bootstap2024",
+      "title": "BootsTAP: Bootstrapped Training for Tracking-Any-Point",
+      "authors": [
+        "Carl Doersch",
+        "Pauline Luc",
+        "Yi Yang",
+        "Dilara Gokay",
+        "Skanda Koppula",
+        "Ankush Gupta",
+        "Joseph Heyward",
+        "Ignacio Rocco",
+        "Ross Goroshin",
+        "João Carreira",
+        "Andrew Zisserman"
+      ],
+      "year": 2024,
+      "venue": "ACCV 2024",
+      "doi": "10.48550/arXiv.2402.00847",
+      "doi_type": "arxiv_record",
+      "url": "https://arxiv.org/abs/2402.00847",
+      "pdf_url": "https://openaccess.thecvf.com/content/ACCV2024/papers/Doersch_BootsTAP_Bootstrapped_Training_for_Tracking-Any-Point_ACCV_2024_paper.pdf",
+      "code_url": "https://github.com/google-deepmind/tapnet",
+      "module": [
+        "proposal_tracking",
+        "domain_shift"
+      ],
+      "priority": "background",
+      "evidence_scope": "Authors' arXiv and accepted conference paper.",
+      "relevance": "Shows that real-video training distribution matters, even without replacing the tracking architecture.",
+      "limitation": "This is a training strategy; this project is not deploying the large-scale training procedure or claiming adaptation to oil.",
+      "rights": "CVF public reading copy; copyright retained by authors or other holders under CVF terms.",
+      "local_status": "downloaded_public_reading_copy",
+      "local_path": "reference/papers/bootstap2024.pdf",
+      "bytes": 4672983,
+      "sha256": "1671062f92ed96e069b67f98671b5920983491de9d21a06a7aa59942a9e8397f",
+      "downloaded_on": "2026-10-24",
+      "resolved_pdf_url": "https://openaccess.thecvf.com/content/ACCV2024/papers/Doersch_BootsTAP_Bootstrapped_Training_for_Tracking-Any-Point_ACCV_2024_paper.pdf",
+      "pdf_pages": 18
+    },
+    {
+      "id": "cotracker2025",
+      "title": "CoTracker3: Simpler and Better Point Tracking by Pseudo-Labelling Real Videos",
+      "authors": [
+        "Nikita Karaev",
+        "Iurii Makarov",
+        "Jianyuan Wang",
+        "Natalia Neverova",
+        "Andrea Vedaldi",
+        "Christian Rupprecht"
+      ],
+      "year": 2025,
+      "preprint_year": 2024,
+      "venue": "ICCV 2025",
+      "doi": "10.48550/arXiv.2410.11831",
+      "doi_type": "arxiv_record",
+      "url": "https://cotracker3.github.io/",
+      "pdf_url": "https://openaccess.thecvf.com/content/ICCV2025/papers/Karaev_CoTracker3_Simpler_and_Better_Point_Tracking_by_Pseudo-Labelling_Real_Videos_ICCV_2025_paper.pdf",
+      "code_url": "https://github.com/facebookresearch/co-tracker",
+      "module": [
+        "proposal_tracking",
+        "long_term_identity",
+        "occlusion"
+      ],
+      "priority": "candidate",
+      "evidence_scope": "Official project, authors' preprint and accepted ICCV 2025 paper.",
+      "relevance": "Online/offline point tracking with joint context and visibility/confidence is a useful independent proposal source.",
+      "limitation": "Joint tracking may transfer the wrong body's motion across blade/material interfaces. Confidence is not locally calibrated metrological uncertainty.",
+      "rights": "CVF public reading copy. Official code and deployed checkpoint: CC-BY-NC-4.0; separately licensed upstream components retained.",
+      "local_status": "downloaded_public_reading_copy",
+      "local_path": "reference/papers/cotracker2025.pdf",
+      "bytes": 3825667,
+      "sha256": "1adda06c0e5a4d46ee061cb617d1ecc81cd276a4ffb2d7df76803be522977053",
+      "downloaded_on": "2026-10-24",
+      "resolved_pdf_url": "https://openaccess.thecvf.com/content/ICCV2025/papers/Karaev_CoTracker3_Simpler_and_Better_Point_Tracking_by_Pseudo-Labelling_Real_Videos_ICCV_2025_paper.pdf",
+      "pdf_pages": 10,
+      "deployment": {
+        "verified_on": "2026-10-25",
+        "status": "local_pretrained_inference_smoke_passed; candidate_only",
+        "backend": "CoTrackerCandidates",
+        "source_commit": "82e02e8029753ad4ef13cf06be7f4fc5facdda4d",
+        "weight_url": "https://huggingface.co/facebook/cotracker3/resolve/b748ec5e5cd4b9f525a94cc544f0be34bbcc22e2/scaled_offline.pth",
+        "weight_sha256": "2670d4562ed69326dda775a26e54883925cd11b6fc9b24cb7aa9f8078bce7834",
+        "local_asset_directory": "models/point_tracking/cotracker3",
+        "provenance": "models/point_tracking/cotracker3/provenance.json",
+        "license_url": "https://github.com/facebookresearch/co-tracker/blob/82e02e8029753ad4ef13cf06be7f4fc5facdda4d/LICENSE.md",
+        "model_card_url": "https://huggingface.co/facebook/cotracker3",
+        "processing_shape": [
+          384,
+          512
+        ],
+        "iterations": 6,
+        "new_dependencies": [],
+        "temporal_scope": "Offline: uses future frames only inside supplied cutoff-bounded window.",
+        "evidence_semantics": "Visibility/confidence are model predictions, not observed material identities. Independent image checks are required.",
+        "real_smoke": "models/point_tracking/cotracker3/real_smoke_n57a1/summary.json"
+      }
+    },
+    {
+      "id": "tapnext2025",
+      "title": "TAPNext: Tracking Any Point (TAP) as Next Token Prediction",
+      "authors": [
+        "Artem Zholus",
+        "Carl Doersch",
+        "Yi Yang",
+        "Skanda Koppula",
+        "Viorica Patraucean",
+        "Xu Owen He",
+        "Ignacio Rocco",
+        "Mehdi S. M. Sajjadi",
+        "Sarath Chandar",
+        "Ross Goroshin"
+      ],
+      "year": 2025,
+      "venue": "ICCV 2025, 9693–9703",
+      "doi": "10.48550/arXiv.2504.05579",
+      "doi_type": "arxiv_record",
+      "url": "https://openaccess.thecvf.com/content/ICCV2025/html/Zholus_TAPNext_Tracking_Any_Point_TAP_as_Next_Token_Prediction_ICCV_2025_paper.html",
+      "pdf_url": "https://openaccess.thecvf.com/content/ICCV2025/papers/Zholus_TAPNext_Tracking_Any_Point_TAP_as_Next_Token_Prediction_ICCV_2025_paper.pdf",
+      "module": [
+        "proposal_tracking",
+        "causal_tracking"
+      ],
+      "priority": "candidate",
+      "evidence_scope": "Accepted ICCV 2025 paper and authors' arXiv record.",
+      "relevance": "Causal online tracking is relevant to estimates that must not use post-fracture future frames.",
+      "limitation": "Benchmark claims are general-video claims; causal design alone does not ensure correct surface identity or compressed-texture accuracy.",
+      "rights": "CVF public reading copy; copyright retained by authors or other holders under CVF terms.",
+      "local_status": "downloaded_public_reading_copy",
+      "local_path": "reference/papers/tapnext2025.pdf",
+      "bytes": 7491221,
+      "sha256": "9b6ff339d1fd7ceedcf72ff494ad984c527f63cc3e312b8deda136728c493577",
+      "downloaded_on": "2026-10-24",
+      "resolved_pdf_url": "https://openaccess.thecvf.com/content/ICCV2025/papers/Zholus_TAPNext_Tracking_Any_Point_TAP_as_Next_Token_Prediction_ICCV_2025_paper.pdf",
+      "pdf_pages": 11
+    },
+    {
+      "id": "tapnextpp2026",
+      "title": "TAPNext++: What's Next for Tracking Any Point (TAP)?",
+      "authors": [
+        "Sebastian Jung",
+        "Artem Zholus",
+        "Martin Sundermeyer",
+        "Carl Doersch",
+        "Ross Goroshin",
+        "David Joseph Tan",
+        "Sarath Chandar",
+        "Rudolph Triebel",
+        "Federico Tombari"
+      ],
+      "year": 2026,
+      "venue": "CVPR 2026 Findings (official project and authors arXiv record)",
+      "doi": "10.48550/arXiv.2604.10582",
+      "doi_type": "arxiv_record",
+      "url": "https://arxiv.org/abs/2604.10582",
+      "pdf_url": "https://arxiv.org/pdf/2604.10582",
+      "project_url": "https://tap-next-plus-plus.github.io/",
+      "code_url": "https://github.com/google-deepmind/tapnet",
+      "verified_on": "2026-10-25",
+      "module": [
+        "proposal_tracking",
+        "long_term_identity",
+        "occlusion",
+        "causal_tracking"
+      ],
+      "priority": "deployed_candidate",
+      "evidence_scope": "Authors arXiv abstract and full HTML paper (methods and benchmark tables), official project, pinned PyTorch implementation/demo, Google model card and published checkpoint hash.",
+      "relevance": "Causal long-sequence tracking and re-detection after occlusion provide a directly relevant candidate for lost material identities. Official existing weights can be tested without training.",
+      "limitation": "General-video benchmark gains vary by dataset and metric; they do not establish precision under rubber compression, liquid interference or cutting. The 256 deployment is not the separate 512 fine-tuned variant. Short execution smoke does not validate long-horizon recovery.",
+      "rights": "Paper: CC-BY-4.0 per arXiv HTML. Official code and Google checkpoint model card: Apache-2.0.",
+      "local_status": "link_only_full_html_read",
+      "deployment": {
+        "verified_on": "2026-10-25",
+        "status": "local_pretrained_inference_smoke_passed; candidate_only",
+        "backend": "TAPNextCandidates",
+        "source_commit": "730cda1c730877cfedbe01bf87fb1cadb78a565d",
+        "weight_url": "https://storage.googleapis.com/dm-tapnet/tapnextpp/tapnextpp_ckpt.pt?generation=1774639633910846",
+        "weight_sha256": "cb96a43444ccb4fbdb25d800b88c7ba196179a526e78f01b021a16b1c1eff6da",
+        "weight_bytes": 2532282370,
+        "official_weight_hash_url": "https://huggingface.co/google/tapnet/blob/caeed2b4804c5e5ee52f2d4639d747416226f0be/tapnextpp_ckpt.pt",
+        "local_asset_directory": "models/point_tracking/tapnextpp",
+        "provenance": "models/point_tracking/tapnextpp/provenance.json",
+        "license_url": "https://github.com/google-deepmind/tapnet/blob/730cda1c730877cfedbe01bf87fb1cadb78a565d/LICENSE",
+        "model_card_url": "https://huggingface.co/google/tapnet",
+        "processing_shape": [
+          256,
+          256
+        ],
+        "new_dependencies": [
+          {
+            "name": "einops",
+            "version": "0.8.1",
+            "isolated_target": "models/point_tracking/tapnextpp/dependencies",
+            "shared_environment_modified": false
+          }
+        ],
+        "temporal_scope": "Frame-by-frame causal inference, first-frame queries, state reset per supplied window.",
+        "evidence_semantics": "Visibility is a predicted probability; positional confidence is not emitted (NaN). Independent image checks are required.",
+        "real_smoke": "models/point_tracking/tapnextpp/real_smoke_n57a1/summary.json"
+      }
+    },
+    {
+      "id": "raft2020",
+      "title": "RAFT: Recurrent All-Pairs Field Transforms for Optical Flow",
+      "authors": [
+        "Zachary Teed",
+        "Jia Deng"
+      ],
+      "year": 2020,
+      "venue": "ECCV 2020",
+      "doi": "10.48550/arXiv.2003.12039",
+      "doi_type": "arxiv_record",
+      "url": "https://arxiv.org/abs/2003.12039",
+      "pdf_url": "https://arxiv.org/pdf/2003.12039",
+      "code_url": "https://github.com/princeton-vl/RAFT",
+      "module": [
+        "proposal_tracking",
+        "dense_flow"
+      ],
+      "priority": "background",
+      "evidence_scope": "Authors' arXiv paper and official code repository.",
+      "relevance": "A standard dense optical-flow reference and possible initialization source for larger image displacements.",
+      "limitation": "Pairwise dense flow is not long-term material identity; composing flow accumulates error and does not identify hidden material.",
+      "rights": "Author arXiv reading copy; follow paper-specific license; code and weight rights are separate.",
+      "local_status": "downloaded_public_reading_copy",
+      "local_path": "reference/papers/raft2020.pdf",
+      "bytes": 7373749,
+      "sha256": "32526df4111c7521f1b523964594c65e0ccb6885bcb3f5680fb43fe197c4edeb",
+      "downloaded_on": "2026-10-24",
+      "resolved_pdf_url": "https://arxiv.org/pdf/2003.12039",
+      "pdf_pages": 21
+    },
+    {
+      "id": "moreno2026",
+      "title": "Cutting soft materials: how material differences shape the response",
+      "authors": [
+        "Miguel Angel Moreno-Mateos",
+        "Paul Steinmann"
+      ],
+      "year": 2026,
+      "publication_date": "2026-01-06",
+      "venue": "npj Computational Materials 12, 15",
+      "doi": "10.1038/s41524-025-01869-y",
+      "url": "https://www.nature.com/articles/s41524-025-01869-y",
+      "pdf_url": "https://www.nature.com/articles/s41524-025-01869-y.pdf",
+      "alternate_public_pdf_url": "https://d-nb.info/1386915076/34",
+      "data_url": "https://zenodo.org/records/15873110",
+      "data_doi": "10.5281/zenodo.15873110",
+      "data_downloaded": false,
+      "module": [
+        "cutting_physics",
+        "large_deformation",
+        "finite_element_validation",
+        "measurement_validation"
+      ],
+      "priority": "essential",
+      "evidence_scope": "Publisher and PubMed bibliographic records; final article full text accessed via German National Library using web tool, including DIC Methods and finite-strain formulation; official public DIC dataset landing page. Local PDF download did not succeed.",
+      "relevance": "Direct soft-cutting comparison combining optical deformation measurements and a model with large deformation, fracture and interface effects; public DIC data can support an external comparison.",
+      "limitation": "Different materials and geometry; reported friction/adhesion contributions are conditional on that model and experiment. Does not establish this project surface-address accuracy or justify fitting measured motion to FE.",
+      "rights": "Article CC BY 4.0. Alternate PDF is an unmodified publisher article archived by the German National Library. The approximately 1.1 GB dataset was not downloaded.",
+      "local_status": "link_only_download_failed",
+      "download_error": [
+        {
+          "url": "https://www.nature.com/articles/s41524-025-01869-y.pdf",
+          "error": "Public URL returned non-PDF; access challenge not bypassed"
+        },
+        {
+          "url": "https://d-nb.info/1386915076/34",
+          "error": "<urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate in certificate chain (_ssl.c:1006)>"
+        }
+      ]
+    },
+    {
+      "id": "spagnoli2019",
+      "title": "Cutting resistance of soft materials: Effects of blade inclination and friction",
+      "authors": [
+        "A. Spagnoli",
+        "R. Brighenti",
+        "M. Terzano",
+        "F. Artoni"
+      ],
+      "year": 2019,
+      "venue": "Theoretical and Applied Fracture Mechanics 101, 200–206",
+      "doi": "10.1016/j.tafmec.2019.02.017",
+      "url": "https://www.sciencedirect.com/science/article/pii/S0167844218306323",
+      "institutional_record_url": "https://flore.unifi.it/handle/2158/1328073",
+      "pdf_url": null,
+      "module": [
+        "cutting_physics",
+        "oblique_cutting",
+        "friction"
+      ],
+      "priority": "essential",
+      "evidence_scope": "Publisher abstract and institution bibliographic record; institutional copy explicitly closed access.",
+      "relevance": "Direct oblique-cutting experiments on soft elastomeric plates analyze blade inclination, insertion forces and frictional dissipation.",
+      "limitation": "Steady cutting force interpretation is not an estimator of original-surface point identity or initiation offset; inclination geometry must be matched before comparison.",
+      "rights": "Publisher subscription article; institution lists all rights reserved and closed copy. No access request or paywall bypass.",
+      "local_status": "link_only_subscription"
+    },
+    {
+      "id": "prevost2013",
+      "title": "Probing the micromechanics of a multi-contact interface at the onset of frictional sliding",
+      "authors": [
+        "Alexis Prevost",
+        "Julien Scheibert",
+        "Georges Debrégeas"
+      ],
+      "year": 2013,
+      "preprint_year": 2008,
+      "preprint_revision_year": 2012,
+      "publication_date": "2013-02-26",
+      "venue": "The European Physical Journal E 36, 17",
+      "doi": "10.1140/epje/i2013-13017-0",
+      "url": "https://link.springer.com/article/10.1140/epje/i2013-13017-0",
+      "preprint_url": "https://arxiv.org/abs/0809.3188",
+      "pdf_url": "https://arxiv.org/pdf/0809.3188",
+      "module": [
+        "interface_motion",
+        "friction",
+        "measurement_validation"
+      ],
+      "priority": "essential",
+      "evidence_scope": "Publisher bibliographic record and abstract; authors arXiv full preprint.",
+      "relevance": "DIC-based local displacement reveals coexisting stick/slip regions during incipient frictional sliding, motivating local interface motion instead of a whole-body scalar.",
+      "limitation": "Transparent rough PDMS/glass contact with optical access; no cutting crack and no opaque blade occlusion. Its stress inversion and friction law must not be transferred directly to this experiment.",
+      "rights": "Author arXiv reading copy; follow paper-specific license; distinct from final publisher version.",
+      "local_status": "downloaded_public_reading_copy",
+      "local_path": "reference/papers/prevost2013.pdf",
+      "bytes": 2410192,
+      "sha256": "68623530bf67548d9b60645d89db2cdd0302db59ba9e2cb010e0361aab95a063",
+      "downloaded_on": "2026-10-24",
+      "resolved_pdf_url": "https://arxiv.org/pdf/0809.3188",
+      "pdf_pages": 11
+    },
+    {
+      "id": "pan2012",
+      "title": "Incremental calculation for large deformation measurement using reliability-guided digital image correlation",
+      "authors": [
+        "Bing Pan",
+        "Dafang Wu",
+        "Yong Xia"
+      ],
+      "year": 2012,
+      "venue": "Optics and Lasers in Engineering 50(4), 586–592",
+      "doi": "10.1016/j.optlaseng.2011.05.005",
+      "url": "https://www.sciencedirect.com/science/article/abs/pii/S0143816611001527",
+      "pdf_url": "https://www.ncorr.com/download/publications/panlargedef.pdf",
+      "module": [
+        "material_identity",
+        "large_deformation",
+        "reference_updating"
+      ],
+      "priority": "essential",
+      "evidence_scope": "Publisher abstract and complete publicly hosted primary paper reviewed; especially introduction, section 2.3 reference updates and section 3 foam-compression experiment.",
+      "relevance": "Conditional reference updates provide a documented route around direct initial-to-current decorrelation; fewer updates limit accumulation of interpolation and incremental errors.",
+      "limitation": "Foam compression is not blade contact with oil and occlusion. This paper does not prove the current project dual-reference chain, recoverability, or drift-free material identity.",
+      "rights": "Elsevier article. Public reading link does not grant redistribution rights. No PDF is committed.",
+      "local_status": "link_only_primary_fulltext_reviewed",
+      "verified_on": "2026-10-25"
+    }
+  ],
+  "updated_on": "2026-10-25"
+}

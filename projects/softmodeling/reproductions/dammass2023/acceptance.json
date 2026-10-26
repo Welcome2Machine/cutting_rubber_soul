@@ -1,0 +1,11 @@
+{
+  "scope": "Selected 2023 paper benchmarks: Fig.5 material curves at 0.0056, 0.044, 0.3 /s and Fig.7 approach A SENT at 25 and 200 mm/min; not reproduction of every figure",
+  "declared_before_runs": true,
+  "material_curve_relative_rmse_max": 0.15,
+  "sent_peak_force_relative_error_max": 0.25,
+  "sent_peak_displacement_relative_error_max": 0.25,
+  "sent_prepeak_normalized_rmse_max": 0.2,
+  "postpeak_force_drop_fraction_min": 0.1,
+  "rate_trends": "higher rate increases peak force and decreases peak displacement",
+  "data_note": "Published model lines digitized from the user PDF; not author raw experiments. Acceptance concerns approximate magnitude and trend only. Solver and refinement checks are reported separately."
+}
