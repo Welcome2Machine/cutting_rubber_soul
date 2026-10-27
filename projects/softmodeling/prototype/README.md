@@ -1,6 +1,6 @@
 # 主体代码地图
 
-当前计算主线为 P1 三角形、原生 improved-max IPC 接触与有限应变 Maxwell 材料。计算完整体的压入力和刀尖接触材料身份，目标行程为 2 mm；不包含裂纹预测或 CZM 加载路线。
+完整体计算主线为 P1 三角形、原生 improved-max IPC 接触与有限应变 Maxwell 材料，行程上限为 2 mm。2026-10-28 新增独立的保存态起裂诊断和 0° 有限间隙内聚界面研究分支；原完整体算法与基线保持。
 
 先读[当前研究状态](../docs/research_status.md)、[任务要求](../docs/task_requirements.md)和[模型规格](../docs/current_model_spec.md)。
 
@@ -13,12 +13,14 @@
 | `material.py`、`../mechanics/finite_strain.py` | 平衡 Ogden 材料、有限应变 Maxwell 更新及切线；另保留 2023 论文复现所需材料律 |
 | `ipc_reference.py` | P1 力与切线装配、刀具及自接触、CCD、正 J 检查与 PTC 非线性求解 |
 | `ipc_viscoelastic.py` | 黏弹性增量问题、材料历史及耗散管理 |
+| `cohesive.py`、`cohesive_cut.py` | 未标定的径向双线性界面、两侧独立网格、完整裂面接触和共同历史提交；限预设 0° 路径 |
 | `material_case.py` | 完整体加载流程、检查点、独立物理审查与 CSV 输出 |
 | `material_performance.py` | 可选材料分块及线性后端配置；单独记录性能策略签名 |
 | `pardiso.py`、`linear_solve.py` | 稀疏线性求解与后端选择 |
 | `tip_contact.py`、`contact_trace.py` | 刀尖接触的参考材料位置、整刃支撑区域及轨迹输出 |
 
 Maxwell 加载入口为 `python -m tools.run_material_candidate`，参数与串行队列说明见[工具入口](../tools/README.md)。
+起裂后处理入口为 `python -m tools.fracture_onset`，耦合代表算例为 `python -m tools.run_cohesive_cut`；均要求独立输出和预算。合并桌面/API 的显式入口及证据见[断裂实现说明](../../../docs/fracture_implementation.md)。`tools.fracture_labels`区分物理起裂、可见裂口、力变化代理及组截止；不自动配准试次或标定阈值。
 本地HTML入口为 `python -m tools.workbench --background --open`，只将已核查配置转换为同一加载命令。`workbench/config.py`负责输入，`server.py`负责单任务与预算，`results.py`负责保存场导出；没有复制核心求解器。`material_case.make_problem()`及`IPCProblem`可接收刀具厚度/楔角、圆鼻和网格参数，未传参数时保留原路径默认值。
 `python -m prototype.ipc_reference` 是弹性参考入口；其 `ipc_baseline.json` 不能替代 Maxwell 共同材料基线。
 

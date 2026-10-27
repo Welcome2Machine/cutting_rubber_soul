@@ -90,6 +90,17 @@ def test_unsupported_material_fails_closed(invalid):
         saved_state_fields(X, X, TRI, np.eye(3)[None], MATERIAL | invalid)
 
 
+def test_fracture_history_cannot_export_as_an_intact_bundle(tmp_path):
+    source = manufactured_case(tmp_path / 'coupled')
+    path = source / 'result.json'
+    report = json.loads(path.read_text())
+    report['schema'] = 'softcut-cohesive-result/1'
+    path.write_text(json.dumps(report))
+    with pytest.raises(ValueError, match='coupled fracture'):
+        export_case(source, tmp_path / 'intact_export')
+    assert not (tmp_path / 'intact_export').exists()
+
+
 def test_export_signed_components_fixed_range_and_historical_source(tmp_path):
     source = manufactured_case(tmp_path / "manufactured")
     bundle = export_case(source, tmp_path / "view", max_frames=2)

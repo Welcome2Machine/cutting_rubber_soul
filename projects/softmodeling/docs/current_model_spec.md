@@ -1,6 +1,8 @@
 # 当前完整体模型规格
 
-基线 `intact-common-maxwell-2mm-v1`；机器定义见 [`prototype/intact_2mm_baseline.json`](../prototype/intact_2mm_baseline.json)。单位为 mm、N、s、MPa=N/mm²。当前计算不包含裂纹或损伤。
+基线 `intact-common-maxwell-2mm-v1`；机器定义见 [`prototype/intact_2mm_baseline.json`](../prototype/intact_2mm_baseline.json)。单位为 mm、N、s、MPa=N/mm²。本文件所述完整体基线不包含裂纹或损伤。
+
+2026-10-28 新增独立起裂/裂后研究分支，主线参数与算法保持。`tools.fracture_onset`从每个合格保存态恢复完整三维应力、主伸长及支路能量，在参考邻域计算面内正主应力的体积加权指标；它不插入裂纹。`prototype/cohesive_cut.py`则在 0°、s₀=7 mm 的预设路径上重建两半独立网格，以有限参考间隙避免零距离 IPC；`cohesive.py`使用客观径向双线性律、参考面积及不可逆开口历史，完整 IPC/CCD 继续处理刀具与两侧裂面。该连接初始线性剪切刚度为零，不能代表一般混合模式，也不能把其无损伤控制称为原完整体极限。具体尺度、能量约定和运行证据见[断裂实现说明](../../../docs/fracture_implementation.md)。所有断裂参数仍为示例，未完成实验标定。
 
 控制方程、材料演化/时间积分、接触残差、真实切线、PTC算法及代码对应关系集中于[数学模型说明](mathematical_model.md)。本文件维护工况和参数规格，不重复维护完整推导。
 

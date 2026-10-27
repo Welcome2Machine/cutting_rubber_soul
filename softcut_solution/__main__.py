@@ -31,6 +31,14 @@ def main(argv=None):
     comparison.add_argument("--fe", type=Path, required=True)
     comparison.add_argument("--video", type=Path, required=True)
     comparison.add_argument("--options", type=Path, required=True, help="Explicit registration and comparison JSON")
+    onset = sub.add_parser("fracture-onset", help="Diagnose saved FE states; does not start FE loading")
+    onset.add_argument("--case", type=Path, action="append", required=True, help="Saved FE case; repeat for multiple cases")
+    onset.add_argument("--length-mm", type=float, default=.15)
+    onset.add_argument("--threshold-mpa", type=float, help="Explicit effective threshold; omitted means uncalibrated diagnosis")
+    onset.add_argument("--seconds", type=int, default=300, help="Budget from 1 to 3600 seconds")
+    fracture = sub.add_parser("fracture-run", help="Explicitly run a budgeted cohesive-cut calculation")
+    fracture.add_argument("--config", type=Path, required=True)
+    fracture.add_argument("--seconds", type=int, default=300, help="Budget from 1 to 3600 seconds")
     args = parser.parse_args(argv)
     try:
         if args.command == "gui":
@@ -55,6 +63,11 @@ def main(argv=None):
             result = api.video_batch(args.root, args.manifest, check_only=not args.execute)
         elif args.command == "inspect":
             result = api.inspect(args.kind, args.path)
+        elif args.command == "fracture-onset":
+            result = api.fracture_onset(args.root, args.case, length_mm=args.length_mm,
+                                       threshold_mpa=args.threshold_mpa, seconds=args.seconds)
+        elif args.command == "fracture-run":
+            result = api.fracture_run(args.root, args.config, seconds=args.seconds)
         else:
             result = api.compare(args.root, args.fe, args.video, api.read_json(args.options))
         print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))

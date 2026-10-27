@@ -108,9 +108,19 @@ def inventory(root=ROOT):
     p = projects(root)
     sim = p["simulation"]
     bundles = sorted((sim / "outputs").rglob("result.bundle.json"))
-    cases = [f.parent for f in (sim / "outputs").rglob("result.json")
-             if (f.parent / "audit.json").is_file() and (f.parent / "states").is_dir()]
-    reports = sorted((root / "runs").glob("*/index.html"), reverse=True)
+    cases = []
+    for result in (sim / "outputs").rglob("result.json"):
+        if not (result.parent / "audit.json").is_file() or not (result.parent / "states").is_dir():
+            continue
+        try:
+            metadata = read_json(result)
+        except (OSError, ValueError):
+            continue
+        if not isinstance(metadata, dict) or "softcut-cohesive-result/1" in (
+                metadata.get("schema"), metadata.get("schema_version")):
+            continue
+        cases.append(result.parent)
+    reports = sorted((root / "runs").rglob("index.html"), reverse=True)
     known = [sim / "outputs/video_fe_1mm_20261024/index.html",
              p["video"] / "results/20261024_n_group_first_1mm/index.html",
              p["video"] / "results/20261025_surface_identity/validated/index.html"]
@@ -224,6 +234,97 @@ def export_fe(root, case, frames=21):
     result["bundle_path"] = str(out / "result.bundle.json")
     write_json(run / "artifact.json", {"bundle_path": result["bundle_path"]})
     return result
+
+
+def _fracture_budget(seconds):
+    if isinstance(seconds, bool) or not isinstance(seconds, int) or not 1 <= seconds <= 3600:
+        raise ValueError("seconds must be an integer from 1 to 3600")
+    return seconds
+
+
+def _positive_finite(value, name):
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be a positive finite number")
+    try:
+        number = float(value)
+    except (ValueError, TypeError, OverflowError) as exc:
+        raise ValueError(f"{name} must be a positive finite number") from exc
+    if not math.isfinite(number) or number <= 0:
+        raise ValueError(f"{name} must be a positive finite number")
+    return number
+
+
+def _fracture_source(root, path, parent):
+    path = Path(path)
+    if not path.is_absolute():
+        path = Path(root) / path
+    return within(path, parent)
+
+
+def _fracture_result(run, result):
+    report = run / "result/index.html"
+    if not report.is_file():
+        raise RuntimeError(f"Fracture process produced no report: {report}; see {run / 'process.log'}")
+    artifact = {"report_path": str(report), "output_dir": str(report.parent),
+                "qualification_note": "Execution status is separate from numerical qualification and experimental calibration."}
+    write_json(run / "artifact.json", artifact)
+    return {**result, **artifact, "run_dir": str(run)}
+
+
+def fracture_onset(root, cases, *, length_mm=.15, threshold_mpa=None, seconds=300):
+    """Diagnose saved intact FE states; never load a new FE increment."""
+    root = Path(root).resolve()
+    sim = projects(root)["simulation"]
+    seconds = _fracture_budget(seconds)
+    length_mm = _positive_finite(length_mm, "length_mm")
+    if threshold_mpa is not None:
+        threshold_mpa = _positive_finite(threshold_mpa, "threshold_mpa")
+    if not isinstance(cases, (list, tuple)) or not cases:
+        raise ValueError("cases must be a non-empty list of saved FE cases")
+    paths = []
+    for case in cases:
+        path = _fracture_source(root, case, sim / "outputs")
+        if not all((path / name).is_file() for name in ("result.json", "audit.json")):
+            raise ValueError(f"Onset diagnosis requires result.json and audit.json: {path}")
+        if not (path / "states").is_dir():
+            raise ValueError(f"Onset diagnosis requires saved states: {path}")
+        if path not in paths:
+            paths.append(path)
+    run = _new_run(root, "fracture_onset")
+    args = ["-m", "tools.fracture_onset"]
+    for case in paths:
+        args.extend(["--case", case])
+    args.extend(["--output", run / "result", "--length-mm", length_mm, "--seconds", seconds])
+    if threshold_mpa is not None:
+        args.extend(["--threshold-mpa", threshold_mpa])
+    inputs = {"cases": [{"path": str(case), "result_sha256": digest(case / "result.json"),
+                          "audit_sha256": digest(case / "audit.json")} for case in paths],
+              "length_mm": length_mm, "threshold_mpa": threshold_mpa, "postprocessing_only": True}
+    source = sim / "tools/fracture_onset.py"
+    if source.is_file():
+        inputs["entrypoint_sha256"] = digest(source)
+    result = _run_job(root, "simulation", args, timeout=seconds + 60, run=run, inputs=inputs)
+    return _fracture_result(run, result)
+
+
+def fracture_run(root, config, *, seconds=300):
+    """Explicitly start a budgeted cohesive-cut calculation in a new output directory."""
+    root = Path(root).resolve()
+    seconds = _fracture_budget(seconds)
+    config = _fracture_source(root, config, root)
+    if not config.is_file() or config.suffix.lower() != ".json":
+        raise ValueError("Fracture calculation requires an existing workspace JSON configuration")
+    if not isinstance(read_json(config), dict):
+        raise ValueError("Fracture configuration must be a JSON object")
+    run = _new_run(root, "fracture_run")
+    inputs = {"config_path": str(config), "config_sha256": digest(config), "explicit_execution": True}
+    source = projects(root)["simulation"] / "tools/run_cohesive_cut.py"
+    if source.is_file():
+        inputs["entrypoint_sha256"] = digest(source)
+    result = _run_job(root, "simulation", ["-m", "tools.run_cohesive_cut", "--config", config,
+                      "--output", run / "result", "--seconds", seconds],
+                      timeout=seconds + 60, run=run, inputs=inputs)
+    return _fracture_result(run, result)
 
 
 def video_preflight(root, case_id):

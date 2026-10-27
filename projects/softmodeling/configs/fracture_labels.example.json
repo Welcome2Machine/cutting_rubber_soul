@@ -1,0 +1,86 @@
+{
+  "schema": "softcut-fracture-labels/1",
+  "description": "Local evidence inventory, not a calibrated fracture dataset. Historical a1 and group cutoffs are not transferred to the authorized force trials.",
+  "labels": [
+    {
+      "id": "1008n0a2_onset_unknown",
+      "trial_id": "1008n0a2",
+      "angle_deg": 0,
+      "kind": "unknown",
+      "event_kind": "physical_onset",
+      "depth_interval_mm": null,
+      "depth_reference": "authorized_force_export_nominal_first_contact",
+      "evidence": {"source": "docs/task_requirements.md", "method": "No trial-specific verified onset supplied; the old ~1 mm estimate belongs to a1.", "verified": false},
+      "split": "unused"
+    },
+    {
+      "id": "1008n33a1_onset_unknown",
+      "trial_id": "1008n33a1",
+      "angle_deg": 33,
+      "kind": "unknown",
+      "event_kind": "physical_onset",
+      "depth_interval_mm": null,
+      "depth_reference": "authorized_force_export_nominal_first_contact",
+      "evidence": {"source": "docs/task_requirements.md", "method": "Historical 1.2-1.3 mm estimate has no verified trial/frame evidence chain.", "verified": false},
+      "split": "unused"
+    },
+    {
+      "id": "1014n57a1_onset_unknown",
+      "trial_id": "1014n57a1",
+      "angle_deg": 57,
+      "kind": "unknown",
+      "event_kind": "physical_onset",
+      "depth_interval_mm": null,
+      "depth_reference": "authorized_force_export_nominal_first_contact",
+      "evidence": {"source": "docs/task_requirements.md", "method": "Physical onset unknown; a 2.2 mm group analysis cutoff is not a measured onset.", "verified": false},
+      "split": "unused"
+    },
+    {
+      "id": "historical_0deg_a1_approximate",
+      "trial_id": "0deg_a1_exact_acquisition_id_unresolved",
+      "angle_deg": 0,
+      "kind": "approximate_prior",
+      "event_kind": "physical_onset",
+      "depth_interval_mm": null,
+      "depth_estimate_mm": 1.0,
+      "depth_reference": "historical_reference_unresolved",
+      "evidence": {"source": "docs/task_requirements.md", "method": "Historical approximately 1 mm estimate, explicitly a1 rather than current 1008n0a2; acquisition ID and interval unresolved.", "verified": false},
+      "split": "unused"
+    },
+    {
+      "id": "historical_33deg_approximate",
+      "trial_id": "33deg_historical_trial_unresolved",
+      "angle_deg": 33,
+      "kind": "approximate_prior",
+      "event_kind": "physical_onset",
+      "depth_interval_mm": [1.2, 1.3],
+      "depth_reference": "historical_reference_unresolved",
+      "evidence": {"source": "docs/task_requirements.md", "method": "Approximate historical range; no independently verified event interval.", "verified": false},
+      "split": "unused"
+    },
+    {
+      "id": "1014n33a1_declared_cutoff",
+      "trial_id": "1014n33a1",
+      "angle_deg": 33,
+      "kind": "group_cutoff",
+      "event_kind": "analysis_cutoff",
+      "depth_interval_mm": null,
+      "depth_estimate_mm": 1.3,
+      "depth_reference": "video_legacy_contact_frame_234_conditional_scale",
+      "evidence": {"source": "../rec_inc_soft_cut/results/20261015_declared_fracture_sliding/manifest.json", "method": "user_declared_group_cutoff; 1014n33a1 is not force trial 1008n33a1.", "verified": false},
+      "split": "unused"
+    },
+    {
+      "id": "1014n57a1_declared_cutoff",
+      "trial_id": "1014n57a1",
+      "angle_deg": 57,
+      "kind": "group_cutoff",
+      "event_kind": "analysis_cutoff",
+      "depth_interval_mm": null,
+      "depth_estimate_mm": 2.2,
+      "depth_reference": "video_legacy_contact_frame_437_conditional_scale",
+      "evidence": {"source": "../rec_inc_soft_cut/results/20261015_declared_fracture_sliding/manifest.json", "method": "user_declared_group_cutoff; not measured physical onset and outside the 2 mm FE budget.", "verified": false},
+      "split": "unused"
+    }
+  ]
+}

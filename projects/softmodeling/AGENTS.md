@@ -8,13 +8,18 @@ Historical notes do not authorize new runs or establish current process state.
 ## Current scope and mainline
 
 - Local HTML workbench for common rubber, blade wedge/nose sharpness, explicit
-  Coulomb friction/lubrication settings and inclination. Video matching is deferred.
+  Coulomb friction/lubrication settings and inclination. The parent integration
+  workspace now enables conditional video comparison.
   Entry: `python -m tools.workbench --background --open`. Configuration catalogs
   are in `configs/`; architecture/schema in `docs/workbench.md`; evidence and
   research interpretation in `docs/research_guide.md`.
 - Intact finite-strain isochoric Maxwell, native P1/improved-max IPC with full
-  EV/VV, body self-contact and CCD. No fracture, damage, CZM or post-fracture
-  prediction. Speed is fixed at 0.2 mm/s; travel must not exceed 2 mm, never 3 mm.
+  EV/VV, body self-contact and CCD. The intact baseline remains unchanged.
+  The 2026-10-28 user task authorizes the separate `cohesive_cut` extension and
+  saved-state onset diagnostics. The extension is a prescribed finite-gap,
+  radial mode-I mechanism demonstrator, not general mixed-mode or calibrated
+  fracture prediction. Speed is fixed at 0.2 mm/s; travel must not exceed 2 mm.
+  See parent `docs/fracture_implementation.md` and `docs/research_status.md`.
 - Common reference material: Ginf=0.14 MPa, Gv=1.24 MPa, tau=1.7 s,
   K=23.34333333333331 MPa, mu=0.35. Existing experimental angles are 0/33/57
   degrees. Workbench angle changes and research configurations are explicit inputs,
@@ -33,6 +38,10 @@ Historical notes do not authorize new runs or establish current process state.
 
 - Keep force residual 1e-4 N, positive J, full CCD, boundaries, dissipation and
   exact material/friction histories. Failed trials never commit histories.
+- Cohesive histories also commit only after whole-step acceptance. Finite seam
+  spacing, zero linear shear stiffness of radial bonds, reference area and
+  damage-disabled split controls must remain explicit. A split elastic control
+  is not the original intact mesh; never claim the two are equivalent.
 - Reference recovery is secant then same-increment affine, 500 iterations per
   attempt. Affine has no 40-stagnation early stop. Original minimum increment is
   0.000625 mm. Do not confuse this with retired fixed-step candidate controllers.

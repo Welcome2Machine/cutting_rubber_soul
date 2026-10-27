@@ -1,6 +1,6 @@
 # SoftCut Solution · 橡胶斜切研究工作台
 
-把有限元仿真与视频材料点观测放在同一个本地工程内：启动各自流程、检查输入、导出已审查有限元状态、固定材料点映射、比较同参考态位移，并保存可追溯的 HTML / CSV / JSON 报告。
+把有限元仿真与视频材料点观测放在同一个本地工程内：启动各自流程、检查输入、导出已审查有限元状态、比较同参考态位移，以及显式运行起裂候选诊断和受限裂后研究算例。各流程保存可追溯的 HTML / CSV / JSON 报告。
 
 ## 开始使用
 
@@ -18,6 +18,7 @@ python -X utf8 -m softcut_solution gui
 2. 视频可先按试次预检，再通过显式批处理按钮执行清单。新结果写入复制工程的 `results/integration/`，历史结果不覆盖。
 3. 在比较页选择已审查 FE 算例并导出保存帧，选择视频固定 ID 包，核查注册、参考态、深度窗口与支持规则，再运行比较。
 4. 结果页打开 HTML 报告和对应机器文件。33°、57°现成数据已接入；参考帧、比例尺与完整性资格仍独立记录。
+5. “研究资产”页可对已有完整体算例执行“诊断起裂指标”，或选择 JSON 后点击“运行裂后算例”。阈值可留空；裂后首版限定 0°、预设参考接缝和径向张开，参数仍为未标定示例。打开页面和刷新资产都不启动这些任务。
 
 ## 工程结构
 
@@ -42,18 +43,22 @@ python -m softcut_solution inventory
 python -m softcut_solution video-check 0930l30a1
 python -m softcut_solution export-fe projects/softmodeling/outputs/baseline/angle33 --frames 21
 python -m softcut_solution compare --fe <result.bundle.json> --video <固定ID包目录> --options configs/comparison.example.json
+python -m softcut_solution fracture-onset --case projects/softmodeling/outputs/baseline/angle0 --length-mm 0.15 --seconds 300
+python -m softcut_solution fracture-run --config projects/softmodeling/configs/fracture_demo.json --seconds 300
 python -m pytest -q
 python tools/check_publish.py --staged
 ```
 
 视频批处理默认只预检：`python -m softcut_solution video-batch projects/rec_inc_soft_cut/configs/batch.example.json`。只有加 `--execute` 才运行跟踪，预算读取本地 `video_timeout_s`，默认 3600 秒。
 
+`fracture-onset` 只读取已保存、已审查的完整体状态；`--case` 可重复，`--threshold-mpa` 为可选的有效阈值。没有已核实实验标签时，指定阈值也不代表完成标定。`fracture-run` 是显式求解命令，读取所选配置并写入新的 `runs/<作业>/result/`；预算允许 1–3600 秒。两者复用已配置的 FE 解释器、日志和进程监督。
+
 ## 比较结果的含义
 
 首版实现固定材料点的位移分量、固定群组平均值、点误差和覆盖率。视频参考位置经显式变换映射到 FE **接受参考态**三角形，固定重心权重采样后续状态；不是直接比较位移模长。FE 仅采用独立审查的连续合格前缀，不外推，不给域外点补最近节点，不将遮挡/推断当有效观测。
 
-默认刀尖平移注册和视频毫米尺度属于条件假设，并非实验室标定。播放时钟不用于物理同步。完整体 FE 速度仍为 0.2 mm/s，最大行程 2 mm，不含断裂；分析截止不是起裂事件。仿真反力不自动归零。MMT/OBT 接触地址、材料位移和真实界面滑移保持不同语义。
+默认刀尖平移注册和视频毫米尺度属于条件假设，并非实验室标定。播放时钟不用于物理同步。已有完整体 FE 基线仍为 0.2 mm/s、最大行程 2 mm、不含断裂；独立裂后研究入口不改变这些历史结果。分析截止不是起裂事件。仿真反力不自动归零。MMT/OBT 接触地址、材料位移和真实界面滑移保持不同语义。
 
 同标距应变、区域距离、经确认的接触滑移、力—视频同步和更广的试次注册是后续扩展接口；当前报告不会宣称这些尚未实现或标定的能力。
 
-详细说明：[接口契约](docs/interface_contract.md) · [环境与迁移](docs/environment.md) · [Git 管理](docs/git_workflow.md) · [验收记录](docs/verification.md)。
+详细说明：[接口契约](docs/interface_contract.md) · [起裂与裂后实现及证据](docs/fracture_implementation.md) · [环境与迁移](docs/environment.md) · [Git 管理](docs/git_workflow.md) · [首版验收记录](docs/verification.md)。

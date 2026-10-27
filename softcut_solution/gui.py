@@ -300,6 +300,35 @@ class Workbench(ttk.Frame):
         self._button(bar, "接口与方法", self._open_interface_document).pack(side="left", padx=8)
         self._button(bar, "Git 管理规范", self._open_git_document).pack(side="left")
         self._button(bar, "打开项目目录", lambda: self._open_path(self.workspace_root)).pack(side="right")
+        fracture = ttk.LabelFrame(self.assets_tab, text="起裂诊断与裂后研究算例")
+        fracture.pack(fill="x", pady=(0, 12))
+        fracture.columnconfigure(1, weight=1)
+        self.fracture_config = tk.StringVar()
+        self.fracture_seconds = tk.StringVar(value="300")
+        self.fracture_length = tk.StringVar(value="0.15")
+        self.fracture_threshold = tk.StringVar()
+        self.fracture_case_choice = tk.StringVar()
+        ttk.Label(fracture, text="裂后配置 JSON").grid(row=0, column=0, sticky="w", padx=(0, 8), pady=3)
+        ttk.Entry(fracture, textvariable=self.fracture_config).grid(row=0, column=1, sticky="ew", pady=3)
+        self._button(fracture, "选择配置", self._choose_fracture_config).grid(row=0, column=2, padx=6, pady=3)
+        self._button(fracture, "运行裂后算例", self._run_fracture).grid(row=0, column=3, pady=3)
+        ttk.Label(fracture, text="已有 FE 算例").grid(row=1, column=0, sticky="w", padx=(0, 8), pady=3)
+        self.fracture_case_combo = ttk.Combobox(fracture, textvariable=self.fracture_case_choice,
+                                               state="readonly", width=50)
+        self.fracture_case_combo.grid(row=1, column=1, columnspan=2, sticky="ew", pady=3)
+        self._button(fracture, "诊断起裂指标", self._diagnose_fracture).grid(row=1, column=3, pady=3)
+        parameters = ttk.Frame(fracture)
+        parameters.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(5, 2))
+        for label, variable, width in (("计算预算 / s", self.fracture_seconds, 6),
+                                      ("邻域尺度 / mm", self.fracture_length, 6),
+                                      ("阈值 / MPa（可留空）", self.fracture_threshold, 8)):
+            ttk.Label(parameters, text=label).pack(side="left", padx=(0, 5))
+            ttk.Entry(parameters, textvariable=variable, width=width).pack(side="left", padx=(0, 14))
+        self.fracture_open_button = ttk.Button(parameters, text="打开本次报告", state="disabled",
+                                               command=lambda: self._open_path(self.fracture_report_path))
+        self.fracture_open_button.pack(side="right")
+        ttk.Label(fracture, text="诊断读取已有状态；运行按钮才开始求解。阈值留空时不判定越阈；示例参数不代表实验标定。",
+                  foreground=MUTED, wraplength=1000).grid(row=3, column=0, columnspan=4, sticky="w", pady=(6, 0))
         table = ttk.Frame(self.assets_tab)
         table.pack(fill="both", expand=True)
         table.columnconfigure(0, weight=1)
@@ -327,6 +356,7 @@ class Workbench(ttk.Frame):
             self.video_python.set(str(settings.get("video_python", "")))
             self._fill_choices("simulation_bundles", self.fe_combo, self.fe_choice)
             self._fill_choices("simulation_cases", self.case_combo, self.case_choice)
+            self._fill_choices("simulation_cases", self.fracture_case_combo, self.fracture_case_choice)
             self._fill_choices("video_packages", self.video_combo, self.video_choice)
             self.report_tree.delete(*self.report_tree.get_children())
             for report in self.catalog.get("reports", []):
@@ -391,6 +421,58 @@ class Workbench(ttk.Frame):
                                           filetypes=[("JSON", "*.json")])
         if path:
             self.video_manifest.set(path)
+
+    def _choose_fracture_config(self):
+        path = filedialog.askopenfilename(parent=self, title="选择裂后研究配置",
+                                          initialdir=self.workspace_root / "projects/softmodeling/configs",
+                                          filetypes=[("JSON", "*.json")])
+        if path:
+            self.fracture_config.set(path)
+
+    def _fracture_budget(self):
+        try:
+            seconds = int(self.fracture_seconds.get())
+        except (ValueError, TypeError) as exc:
+            raise ValueError("计算预算须为 1–3600 秒的整数。") from exc
+        if not 1 <= seconds <= 3600:
+            raise ValueError("计算预算须为 1–3600 秒的整数。")
+        return seconds
+
+    def _run_fracture(self):
+        try:
+            seconds = self._fracture_budget()
+            value = self.fracture_config.get().strip()
+            if not value or not Path(value).is_file():
+                raise ValueError("请选择存在的裂后 JSON 配置。")
+            config = Path(value)
+        except ValueError as exc:
+            self._input_error(str(exc))
+            return
+        self._task("运行裂后研究算例", lambda: self.backend.fracture_run(
+            self.workspace_root, config, seconds=seconds), self._fracture_complete)
+
+    def _diagnose_fracture(self):
+        try:
+            seconds = self._fracture_budget()
+            case = self._path_for("simulation_cases", self.fracture_case_choice)
+            length = self._number(self.fracture_length.get(), "邻域尺度")
+            raw_threshold = self.fracture_threshold.get().strip()
+            threshold = self._number(raw_threshold, "阈值") if raw_threshold else None
+            if length <= 0 or (threshold is not None and threshold <= 0):
+                raise ValueError("邻域尺度和已填写阈值必须大于零。")
+        except ValueError as exc:
+            self._input_error(str(exc))
+            return
+        self._task("诊断已有状态起裂指标", lambda: self.backend.fracture_onset(
+            self.workspace_root, [case], length_mm=length, threshold_mpa=threshold,
+            seconds=seconds), self._fracture_complete)
+
+    def _fracture_complete(self, result):
+        self.refresh()
+        self.notebook.select(self.assets_tab)
+        if result.get("report_path"):
+            self.fracture_report_path = Path(result["report_path"])
+            self.fracture_open_button.configure(state="normal")
 
     def _save_settings(self):
         settings = dict(self.catalog.get("settings", {}))

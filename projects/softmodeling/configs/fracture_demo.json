@@ -1,0 +1,16 @@
+{
+  "schema": "softcut-cohesive/1",
+  "label": "0 degree finite-gap radial cohesive mechanism demonstrator",
+  "angle_deg": 0,
+  "loading_rate_mm_s": 0.2,
+  "target_mm": 0.6,
+  "increment_mm": 0.01,
+  "reference_gap_mm": 0.006,
+  "dhat_mm": 0.0025,
+  "tip_radius_mm": 0.02,
+  "friction_coefficient": 0.35,
+  "parameter_status": "demonstration_only_not_experimentally_calibrated",
+  "material": {"equilibrium_shear_mpa": 0.14, "maxwell_shear_mpa": 1.24, "relaxation_s": 1.7, "bulk_mpa": 23.34333333333331},
+  "cohesive": {"strength_mpa": 0.2, "stiffness_mpa_per_mm": 50.0, "toughness_n_per_mm": 0.006, "damage_enabled": true},
+  "mesh": {"local_spacing_mm": 0.4, "surface_spacing_mm": 0.04, "coarse_spacing_mm": 0.75, "seam_spacing_mm": 0.1, "nose_facets": 32}
+}

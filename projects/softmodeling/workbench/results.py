@@ -55,7 +55,7 @@ def _material_parameters(material):
     return ge, gv, 2 * ge * (1 + nu) / (3 * (1 - 2 * nu))
 
 
-def saved_state_fields(reference, positions, triangles, metric, material):
+def saved_state_fields(reference, positions, triangles, metric, material, *, include_mechanics=False):
     """Return unsmoothed P1 fields and stored energy density, without integration.
 
     Cauchy stress = J^(-5/3) [Ge dev(FF^T) + Gv dev(F A F^T)]
@@ -104,6 +104,20 @@ def saved_state_fields(reference, positions, triangles, metric, material):
     fields = dict(tensile_MPa=np.maximum(np.linalg.eigvalsh(stress)[:, -1], 0),
                   green_max=strain_eigenvalues[:, -1], green_min=strain_eigenvalues[:, 0],
                   J=J, displacement_mm=np.linalg.norm(x-X, axis=1))
+    if include_mechanics:
+        principal_stress, directions = np.linalg.eigh(stress)
+        equilibrium = .5 * ge * (J**(-2/3) * np.trace(B, axis1=1, axis2=2) - 3)
+        nonequilibrium = .5 * gv * (J**(-2/3) * np.trace(Be, axis1=1, axis2=2) - 3)
+        # The non-relaxing volumetric energy belongs to the equilibrium branch.
+        equilibrium += energy - equilibrium - nonequilibrium
+        inplane, inplane_directions = np.linalg.eigh(stress[:, :2, :2])
+        fields.update(F=F, cauchy_MPa=stress, principal_stress_MPa=principal_stress,
+                      principal_directions=directions,
+                      principal_stretch=np.sqrt(np.maximum(1+2*strain_eigenvalues, 0)),
+                      inplane_tensile_MPa=np.maximum(inplane[:, -1], 0),
+                      inplane_normal=inplane_directions[:, :, -1],
+                      equilibrium_density_MPa=equilibrium,
+                      nonequilibrium_density_MPa=nonequilibrium)
     if not all(np.isfinite(value).all() for value in fields.values()):
         raise ValueError("Non-finite reconstructed fields")
     return fields, energy, .5 * np.linalg.det(Dm)
@@ -169,6 +183,8 @@ def export_case(source, output, *, max_frames=11, movie=False, audit_path=None, 
     result_bytes = result_path.read_bytes()
     report = json.loads(result_bytes)
     steps = report.get("steps", [])
+    if report.get("schema") == "softcut-cohesive-result/1" or any("fracture" in step for step in steps):
+        raise ValueError("Intact result export cannot consume a coupled fracture history; use its fracture report")
     if not steps:
         raise ValueError("No accepted steps in result.json")
     depths = np.asarray([s["depth_mm"] for s in steps], float)
