@@ -270,9 +270,13 @@ def main(argv=None):
                             report=f'case_{index}_{case.name}/index.html', source=str(case.resolve())))
     eligible = [label for label in labels['labels'] if label['kind'] == 'verified_observation'
                 and label['event_kind'] == 'physical_onset' and label['split'] != 'unused']
+    censored = [label for label in labels['labels'] if label['kind'] == 'right_censored_observation']
     evidence = dict(catalogue_source=str(args.labels.resolve()), catalogue_sha256=_digest(args.labels),
                     verified_physical_onset_labels=len(eligible),
-                    comparison_status='no_verified_labels' if not eligible else 'explicit_trial_and_depth_registration_required',
+                    right_censored_constraints=len(censored),
+                    comparison_status=('explicit_trial_and_depth_registration_required' if eligible
+                                       else 'right_censored_constraints_require_explicit_comparison' if censored
+                                       else 'no_verified_labels'),
                     calibration_performed=False, validation_performed=False,
                     note='Angle alone does not register a trial, a depth reference or an event definition.',
                     labels=labels['labels'])
@@ -281,9 +285,10 @@ def main(argv=None):
                shared_length_mm=args.length_mm, shared_threshold_MPa=args.threshold_mpa,
                calibration='not_performed', experimental_comparison=evidence, cases=results))
     (args.output/'index.html').write_text('<!doctype html><meta charset="utf-8"><h1>多角度起裂候选诊断</h1>'
-        '<p>共享示例阈值，尚未实验标定。当前起裂标签不足，未执行物理验证或强行触发裂纹。</p><ul>'
+        '<p>示例阈值仅用于数值诊断，没有从理论或独立物性确定，不能作为物理起裂预测。实验观察用于独立检验，不由切割力反演参数。</p><ul>'
         + ''.join(f'<li><a href="{html.escape(r["report"],quote=True)}">{r["angle_deg"]:g}° — {html.escape(r["event"]["status"])}</a></li>' for r in results)
         + f'</ul><p>可用于物理起裂评价的已核实标签：{len(eligible)}；未执行标定或留出验证。标签证据与试次身份保持原样，未按角度自动配对。</p>'
+        + f'<p>截至指定行程未裂的右删失约束：{len(censored)} 条。它们不是起裂时刻；需显式匹配工况与深度参考后比较。</p>'
         + '<a href="experimental_evidence.json">实验标签证据与缺项</a> · <a href="onset_summary.json">机器摘要</a>', encoding='utf-8')
     print(json.dumps(dict(output=str(args.output.resolve()), cases=len(results))))
 

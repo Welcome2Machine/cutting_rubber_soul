@@ -1,6 +1,6 @@
 {
   "schema": "softcut-fracture-labels/1",
-  "description": "Local evidence inventory, not a calibrated fracture dataset. Historical a1 and group cutoffs are not transferred to the authorized force trials.",
+  "description": "Local evidence inventory, not a fitted fracture dataset. The user's repeated 57-degree no-fracture observation through 2 mm is accepted as a right-censored condition constraint. Trial registration remains unresolved; historical a1 and group cutoffs are not transferred to authorized force trials.",
   "labels": [
     {
       "id": "1008n0a2_onset_unknown",
@@ -32,8 +32,34 @@
       "event_kind": "physical_onset",
       "depth_interval_mm": null,
       "depth_reference": "authorized_force_export_nominal_first_contact",
-      "evidence": {"source": "docs/task_requirements.md", "method": "Physical onset unknown; a 2.2 mm group analysis cutoff is not a measured onset.", "verified": false},
+      "evidence": {"source": "user_message:2026-10-28 and docs/task_requirements.md", "method": "Exact onset for this specific trial remains unregistered. The accepted repeated-test 57-degree no-fracture bound is separately recorded as a condition constraint; it is not assigned to 1014n57a1. The old 2.2 mm group cutoff remains a separate analysis setting.", "verified": false},
       "split": "unused"
+    },
+    {
+      "id": "57deg_repeated_tests_user_report_20261028",
+      "trial_id": null,
+      "condition_id": "57deg_repeated_tests_user_report_20261028",
+      "observation_scope": "condition",
+      "angle_deg": 57,
+      "kind": "right_censored_observation",
+      "event_kind": "physical_onset",
+      "censoring": "right",
+      "lower_bound_mm": 2.0,
+      "bound_relation": "strictly_greater",
+      "depth_interval_mm": null,
+      "depth_reference": "user_reported_vertical_travel_origin_not_independently_registered",
+      "evidence": {
+        "source": "user_message:2026-10-28",
+        "source_type": "user_report",
+        "method": "User states that 57-degree specimens remain uncracked at 2 mm and that this was tested repeatedly. This is accepted as a condition-level no-fracture constraint; individual trial IDs, repeat count and independent image/depth registration were not supplied.",
+        "verified": false,
+        "accepted_condition_constraint": true,
+        "repeat_count": null,
+        "individual_trial_ids": null
+      },
+      "split": "unused",
+      "registration_status": "pending_individual_trials_and_depth_origin; explicit condition-level validation only",
+      "parameter_use": "independent_validation_only_no_inverse_force_or_threshold_fitting"
     },
     {
       "id": "historical_0deg_a1_approximate",

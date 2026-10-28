@@ -88,4 +88,6 @@ flowchart LR
 
 `softcut-fracture-labels/1` 目录保留 `trial_id`、`event_kind`、`depth_reference`、观测区间、证据和 `split`。`tools.fracture_labels.compare_event` 只在身份、参考与事件定义可比时计算区间重叠和有符号间隔；不自动改试次、调整深度、用区间中点取代不确定性或把没有事件视作零误差。物理起裂、可见张开、力趋势代理和分析截止始终分开。当前示例目录全部为 `unused`，已核实且可用于物理起裂标定的标签为 0。
 
+新增 `right_censored_observation` 表示观察窗口内未裂，使用 `censoring=right`、`lower_bound_mm`、`bound_relation=strictly_greater`、`depth_interval_mm=null`，不能进入 calibration。用户报告的57°重复试验截至2 mm未裂按 `observation_scope=condition` 保存，`trial_id=null`，具体次数/编号不补造；这是一条已接受的用户报告约束，独立图像/时钟核查状态另列。条件级比较必须显式指认 `condition_constraint_id` 与 `condition_id`；深度参考尚未注册时必须声明 `depth_reference_assumption`，结果保留条件性，不能冒充逐试次验证。输出 `contradicted/consistent/unresolved`。未触发路径另需 `qualified_no_event_history={depth_interval_mm:[start,end], continuous:true, from_initial_intact_state:true}`，沿用预测的同一深度参考；声明的连续合格无事件区间必须覆盖观察下限，不能只因末态深度足够就把晚开始片段或资格中断当未裂。事件区间按保守闭区间处理，`[2,2.01]` 对严格 `d_c>2` 仍为 unresolved。此接口只检验给定预测，不选取或反演阈值。
+
 模型公式、文献、运行状态与下一步验证见 [起裂与裂后实现说明](fracture_implementation.md)。

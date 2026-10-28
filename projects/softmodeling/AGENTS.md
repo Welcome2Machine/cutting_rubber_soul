@@ -72,6 +72,14 @@ Historical notes do not authorize new runs or establish current process state.
 
 ## Data and interpretation
 
+- Latest user direction (2026-10-28): develop fracture from mechanics and
+  independent numerical validation; do not infer parameters from the user's
+  cutting-force data or tune angle-specific thresholds. The user reports that
+  repeated 57-degree tests remain uncracked through 2 mm. Preserve this as a
+  right-censored, condition-level validation constraint, not an onset at 2 mm;
+  trial IDs/repetition count are unspecified. The 1 MPa diagnostic crossing at
+  0.61--0.62 mm is not an accepted physical-onset prediction.
+
 - Same rubber across angles; no angle-specific material, effective-width or force
   scaling. Preserve raw inputs, units and trial identities.
 - Authorized force inputs are local `docs/1008n0a2__Fz__curve_1.csv`,
@@ -80,7 +88,8 @@ Historical notes do not authorize new runs or establish current process state.
   the derived target. Do not overwrite the originals or shift depth. Do not use
   old V01 force channels. Do not apply experimental zeroing to simulated forces.
 - Later experimental data include fracture. The 0-degree ~1 mm estimate refers
-  to a1, not the current a2; 33 ~1.2--1.3 mm is approximate; 57 onset is unknown.
+  to a1, not the current a2; 33 ~1.2--1.3 mm is approximate. The exact 57-degree
+  onset is unknown, with the latest repeated-test lower bound stated above.
   Numerical failures and declining slopes alone are not fracture evidence.
 - Optical flow remains auxiliary. Follow each delivery schema in
   `docs/optical_flow_handoff.md`: old CSV requires valid=1 and reference_frame_id=0
