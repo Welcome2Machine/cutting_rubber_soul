@@ -303,7 +303,8 @@ class Workbench(ttk.Frame):
         fracture = ttk.LabelFrame(self.assets_tab, text="起裂诊断与裂后研究算例")
         fracture.pack(fill="x", pady=(0, 12))
         fracture.columnconfigure(1, weight=1)
-        self.fracture_config = tk.StringVar()
+        self.fracture_config = tk.StringVar(value=str(
+            self.workspace_root / "projects/softmodeling/configs/fracture_network.json"))
         self.fracture_seconds = tk.StringVar(value="300")
         self.fracture_length = tk.StringVar(value="0.15")
         self.fracture_threshold = tk.StringVar()
@@ -327,7 +328,7 @@ class Workbench(ttk.Frame):
         self.fracture_open_button = ttk.Button(parameters, text="打开本次报告", state="disabled",
                                                command=lambda: self._open_path(self.fracture_report_path))
         self.fracture_open_button.pack(side="right")
-        ttk.Label(fracture, text="诊断读取已有状态；运行按钮才开始求解。阈值留空时不判定越阈；示例参数不代表实验标定。",
+        ttk.Label(fracture, text="默认配置为自由裂路内聚网络，裂路在内部网格边中选择；可选择混合模式预设路径对照。整切与网格/间隙收敛尚未通过定量验证。点击运行才求解，示例参数不代表材料实测值。",
                   foreground=MUTED, wraplength=1000).grid(row=3, column=0, columnspan=4, sticky="w", pady=(6, 0))
         table = ttk.Frame(self.assets_tab)
         table.pack(fill="both", expand=True)

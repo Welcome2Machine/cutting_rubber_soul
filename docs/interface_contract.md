@@ -66,7 +66,7 @@ flowchart LR
 | 统一调用 | FE 子进程入口 | 输入约束 |
 |---|---|---|
 | `fracture_onset(root, cases, length_mm=.15, threshold_mpa=None, seconds=300)` | `python -m tools.fracture_onset --case PATH ... --output PATH --length-mm VALUE --seconds VALUE [--threshold-mpa VALUE]` | 保存的完整体算例位于复制 FE 工程 `outputs/`，具有 result/audit/states；阈值可缺失；不加载新增量 |
-| `fracture_run(root, config, seconds=300)` | `python -m tools.run_cohesive_cut --config PATH --output PATH --seconds VALUE` | 总工作区内的 JSON 配置；当前 schema 为 `softcut-cohesive/1`，仅支持 0°、0.2 mm/s 的示例机制模型 |
+| `fracture_run(root, config, seconds=300)` | `python -m tools.run_cohesive_cut --config PATH --output PATH --seconds VALUE` | 工作区内 JSON；`softcut-cohesive/1` 保留0°径向示例；`softcut-cohesive/2` 为显式混合模式，角度[0,90)、0.2 mm/s、行程≤2 mm，选择预设接缝或全内部边网络 |
 
 路径解析后检查范围；不接受原始工程作为写入目标。调用使用参数列表、复制 FE 工作目录与登记解释器。`seconds` 是 1–3600 的整数，统一进程监督超时为 `seconds+60`。每次生成唯一 `runs/<作业>/`：外层 `job.json` 记录命令、解释器、时间、状态、预算、输入/入口哈希，`process.log` 保存子进程输出，`artifact.json` 指向新建 `result/index.html`。研究资产页递归发现本地报告；构建界面不启动求解。
 
@@ -81,6 +81,10 @@ flowchart LR
 `result.json` 使用 `schema=softcut-cohesive-result/1`，记录配置、示例参数状态、假设、事件、源代码哈希、接受步、失败尝试及能量分账；`audit.json` 保存独立重算审查，`states/` 保存材料和内聚历史，`curves.csv` 与 HTML 展示接受前缀。具体文件以本次结果为准，未产生审查或未完成的运行不能补造通过状态。
 
 当前模型采用有限参考间距，内聚张开为当前节点对距离减参考距离，参考间距不计损伤。两张接缝面始终接入 IPC/CCD。该径向律没有独立的混合模式强度，预设参考路径不能算作预测。模型完成、数值审查、空间/时间细化和实验标定是不同状态；任一已接受的键损伤不能直接写入视频 `intact_status`。
+
+新 `softcut-cohesive/2` 要求 `cohesive_kind=mixed_mode_energy`、`fracture_topology=prescribed_seam|edge_network` 和 `no_experimental_force_fitting=true`，四个物性及损伤开关必须显式给出；共同Gc限制与Ks的派生关系保留在输出。网络另声明正的 `network_metric_floor_n_per_mm`，只作用于PTC方向度量，不增加物理力、储能或耗散；显式 `network_predictor=body_stationary_if_safe|baseline` 控制初值。前者先尝试保持材料上一接受位置、移动刀具，完整CCD/J检查不通过则回退原仿射初值；不改物理时间、残量或接受标准。输出继续使用 `softcut-cohesive-result/1` 并记录配置版本、拓扑、求解策略、参考面积、面积损失和源码哈希。
+
+新检查点的 `cohesive_maximum` 为 `[界面段数,2]`，与 `interface_segments` 四节点、逐Gauss参考法向间隙/切向偏置绑定；不能读作旧径向节点历史。完整失效段要求两个Gauss点均完全失效，事件名为 `first_fully_separated_segment`；保存段/积分点编号和参考/当前位置。网络连通长度是与原外表面连通的失效原边总长，可含分叉；它不是竖直裂深。旧 `*_bonds` 计数字段在混合分支仅作段计数兼容别名，明确标注。全过程能量余项及数值路径审查各有资格，2%余项诊断线不是模型通过网格收敛或实验验证的声明。
 
 这些输出尚未作为 `softcut-result/1` 裂后观测适配器发布，不直接接入现有完整体—视频位移比较器。完整体导出器和起裂诊断入口均拒绝耦合损伤历史，资产列表也将其排除在完整体候选之外。后续必须明确裂面拓扑、材料点所在侧、失效点支持和裂后资格，才能建立跨模型的共同观测。
 

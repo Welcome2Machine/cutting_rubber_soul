@@ -18,7 +18,7 @@ python -X utf8 -m softcut_solution gui
 2. 视频可先按试次预检，再通过显式批处理按钮执行清单。新结果写入复制工程的 `results/integration/`，历史结果不覆盖。
 3. 在比较页选择已审查 FE 算例并导出保存帧，选择视频固定 ID 包，核查注册、参考态、深度窗口与支持规则，再运行比较。
 4. 结果页打开 HTML 报告和对应机器文件。33°、57°现成数据已接入；参考帧、比例尺与完整性资格仍独立记录。
-5. “研究资产”页可对已有完整体算例执行“诊断起裂指标”，或选择 JSON 后点击“运行裂后算例”。阈值可留空；裂后首版限定 0°、预设参考接缝和径向张开，参数仍为未标定示例。打开页面和刷新资产都不启动这些任务。
+5. “研究资产”页可对已有完整体算例执行“诊断起裂指标”，或选择 JSON 后点击“运行裂后算例”。默认配置为混合模式自由裂路内聚网络：所有内部网格边可起损，裂面进入真实IPC/CCD；也可选择预设接缝对照。自由裂路仍受网格边方向限制，参数为独立给定示例。打开页面和刷新资产不启动任务。
 
 ## 工程结构
 
@@ -45,6 +45,7 @@ python -m softcut_solution export-fe projects/softmodeling/outputs/baseline/angl
 python -m softcut_solution compare --fe <result.bundle.json> --video <固定ID包目录> --options configs/comparison.example.json
 python -m softcut_solution fracture-onset --case projects/softmodeling/outputs/baseline/angle0 --length-mm 0.15 --seconds 300
 python -m softcut_solution fracture-run --config projects/softmodeling/configs/fracture_demo.json --seconds 300
+python -m softcut_solution fracture-run --config projects/softmodeling/configs/fracture_network.json --seconds 300
 python -m pytest -q
 python tools/check_publish.py --staged
 ```
@@ -54,6 +55,8 @@ python tools/check_publish.py --staged
 `fracture-onset` 只读取已保存、已审查的完整体状态；`--case` 可重复，`--threshold-mpa` 为可选的有效阈值。没有已核实实验标签时，指定阈值也不代表完成标定。`fracture-run` 是显式求解命令，读取所选配置并写入新的 `runs/<作业>/result/`；预算允许 1–3600 秒。两者复用已配置的 FE 解释器、日志和进程监督。
 
 ## 比较结果的含义
+
+新断裂分支的局部本构和最小自由选路基准已通过数值检查；完整切割、网格方向及间隙收敛尚未完成。全边网络的有限间隙会引入自由闭合和额外柔度，短前缀残差合格不代表材料预测有效。最新证据见[理论验证报告](runs/fracture_theory_20261028/index.html)，该生成报告留在本机。
 
 首版实现固定材料点的位移分量、固定群组平均值、点误差和覆盖率。视频参考位置经显式变换映射到 FE **接受参考态**三角形，固定重心权重采样后续状态；不是直接比较位移模长。FE 仅采用独立审查的连续合格前缀，不外推，不给域外点补最近节点，不将遮挡/推断当有效观测。
 

@@ -10,7 +10,7 @@
 2. **接触与运动学：** R17/R42、Duong–Sauer、GCP。共同刚体运动、表面材料身份、投影/激活、完整切线和接触积分须一起核查；不能在原IPC模板中任意删除VV或重复积分。
 3. **离散与约束：** R32、R37–R38、R53及广义平面应变教程。稳定配对、高阶几何、局部平面应力与有限宽三维是不同问题，方法名称不证明本项目精度或可解性。
 4. **拟合：** R26–R27、Hartmann–Gilbert及dolfin-adjoint。含内部变量的参数变化必须传播整个历史；固定旧历史偏导、局部切线预测和有限参数加载各自独立验收。
-5. **未来断裂：** R01–R04、R09–R11。当前不启用断裂；切后稳态、低压CZM结论和起裂强度不能移植到未裂高压区。
+5. **断裂研究分支：** R01–R04、R09–R11及下方2026-10-28补充。完整体基线不启用断裂；独立分支已实现混合模式内聚律与全内部边候选网络。切后稳态、低压CZM结论和起裂强度不能移植到未裂高压区。
 
 ## 对本项目有直接约束的解释
 
@@ -180,7 +180,17 @@
 
 当前项目已观察到相同有限标距下近刀尖投影伸长偏大、压缩偏多；原因仍待在测量过滤、有限宽侧面、接触传力和材料/离散之间区分。这是条件数值—实验比较结果，不是已认证的新物理发现。现有全域平面应力对照的局限仍保留，不能因侧面自由就直接替换整个模型。
 
-## 本地原文映射
+## 2026-10-28 混合模式与自由裂路补充
+
+以下本轮核对出版方或作者机构的摘要/元数据（A），不冒充完整复现。实现推导、选型与限制见[断裂说明第12–13节](../../../docs/fracture_implementation.md)。新代码不使用切割实验力或57°未裂下限识别参数。
+
+| 来源 | 对当前选择的作用 |
+|---|---|
+| Ortiz、Pandolfi（1999），*Finite-deformation irreversible cohesive elements for three-dimensional crack-propagation analysis*，IJNME 44(9),1267–1282，[作者机构记录](https://authors.library.caltech.edu/records/pryf8-c1t67) | 有限变形不可逆内聚元素能形成显式自由表面。支持方法家族选择；当前二维全边网络、有限间隙与IPC不是论文逐式复现。 |
+| Serpieri、Sacco、Alfano（2015），*A thermodynamically consistent derivation of a frictional-damage cohesive-zone model with different mode I and mode II fracture energies*，EJM A/Solids 49,13–25，[机构记录](https://bura.brunel.ac.uk/handle/2438/10020)，DOI 10.1016/j.euromechsol.2014.06.006 | 所选单损伤、等效开口、线性软化闭合形式采用共同Gc；不同模式总耗能需额外机制。没有把随当前模式变化的阈值拼入不可逆历史。 |
+| Wu（2017），*A unified phase-field theory for the mechanics of damage and quasi-brittle failure*，JMPS103,72–99，[出版方](https://www.sciencedirect.com/science/article/pii/S0022509616308341)，DOI 10.1016/j.jmps.2017.03.015 | 保留PF-CZM为替代路线。本次为复用真实裂面IPC选择显式内聚网络；未实现该相场模型，亦不声称相场不能处理接触。 |
+
+### 本地原文映射
 
 PDF仅留本地，不发布原文或原图。页码必须按实际版本使用；以下原文件名保持不变。
 

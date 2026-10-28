@@ -16,9 +16,12 @@ Historical notes do not authorize new runs or establish current process state.
 - Intact finite-strain isochoric Maxwell, native P1/improved-max IPC with full
   EV/VV, body self-contact and CCD. The intact baseline remains unchanged.
   The 2026-10-28 user task authorizes the separate `cohesive_cut` extension and
-  saved-state onset diagnostics. The extension is a prescribed finite-gap,
-  radial mode-I mechanism demonstrator, not general mixed-mode or calibrated
-  fracture prediction. Speed is fixed at 0.2 mm/s; travel must not exceed 2 mm.
+  saved-state onset diagnostics. The subsequent explicit task also enables the
+  objective mixed-mode law and all-interior-edge cohesive network for free path
+  selection on mesh edges. Keep the legacy radial mechanism separate. Mixed
+  modes share Gc, with Ks=Kn*(Ts/Tn)^2; finite gaps and mesh direction/compliance
+  effects are explicit, not independently calibrated fracture prediction.
+  Speed is fixed at 0.2 mm/s; travel must not exceed 2 mm.
   See parent `docs/fracture_implementation.md` and `docs/research_status.md`.
 - Common reference material: Ginf=0.14 MPa, Gv=1.24 MPa, tau=1.7 s,
   K=23.34333333333331 MPa, mu=0.35. Existing experimental angles are 0/33/57
@@ -42,6 +45,19 @@ Historical notes do not authorize new runs or establish current process state.
   spacing, zero linear shear stiffness of radial bonds, reference area and
   damage-disabled split controls must remain explicit. A split elastic control
   is not the original intact mesh; never claim the two are equivalent.
+- Mixed-mode histories use two Gauss points per four-node interface; full
+  segment failure requires both points. Network topology, reference normal and
+  shear offsets, area loss, and true bottom-support copies are part of the
+  checkpoint identity. All internal candidate faces remain in full IPC/CCD.
+  The network positive metric floor is numerical globalization only; never
+  put it into physical residuals, energies or dissipation. Free path selection
+  on a finite edge network does not establish mesh-independent trajectories.
+- The network can use a stationary-body loading-predictor base only after full
+  CCD/J and boundary checks. Record the policy and actual fallback; keep the
+  original affine retry, physical time increment and residual acceptance.
+  Finite-gap free closure and extra compliance remain physical discretization
+  errors even when the nonlinear residual passes. Ambiguous exterior/crack
+  corner contact is not proof of blade entry into a separated crack.
 - Reference recovery is secant then same-increment affine, 500 iterations per
   attempt. Affine has no 40-stagnation early stop. Original minimum increment is
   0.000625 mm. Do not confuse this with retired fixed-step candidate controllers.

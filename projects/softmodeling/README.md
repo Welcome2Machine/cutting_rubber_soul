@@ -4,6 +4,8 @@
 
 2026-10-28 增加[起裂诊断与裂后研究入口](../../docs/fracture_implementation.md)：读取完整体合格历史的非局部张拉指标，以及 0° 预设有限间隙内聚界面的实际分离算例。它们可从合并工作台显式启动；示例参数未标定，径向界面的剪切传力、有限间隙及粗网格限制必须保留。
 
+后续加入客观混合模式判据和全内部边自由裂路网络，使用 `configs/fracture_mixed.json` / `fracture_network.json`。新模型以独立给定强度和共同断裂能前向计算，不从实验力反推；裂路可在网格边中选择，尚不能宣称连续裂路已收敛。局部验证：`python -m tools.verify_cohesive_mixed --output <新目录> --seconds 120`；自由选路平衡验证：`python -m tools.verify_cohesive_network --output <新目录> --seconds 120`。
+
 ## 本地 HTML 工作台
 
 环境安装后执行：

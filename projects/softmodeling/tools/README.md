@@ -15,6 +15,9 @@
 | `render_solver_dashboard.py` | 任意上述队列的只读 HTML 快照、日志与有界后台更新 |
 | `check_publish.py` | 检查暂存区或提交历史的发布白名单；只允许代码、文字文档、已批准配置与工作台静态源码 |
 | `manage_outputs.py` | 统计输出空间，将停用NPZ历史按内容去重、无损归档及按需恢复；保留原始字节和审查SHA256 |
+| `run_cohesive_cut.py` | 显式有界断裂加载；旧径向律、混合模式预设接缝及全内部边自由选路网络分开配置，保留失败前缀与独立历史审查 |
+| `verify_cohesive_mixed.py` | 纯模式、非比例历史、转动客观性、切线和功收敛；独立示例参数，不读取实验力 |
+| `verify_cohesive_network.py` | 四三角形自由选路平衡验证；镜像加载与步长减半，含全IPC/CCD，但拉伸算例不验证实际闭合摩擦 |
 
 ## HTML 工作台
 

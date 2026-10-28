@@ -1,4 +1,4 @@
-"""Bounded explicit launcher for the finite-gap radial cohesive cutting case."""
+"""Bounded explicit launcher for radial and mixed-mode cohesive cutting."""
 import argparse
 import contextlib
 import csv
@@ -17,25 +17,73 @@ from prototype.material_case import signature, audit, failure_checkpoint
 from run_support import write_json, save_npz, source_hashes
 
 
+def law_from_config(config):
+    if config.get('cohesive_kind', 'radial_mode_i') == 'mixed_mode_energy':
+        from prototype.cohesive_mixed import MixedModeLaw
+        return MixedModeLaw(**config['cohesive'])
+    from prototype.cohesive import CohesiveLaw
+    return CohesiveLaw(**config['cohesive'])
+
+
 def read_config(path):
     config = json.loads(Path(path).read_text(encoding='utf-8-sig'))
-    if config.get('schema') != 'softcut-cohesive/1':
-        raise ValueError('Expected softcut-cohesive/1 config')
-    if config.get('angle_deg') != 0 or config.get('loading_rate_mm_s') != .2:
-        raise ValueError('This restricted model requires 0 degrees and 0.2 mm/s')
+    if config.get('schema') not in {'softcut-cohesive/1', 'softcut-cohesive/2'}:
+        raise ValueError('Expected softcut-cohesive/1 or softcut-cohesive/2 config')
+    mixed = config.get('schema') == 'softcut-cohesive/2'
+    if mixed:
+        if config.get('cohesive_kind') != 'mixed_mode_energy':
+            raise ValueError('Version 2 requires explicit mixed_mode_energy')
+        if config.get('fracture_topology') not in {'prescribed_seam', 'edge_network'}:
+            raise ValueError('Choose prescribed_seam or edge_network explicitly')
+        if config['fracture_topology'] == 'edge_network':
+            floor=config.get('network_metric_floor_n_per_mm')
+            if isinstance(floor, bool) or not isinstance(floor, (int,float)) or not np.isfinite(floor) or floor <= 0:
+                raise ValueError('Declare a positive finite network numerical metric floor')
+            if config.get('network_predictor') not in {'body_stationary_if_safe', 'baseline'}:
+                raise ValueError('Declare the network loading predictor policy explicitly')
+        angle = config.get('angle_deg')
+        if isinstance(angle, bool) or not isinstance(angle, (int, float)) or not np.isfinite(angle) or not 0 <= angle < 90:
+            raise ValueError('Require finite angle in [0,90) degrees')
+        if config.get('no_experimental_force_fitting') is not True:
+            raise ValueError('Explicit independent-parameter provenance declaration required')
+        required = {'normal_strength_mpa', 'shear_strength_mpa', 'normal_stiffness_mpa_per_mm',
+                    'toughness_n_per_mm', 'damage_enabled'}
+        if not required <= set(config.get('cohesive', {})):
+            raise ValueError('All mixed-mode material parameters must be explicit')
+    elif config.get('angle_deg') != 0 or config.get('cohesive_kind', 'radial_mode_i') != 'radial_mode_i':
+        raise ValueError('Legacy radial model requires 0 degrees')
+    if config.get('loading_rate_mm_s') != .2:
+        raise ValueError('Requires 0.2 mm/s')
     target, increment = config['target_mm'], config['increment_mm']
     if not np.isfinite([target, increment]).all() or not 0 < target <= 2 or not .000625 <= increment <= .05:
         raise ValueError('Require target (0,2] mm and increment [.000625,.05] mm')
     if config.get('parameter_status') != 'demonstration_only_not_experimentally_calibrated':
         raise ValueError('This model cannot claim experimentally calibrated fracture parameters')
+    law_from_config(config)
     return config
+
+
+def gauss_centers(positions, segments):
+    xi = np.array([-1., 1.])/np.sqrt(3.)
+    weights = np.column_stack(((1-xi)/2, (1+xi)/2))
+    ends = positions[segments].reshape(-1, 2, 2, 2).mean(axis=2)
+    return np.einsum('ga,sad->sgd', weights, ends)
+
+
+def saved_damage(state, law):
+    maximum = state['cohesive_maximum']
+    if maximum.ndim == 2:
+        return law.history_response(maximum)['damage']
+    return law.response(maximum, maximum)['damage']
 
 
 def events(steps, output=None, law=None):
     result = {}
+    mixed = law is not None and hasattr(law, 'history_response')
     for name, predicate in (
         ('damage_onset', lambda s: s['fracture']['max_damage'] > 1e-8),
-        ('first_fully_separated_bond', lambda s: s['fracture']['separated_bonds'] > 0),
+        ('first_fully_separated_segment' if mixed else 'first_fully_separated_bond',
+         lambda s: s['fracture']['separated_bonds'] > 0),
         ('blade_in_surface_connected_crack', lambda s: s['fracture'].get('surface_connected_crack_length_mm',0) > 0
          and s['fracture'].get('blade_surface_connected_crack_contacts',0) > 0)):
         i = next((i for i, s in enumerate(steps) if predicate(s)), None)
@@ -45,8 +93,15 @@ def events(steps, output=None, law=None):
             fz_n=steps[i]['reaction_fz_n'])
         if i is not None and output is not None:
             with np.load(output/'states'/f'{i:04d}.npz') as state:
-                maximum=state['cohesive_maximum']
-                damage=law.response(maximum, maximum)['damage']
+                damage=saved_damage(state, law)
+                if damage.ndim == 2:
+                    mask = damage > 1e-8 if name == 'damage_onset' else np.broadcast_to(
+                        np.all(damage >= 1-1e-10, axis=1)[:,None], damage.shape)
+                    segments = state['interface_segments']
+                    result[name]['interface_segment_and_gauss_ids']=np.argwhere(mask).tolist()
+                    result[name]['reference_midpoints_mm']=gauss_centers(state['reference_xy'], segments)[mask].tolist()
+                    result[name]['current_midpoints_mm']=gauss_centers(state['positions'], segments)[mask].tolist()
+                    continue
                 mask=damage > 1e-8 if name == 'damage_onset' else damage >= 1-1e-10
                 pairs=state['seam_pairs'][mask]
                 result[name]['bond_ids']=np.flatnonzero(mask).tolist()
@@ -76,25 +131,25 @@ def render(out, report):
         for i in np.unique(np.linspace(0, len(steps)-1, min(4, len(steps))).astype(int)):
             with np.load(out/'states'/f'{i:04d}.npz') as a:
                 x, tri, n, pairs = a['positions'], a['triangles'], int(a['body_nodes']), a['seam_pairs']
-                maximum, gaps = a['cohesive_maximum'], a['reference_bond_lengths_mm']
-                from prototype.cohesive import CohesiveLaw
-                law = CohesiveLaw(**report['configuration']['cohesive'])
-                damage = law.response(maximum, maximum)['damage']
+                law = law_from_config(report['configuration'])
+                damage = saved_damage(a, law)
                 fig, ax = plt.subplots(figsize=(6, 5))
                 ax.triplot(x[:n, 0], x[:n, 1], tri, lw=.35, color='#8996a0')
                 blade = x[n:];ax.fill(blade[:, 0], blade[:, 1], color='#37474f')
-                centers = x[pairs].mean(axis=1)
-                points = ax.scatter(centers[:, 0], centers[:, 1], c=damage, cmap='inferno', vmin=0, vmax=1, s=18)
-                fig.colorbar(points, ax=ax, label='Accepted bond damage')
-                ax.set(xlim=(6.3, 7.7), ylim=(4.1, 5.2), xlabel='y (mm)', ylabel='z (mm)',
+                centers = (gauss_centers(x, a['interface_segments']).reshape(-1,2)
+                           if damage.ndim == 2 else x[pairs].mean(axis=1))
+                points = ax.scatter(centers[:, 0], centers[:, 1], c=damage.ravel(), cmap='inferno', vmin=0, vmax=1, s=18)
+                fig.colorbar(points, ax=ax, label='Accepted interface damage')
+                tip = blade[np.argmin(blade[:,1])]
+                ax.set(xlim=(tip[0]-1.3, tip[0]+1.3), ylim=(tip[1]-1., tip[1]+1.1), xlabel='y (mm)', ylabel='z (mm)',
                        title=f"Accepted state: d={steps[i]['depth_mm']:.4f} mm")
                 ax.set_aspect('equal');fig.tight_layout()
                 name=f'state_{i:04d}.svg';fig.savefig(out/name);plt.close(fig);images.append(name)
     text = '''<!doctype html><meta charset="utf-8"><title>Cohesive cutting evidence</title>
 <style>body{font:16px system-ui;max-width:1100px;margin:32px auto;padding:0 24px}img{max-width:100%}pre{white-space:pre-wrap;background:#f3f5f6;padding:16px}</style>
-<h1>Finite-gap radial cohesive cutting</h1><p>30 × 5 mm section, width 20 mm; 0°; 0.2 mm/s. Prescribed reference seam, demonstration parameters. This is a restricted mode-I interface, not an experimentally validated general mixed-mode fracture model.</p>
+<h1>Cohesive cutting: numerical research evidence</h1><p>30 × 5 mm section, width 20 mm; 0.2 mm/s. Independently prescribed demonstration parameters; no inverse fitting of experimental cutting-force data. Mechanical qualification does not certify a physical initiation depth.</p>
 <p>The initial gap is numerical geometry and is subtracted from constitutive opening. Full IPC and CCD remain active on both new faces. Cohesive damage and Maxwell history are committed only for accepted steps. The figure scale is 1.</p>'''
-    summary = {key: report.get(key) for key in ('status', 'completed', 'last_depth_mm', 'error', 'audit_error', 'events', 'verification', 'energy_accounting')}
+    summary = {key: report.get(key) for key in ('status', 'completed', 'configuration', 'assumptions', 'mesh', 'last_depth_mm', 'error', 'audit_error', 'events', 'verification', 'energy_accounting')}
     text += '<pre>'+html.escape(json.dumps(summary, ensure_ascii=False, indent=2))+'</pre>'
     text += ''.join('<p><img src="'+name+'"></p>' for name in images)
     text += '<p><a href="result.json">Full metadata</a> · <a href="curves.csv">Accepted curves</a> · <a href="audit.json">Independent history/equilibrium audit</a></p>'
@@ -152,15 +207,35 @@ def run(config_path, output, seconds):
           '0-degree geometry is not globally symmetric: drop_s=7 mm in a 30 mm specimen',
           'Coulomb IPC on every boundary including both seam faces; no adhesive blade contact',
           'coarse mechanism mesh; requires gap, penalty, space/time convergence before quantitative prediction'])
+    if config.get('cohesive_kind') == 'mixed_mode_energy':
+        report['assumptions'] = [
+            'objective corotational four-node mixed-mode interface with two Gauss points and reference-area energy',
+            'one shared Gc; Ks=Kn*(Ts/Tn)^2; no independently specified GIc/GIIc',
+            'rate-independent interface coupled to finite-strain Maxwell bulk with physical time',
+            'finite numerical gaps; not exactly the original intact continuum',
+            'full IPC/CCD and additive Coulomb contact/friction on every exposed interface face',
+            ('all interior mesh edges are candidate cracks; path emerges on this discrete network, with mesh-direction bias'
+             if config['fracture_topology'] == 'edge_network' else 'single prescribed reference seam; not free-path selection'),
+            'no cutting-force inverse fitting; no threshold selection from reported no-fracture observations',
+            'quasistatic branch jumps require independent energy qualification; no hidden stabilizing dissipation']
     write_json(out/'result.json', report)
     started = time.monotonic();p = None;x = None
     with (out/'run.log').open('w', encoding='utf-8') as log, contextlib.redirect_stdout(log), threadpool_limits(limits=1):
         try:
             p = make_cohesive_problem(config)
-            report.update(signature=signature(p), reference_contact_check=p.reference_contact_check,
+            physical_signature=signature(p)
+            physical_signature['fracture']=dict(kind=config.get('cohesive_kind','radial_mode_i'),
+                topology=config.get('fracture_topology','prescribed_seam'), law=p.cohesive_law.to_dict(),
+                history_shape=list(p.cohesive_maximum.shape), reference_gap_mm=config['reference_gap_mm'])
+            report['solver_policy']=dict(network_metric_floor_n_per_mm=config.get('network_metric_floor_n_per_mm',0.),
+                network_predictor=config.get('network_predictor','baseline'),
+                role='iteration-direction regularization only; not a force, energy or physical dissipation')
+            report.update(signature=physical_signature, reference_contact_check=p.reference_contact_check,
                           mesh=dict(nodes=p.n, elements=len(p.mesh.triangles)),
                           cohesive_law=p.cohesive_law.to_dict(),
-                          reference_interface_area_mm2=float(p.bond_areas.sum()))
+                          reference_interface_area_mm2=float((p.interface_areas if p.is_mixed_mode else p.bond_areas).sum()),
+                          fracture_topology=getattr(p, 'fracture_topology', 'prescribed_seam'),
+                          fracture_topology_metadata=getattr(p, 'fracture_topology_metadata', {}))
             x=p.rest.copy();old=p.start;deadline=started+solve_budget
             targets=np.r_[0., np.arange(config['increment_mm'], config['target_mm']-1e-12,
                                        config['increment_mm']), config['target_mm']]
@@ -190,7 +265,7 @@ def run(config_path, output, seconds):
                 # Reconstruct a new problem; never certify by merely reusing Newton residuals.
                 fresh = make_cohesive_problem(config)
                 audit_report=audit(fresh, out, report, destination=out/'audit.pending.json', deadline=started+seconds)
-                previous=np.zeros(len(fresh.bond_lengths))
+                previous=np.zeros_like(fresh.cohesive_maximum)
                 for i, row in enumerate(report['steps']):
                     with np.load(out/'states'/f'{i:04d}.npz') as state:
                         np.testing.assert_array_equal(state['previous_cohesive_maximum'], previous)
@@ -241,6 +316,12 @@ def run(config_path, output, seconds):
         report['energy_accounting']['unaccounted_energy_after_barrier_n_mm']=sum(row['unaccounted_energy_n_mm'] for row in ledger)
         report['energy_accounting']['largest_unaccounted_increment']=max(ledger, key=lambda row: abs(row['unaccounted_energy_n_mm'])) if ledger else None
         report['energy_accounting']['large_displacement_steps']=[row for row in ledger if row['large_displacement_step_diagnostic']]
+        scale=max(abs(work), abs(bulk)+abs(cohesive)+abs(viscous)+abs(fracture)+abs(friction), 1e-12)
+        remainder=report['energy_accounting']['unaccounted_energy_after_barrier_n_mm']
+        report['energy_accounting']['relative_energy_remainder']=abs(remainder)/scale
+        report['energy_accounting']['diagnostic_tolerance']=.02
+        report['energy_accounting']['within_diagnostic_tolerance']=bool(ledger and abs(remainder)/scale <= .02)
+        report['energy_accounting']['discretization_converged']=False
     write_json(out/'result.json', report)
     with (out/'curves.csv').open('w', newline='', encoding='utf-8-sig') as stream:
         fields=['depth_mm','reaction_fz_n','residual_n','min_j','max_damage','separated_bonds',
