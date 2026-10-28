@@ -67,3 +67,5 @@ python tools/check_publish.py --staged
 同标距应变、区域距离、经确认的接触滑移、力—视频同步和更广的试次注册是后续扩展接口；当前报告不会宣称这些尚未实现或标定的能力。
 
 详细说明：[接口契约](docs/interface_contract.md) · [起裂与裂后实现及证据](docs/fracture_implementation.md) · [环境与迁移](docs/environment.md) · [Git 管理](docs/git_workflow.md) · [首版验收记录](docs/verification.md)。
+
+最新断裂专项结果见本地[处理报告](runs/fracture_resolution_20261028/index.html)与[方法/独立试验设计第18–19节](docs/fracture_implementation.md)。零间隙连接与标量惯性验证已实现，完整切割及生产模型的网格、间隙、裂路和失稳资格尚未通过；不使用切割力反推参数。

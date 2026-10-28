@@ -150,3 +150,10 @@ python -m tools.render_solver_dashboard --study outputs/new_angles
 `configs/fracture_network_finite_faces.json`显式启用双侧有限面距离的闭合势；用标准`run_cohesive_cut --config ... --output <新路径> --seconds <预算>`运行。新旧闭合模式检查点不互换，UI启动不运行或迁移模型。配对后处理`audit_network_pairing <result路径> --output <新JSON>`分别报告超出IPC激活距离与超出参考闭合支持距离的承压配对；有限正间隙补偿仍不等于物理接触收敛。
 
 2026-10-28实际前段对照、数值修复和未完成事项以[研究状态](../docs/research_status.md)及[本地HTML](../../../runs/front_diagnosis_20261028/index.html)为准。修复版只审查到0.2725 mm，不能外推其后的反力或裂纹。
+
+### 零间隙、方向与失稳能量专项验证
+
+- `python -m tools.verify_fracture_resolution --output <新目录> --seconds 90`：零间隙连接/释放算子、三尺度/多种子候选边路径几何偏差、六时间步/两阻尼标量惯性断裂；不读取实验、不启动刀具FE，局部资格与生产切割资格分列。
+- `python -m tools.audit_fracture_energy <已有结果目录> --output <新JSON>`：认证既有独立审查绑定的接受记录与检查点，重算逐步能量，额外检查Σ|R|以防抵消。不重算FE，不把能量差额改名为动能或耗散。
+- `tools.run_cohesive_cut`的版本3可显式选`nonlinear_solver="newton_lm"`作研究诊断；默认仍`ptc`。真实残差最小化可能停滞于非零值，不是已验证的全程收敛修复。输入、预算、失败和审查照常记录。
+- 独立材料试验的待填数据字段与工作量见`configs/independent_fracture_test_plan.json`。它是计划，不是运行配置或已标定物性。

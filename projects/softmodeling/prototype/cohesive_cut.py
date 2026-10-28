@@ -63,7 +63,7 @@ class CohesiveCutProblem(ViscoelasticProblem):
                  network_predictor='body_stationary_if_safe',
                  preparation_clearance_mm=None, ccd_tolerance_mm=None,
                  ptc_model_backtracks=0, ptc_residual_guard=False,
-                 ptc_shift_policy='residual_ratio', **kwargs):
+                 ptc_shift_policy='residual_ratio', nonlinear_solver='ptc', **kwargs):
         if cohesive_kind not in ('radial_mode_i', 'mixed_mode_energy'):
             raise ValueError('Unknown cohesive_kind')
         self.cohesive_kind = cohesive_kind
@@ -97,6 +97,10 @@ class CohesiveCutProblem(ViscoelasticProblem):
                 ptc_shift_policy == 'backtrack_aware' and
                 (fracture_topology != 'edge_network' or ptc_model_backtracks <= 0)):
             raise ValueError('ptc_shift_policy backtrack_aware requires edge_network and positive ptc_model_backtracks')
+        if nonlinear_solver not in ('ptc', 'newton_lm') or (nonlinear_solver != 'ptc' and fracture_topology != 'edge_network'):
+            raise ValueError('newton_lm requires edge_network')
+        self.nonlinear_solver = nonlinear_solver
+        self.force_globalization_summary = None
         self.ptc_shift_policy = ptc_shift_policy
         self.ptc_shift_summary = None
         self.ptc_model_backtrack_summary = None
@@ -236,6 +240,8 @@ class CohesiveCutProblem(ViscoelasticProblem):
                                       if self.is_mixed_mode else None)
         self.reference_contact_check = self.check_reference_contact()
         self.fracture_topology_metadata['preparation'] = dict(self.preparation_metadata)
+        if self.nonlinear_solver != 'ptc':
+            self.fracture_topology_metadata['nonlinear_solver'] = self.nonlinear_solver
         # The intrinsic network can spend many valid PTC iterations closing its
         # finite gaps. The old 40-step secant plateau cutoff does not characterize
         # this new stationary-body baseline. Keep the hard iteration, residual,
@@ -246,6 +252,12 @@ class CohesiveCutProblem(ViscoelasticProblem):
                 numerical_stagnation_window=self.stagnation_window,
                 numerical_max_iterations=self.max_iterations,
                 numerical_stopping_policy='no early plateau cutoff; unchanged hard iteration, physical residual, CCD/J and wall-clock gates')
+
+    def solve_friction(self, x, depth, deadline):
+        if self.nonlinear_solver == 'newton_lm':
+            from .force_globalization import solve
+            return solve(self, x, depth, deadline)
+        return super().solve_friction(x, depth, deadline)
 
     def safe_step(self, x, direction):
         """Keep the native CCD and J bounds; explicit networks may tighten precision."""
@@ -426,6 +438,8 @@ class CohesiveCutProblem(ViscoelasticProblem):
                     ptc_model_backtrack_summary=dict(self.ptc_model_backtrack_summary or {}),
                     ccd_policy=dict(self.network_ccd_policy),
                     predictor_base=self.network_predictor_trace)
+                if self.nonlinear_solver != 'ptc':
+                    accepted['network_numerics']['force_globalization'] = dict(self.force_globalization_summary or {})
             return accepted
         d = q['damage']
         contact = self.collisions(x)
@@ -742,9 +756,13 @@ class CohesiveCutProblem(ViscoelasticProblem):
                     network_ccd_policy_json=json.dumps(self.network_ccd_policy, sort_keys=True),
                     network_stagnation_window=self.stagnation_window,
                     network_max_iterations=self.max_iterations)
+        if self.nonlinear_solver != 'ptc':
+            result['nonlinear_solver'] = self.nonlinear_solver
         return result
 
     def audit_state(self, state, record):
+        if str(state.get('nonlinear_solver', 'ptc')) != self.nonlinear_solver:
+            raise RuntimeError('Checkpoint nonlinear solver differs')
         if self.is_mixed_mode:
             if str(state.get('cohesive_kind', '')) != self.cohesive_kind:
                 raise RuntimeError('Mixed-mode checkpoint kind differs or is missing')
@@ -813,6 +831,7 @@ def make_cohesive_problem(config):
         ptc_model_backtracks=config.get('ptc_model_backtracks', 0),
         ptc_residual_guard=config.get('ptc_residual_guard', False),
         ptc_shift_policy=config.get('ptc_shift_policy', 'residual_ratio'),
+        nonlinear_solver=config.get('nonlinear_solver', 'ptc'),
         inclination=config.get('angle_deg', 0.), gap_mm=config['reference_gap_mm'],
         seam_spacing_mm=mesh['seam_spacing_mm'], maxwell_shear=material['maxwell_shear_mpa'],
         relaxation_s=material['relaxation_s'], loading_rate=.2,

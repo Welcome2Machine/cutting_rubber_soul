@@ -1,0 +1,150 @@
+{
+  "schema": "softcut-independent-fracture-plan/1",
+  "status": "planned_not_measured",
+  "material_batch_id": null,
+  "temperature_target_c": 23.0,
+  "temperature_control_halfwidth_c": 1.0,
+  "strain_rates_s_inverse": [
+    0.01,
+    0.1,
+    1.0
+  ],
+  "rate_status": "initial pilot design; verify coverage using local deformation rates, not blade speed alone",
+  "calibration_sources_excluded": [
+    "cutting_force",
+    "cutting_onset",
+    "57deg_uncracked_2mm",
+    "video_to_FE_error_registration"
+  ],
+  "reference_crack_area": "one projected material crack plane B0*da0; Gc already includes creation of the two faces",
+  "test_groups": [
+    {
+      "id": "density",
+      "role": "independent_input",
+      "planned_specimens": 5,
+      "measurement": "mass and reference volume; density including uncertainty",
+      "required": true
+    },
+    {
+      "id": "uniaxial",
+      "role": "independent_calibration",
+      "planned_specimens": 15,
+      "design": "3 rates x 5 fresh specimens; DIC and thickness, complete history through failure",
+      "required": true
+    },
+    {
+      "id": "relaxation",
+      "role": "independent_calibration",
+      "planned_specimens": 9,
+      "design": "3 stretch levels x 3 fresh specimens; pilot levels 1.1/1.3/1.6, subject to prior nondamaging range; bounded dwell <=600 s with recorded plateau/censoring",
+      "required": true
+    },
+    {
+      "id": "planar_unnotched",
+      "role": "independent_calibration",
+      "planned_specimens": 15,
+      "design": "3 rates x 5 fresh specimens; identical grip geometry and loading history to notched pure-shear tests",
+      "required": true
+    },
+    {
+      "id": "equibiaxial",
+      "role": "independent_calibration",
+      "planned_specimens": 15,
+      "design": "3 rates x 5 fresh specimens; measure both loads and local deformation gradients",
+      "required": true
+    },
+    {
+      "id": "compressed_shear",
+      "role": "independent_calibration",
+      "planned_specimens": 45,
+      "design": "normal prestrain 0/0.05/0.15 x 3 shear rates x 5 fresh specimens; actual pressure measured; no assumed pressure from strain",
+      "required": true
+    },
+    {
+      "id": "pure_shear_notched_rate",
+      "role": "independent_calibration",
+      "planned_specimens": 15,
+      "design": "3 rates x 5 specimens; initial H0=10 mm, L0>=100 mm, a0=30 mm; actual same-batch thickness measured",
+      "required": true
+    },
+    {
+      "id": "pure_shear_crack_length",
+      "role": "independent_geometry_check",
+      "planned_specimens": 10,
+      "design": "a0=20/40 mm x 5 specimens at middle rate; reference H0=10 mm",
+      "required": true
+    },
+    {
+      "id": "pure_shear_size",
+      "role": "independent_geometry_check",
+      "planned_specimens": 5,
+      "design": "H0=20 mm, L0>=200 mm, a0=60 mm, same thickness, middle rate; check finite-size and 3D correction",
+      "required": true
+    },
+    {
+      "id": "notch_radius_holdout",
+      "role": "heldout_validation",
+      "planned_specimens": 15,
+      "design": "3 measured notch radii, pilot targets 0.05/0.2/1 mm x 5; keep out of strength/Gc fit",
+      "required": true
+    },
+    {
+      "id": "mixed_mode_holdout",
+      "role": "heldout_validation",
+      "planned_specimens": 15,
+      "design": "3 mixed opening/shear loading ratios x 5; assess shared-Gc hypothesis with independently identified bulk dissipation",
+      "required": true
+    }
+  ],
+  "additional_identification": [
+    "Confined/compressibility test or independent lateral DIC with adequate volume-strain resolution; lateral strain indistinguishable from incompressibility gives only a K lower bound",
+    "Uniformity-verified multiaxial test if a hydrostatic-strength parameter remains unidentified; bonded poker-chip failure requires inverse field analysis and is not a direct uniform-strength value",
+    "Independent blade/rubber sliding tests at >=3 normal loads and 3 sliding speeds, dry/lubricated conditions separately; blade radius/thickness measured before and after",
+    "Cyclic/Mullins pilot: if significant, augment bulk law or enforce the same independently documented preconditioning in characterization and cutting"
+  ],
+  "data_template": {
+    "specimen_id": null,
+    "batch_id": null,
+    "test_group_id": null,
+    "role": null,
+    "reference_dimensions_mm": null,
+    "temperature_c": null,
+    "conditioning_and_preconditioning": null,
+    "raw_file": null,
+    "raw_sha256": null,
+    "load_cell_calibration_id": null,
+    "camera_calibration_id": null,
+    "time_s": null,
+    "force_n": null,
+    "local_F": null,
+    "stress_measure": "first_Piola_from_reference_area_and_Cauchy_from_PFtranspose_over_J_report_separately",
+    "onset_time_interval_s": null,
+    "onset_status": null,
+    "crack_reference_length_mm": null,
+    "uncertainty": null,
+    "notes_and_invalidity_flags": null
+  },
+  "measured_evidence": [],
+  "qualified_parameters": null,
+  "cutting_prediction_qualified": false,
+  "execution_stages": [
+    {
+      "id": "pilot",
+      "planned_specimens": 38,
+      "allocation": {
+        "density": 5,
+        "relaxation": 9,
+        "uniaxial": 5,
+        "planar_unnotched": 5,
+        "pure_shear_notched_rate": 5,
+        "compressed_shear": 9
+      },
+      "note": "Subset of the 164, not extra specimens; middle rate, 3 compressed-shear prestrains x 3 specimens. Feasibility/model-discrimination only, not final statistical qualification."
+    },
+    {
+      "id": "completion",
+      "additional_planned_specimens": 126,
+      "note": "Complete all test groups if pilot supports proceeding; record design amendments before viewing cutting holdouts."
+    }
+  ]
+}

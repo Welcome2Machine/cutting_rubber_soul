@@ -32,3 +32,5 @@ Maxwell 加载入口为 `python -m tools.run_material_candidate`，参数与串�
 每个非线性增量固定上一接受态的位置和材料度量，仅在物理验收后提交新历史。原生接触保留完整 EV/VV、自接触及 CCD；性能实现由独立原生对象审查，不以近似残差替代物理验收。运行期间不得编辑参与计算的源码；记录源码指纹，不复制冻结源码树。
 
 旧混合元、相位场、接触替代及一次性诊断脚本已从当前入口移除。历史结论见[研究历史](../docs/research_history.md)，文献导读见 [references](../references/README.md)，独立论文复现保留在 [reproductions](../reproductions/dammass2023/README.md)。
+
+专项研究内核（默认切割不切换）：`force_globalization.py`为可选真实残差Newton/LM，仍需全物理审查；`extrinsic_topology.py`为零间隙连接/释放算子，未接入零距离裂面接触；`cohesive_dynamics.py`为标量惯性内聚能量验证，非二维切割动力学。验证与限制见合并仓库断裂说明第18–19节。

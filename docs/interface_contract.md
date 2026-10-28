@@ -119,3 +119,7 @@ flowchart LR
 纯界面响应在 `finite_faces` 模式下，`traction/tangent` 表示可损伤的共转分量，完整压缩积分点响应位于 `finite_face_closure`；`compression_traction`仅为双侧平均诊断量。真正参与平衡的是总`gradient/hessian`，能量使用总`stored_energy_n_mm`一次。配对审计区分超出IPC激活距离与超出数值闭合支持范围，两者不能互换。
 
 `tools.verify_cutting_compliance --front-diagnostic`显式扩展无损伤诊断目标至0.5 mm，默认仍限制0.05 mm。这个开关只用于分辨离散/接触与损伤效应，不声明实验在该窗口未裂。每个算例从自身初态加载、预算独立、目标完成和逐态审查仍是定量比较门槛。
+
+### 断裂专项研究接口（2026-10-28）
+
+FE版本3可显式声明`nonlinear_solver="newton_lm"`，缺省仍为`ptc`；非缺省求解器写入检查点并核查身份。该选项不改变力容差、CCD、物理时间、材料或损伤历史，不自动出现在桌面默认工况。零间隙拓扑和标量动力学仅为可验证研究内核，未提供虚假的生产切割运行入口。独立验证输出`softcut-fracture-resolution/1`，逐步能量后处理输出`softcut-fracture-energy-screen/1`；它们的`full_cutting_qualified`/`physical_evolution_qualified`保持false。`softcut-independent-fracture-plan/1`是待执行试验计划，null和空证据不能提升为物性。

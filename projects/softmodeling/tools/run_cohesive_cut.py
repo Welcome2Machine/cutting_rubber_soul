@@ -111,6 +111,9 @@ def read_config(path):
           or config.get('ptc_shift_policy', 'residual_ratio') != 'residual_ratio'
           or 'minimum_increment_mm' in config):
         raise ValueError('Compression regularization or custom minimum increment requires version 3')
+    solver = config.get('nonlinear_solver', 'ptc')
+    if solver not in ('ptc', 'newton_lm') or (solver != 'ptc' and not regularized):
+        raise ValueError('newton_lm requires version 3')
     law_from_config(config)
     return config
 
