@@ -68,10 +68,15 @@ def read_config(path):
         if config.get('fracture_topology') != 'edge_network':
             raise ValueError('Version 3 currently requires edge_network')
         closure = config.get('closure_regularization')
-        if closure not in {'reversible_compression_penalty', 'bounded_reversible_compression_penalty'}:
+        if closure not in {'reversible_compression_penalty', 'bounded_reversible_compression_penalty',
+                           'finite_face_bounded_compression_penalty'}:
             raise ValueError('Version 3 requires explicit reversible compression regularization')
         length = config.get('cohesive', {}).get('compression_regularization_mm')
-        if closure == 'bounded_reversible_compression_penalty':
+        finite_faces = closure == 'finite_face_bounded_compression_penalty'
+        kinematics = config.get('cohesive', {}).get('compression_kinematics', 'projected_gap')
+        if kinematics != ('finite_faces' if finite_faces else 'projected_gap'):
+            raise ValueError('Closure mode and compression kinematics must match explicitly')
+        if closure in {'bounded_reversible_compression_penalty', 'finite_face_bounded_compression_penalty'}:
             if (isinstance(length, bool) or not isinstance(length, (int, float))
                     or not np.isfinite(length) or length <= 0 or length != config['reference_gap_mm']):
                 raise ValueError('Bounded compression length must equal the reference gap, not a fitted parameter')

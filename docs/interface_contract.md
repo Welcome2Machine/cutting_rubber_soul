@@ -111,3 +111,11 @@ flowchart LR
 版本3的`mesh.fine_halfwidth_mm`为可选正有限值，省略保留原3 mm。它只设置已有graded网格刀尖细化区域的半宽，实际mesh/hash随几何保存；同一尺寸敏感性族需固定它，不能把外围改变隐藏为纯表面细化。准备净空、速度、材料时间、刀尖半径与刀鼻面片数仍单独固定。
 
 版本3可选 `ptc_shift_policy=residual_ratio|backtrack_aware`，默认前者；后者要求正`ptc_model_backtracks`并仅在网络启用。它读取已接受方向的额外模型回溯次数调整下一次PTC移位，几何初始截步本身不触发；独立于`ptc_residual_guard`。配置、接受记录和检查点绑定策略，不允许跨策略直接恢复。原物理方程、500次迭代与残量门槛不变。
+
+版本3另提供显式研究模式 `closure_regularization=finite_face_bounded_compression_penalty`，必须配合 `cohesive.compression_kinematics=finite_faces` 及 `compression_regularization_mm=reference_gap_mm`。它保留混合损伤的共转张开/滑移定义，单独将可恢复闭合势改为两侧各两个Gauss点到对侧**有限线段**的最近距离；参考距离在自身未变形网格计算，并以 `reference_closure_distances_mm` 写入检查点、恢复与独立审查。力与切线包含最近点位置/方向变化的导数，双侧各半权重，不重复计入压缩能或Gc。
+
+该模式在真实有限面距离超过全部参考闭合距离时具有严格为零的压缩能和节点力。失效不触发删除力或能量；近距离闭合势在完全失效后仍保留。它仍是有限间隙数值补偿，激活范围可能大于IPC的dhat，不能因此称为物理接触已收敛；IPC/CCD、自接触和既有摩擦定义全部保留，摩擦法向载荷仍只来自IPC。新旧模式有不同的物理签名，禁止移植旧历史。原默认配置不隐式迁移；`fracture_network_finite_faces.json`是独立研究配置。
+
+纯界面响应在 `finite_faces` 模式下，`traction/tangent` 表示可损伤的共转分量，完整压缩积分点响应位于 `finite_face_closure`；`compression_traction`仅为双侧平均诊断量。真正参与平衡的是总`gradient/hessian`，能量使用总`stored_energy_n_mm`一次。配对审计区分超出IPC激活距离与超出数值闭合支持范围，两者不能互换。
+
+`tools.verify_cutting_compliance --front-diagnostic`显式扩展无损伤诊断目标至0.5 mm，默认仍限制0.05 mm。这个开关只用于分辨离散/接触与损伤效应，不声明实验在该窗口未裂。每个算例从自身初态加载、预算独立、目标完成和逐态审查仍是定量比较门槛。

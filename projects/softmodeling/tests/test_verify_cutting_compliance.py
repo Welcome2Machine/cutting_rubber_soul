@@ -49,6 +49,29 @@ def comparable_pair():
     return result
 
 
+def test_front_diagnostic_is_explicit_bounded_and_keeps_damage_disabled():
+    import pytest
+    with pytest.raises(ValueError):
+        specs(target_mm=.5)
+    cases = specs(target_mm=.5, front_diagnostic=True)
+    assert all(c['front_diagnostic'] and c['configuration']['cohesive']['damage_enabled'] is False for c in cases)
+    with pytest.raises(ValueError):
+        specs(target_mm=.51, front_diagnostic=True)
+    with pytest.raises(ValueError):
+        specs(front_diagnostic=1)
+
+
+def test_saved_depth_schedule_does_not_transplant_material_history():
+    import pytest
+    config = specs()[0]['configuration']
+    config['diagnostic_depths_mm'] = [0., .002, .006, .01]
+    np.testing.assert_array_equal(tool.targets(config), config['diagnostic_depths_mm'])
+    for bad in ([.002, .01], [0., .006, .005, .01], [0., .009], [0., float('nan'), .01]):
+        config['diagnostic_depths_mm'] = bad
+        with pytest.raises(ValueError):
+            tool.targets(config)
+
+
 class NativeSavedPathFixture:
     """One real triangle and an isolated moving point, for geometric CCD only."""
     safe_step = CohesiveCutProblem.safe_step

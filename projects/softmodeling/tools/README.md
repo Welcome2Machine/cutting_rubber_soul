@@ -142,3 +142,11 @@ python -m tools.render_solver_dashboard --study outputs/new_angles
 未确认起裂深度时，后段差值不能直接归为完整体模型误差。
 可视化需要 FFmpeg；Maxwell 应力从每个状态的准确上一材料度量和真实时间步重组，不能用弹性模型代算。
 刀尖接触只读取明确接触身份；缺失或多解保留为空，不用最近点补造。
+
+### 前段机制诊断与有限面闭合研究配置
+
+`verify_cutting_compliance --front-diagnostic`允许显式无损伤诊断到0.5 mm（默认入口仍最多0.05 mm），使用同样的独立初态、时间历史、预算、残量及完整CCD/J审查。隐藏worker入口的case JSON可指定`configuration.diagnostic_depths_mm`，必须严格从0递增至目标；用于重放已有接受深度日程，**不读取或移植其材料历史**。报告核对实际深度/dt，新增自适应子步时不能声称日程相同。关闭损伤的对照不构成实验未裂标签。
+
+`configs/fracture_network_finite_faces.json`显式启用双侧有限面距离的闭合势；用标准`run_cohesive_cut --config ... --output <新路径> --seconds <预算>`运行。新旧闭合模式检查点不互换，UI启动不运行或迁移模型。配对后处理`audit_network_pairing <result路径> --output <新JSON>`分别报告超出IPC激活距离与超出参考闭合支持距离的承压配对；有限正间隙补偿仍不等于物理接触收敛。
+
+2026-10-28实际前段对照、数值修复和未完成事项以[研究状态](../docs/research_status.md)及[本地HTML](../../../runs/front_diagnosis_20261028/index.html)为准。修复版只审查到0.2725 mm，不能外推其后的反力或裂纹。

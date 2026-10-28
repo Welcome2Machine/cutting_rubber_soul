@@ -32,8 +32,8 @@ class MixedVerificationTests(unittest.TestCase):
     def test_work_is_independent_of_reported_dissipation(self):
         """A 1% traction error must fail even when the law still reports exact Gc."""
         class CorruptTraction(MixedModeLaw):
-            def response(self, *arguments):
-                response = super().response(*arguments)
+            def response(self, *arguments, **keywords):
+                response = super().response(*arguments, **keywords)
                 response['traction'] = response['traction']*1.01
                 return response
 

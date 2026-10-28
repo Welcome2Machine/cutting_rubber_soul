@@ -333,6 +333,18 @@ class CohesiveNetworkTests(unittest.TestCase):
         friction_gradient = friction.gradient(tangential, cmesh, sliding).ravel()
         self.assertGreater(float(friction_gradient@sliding.ravel()), 0.)
         self.assertEqual(float(barrier(contacts(reference), cmesh, reference)), 0.)
+        # The optional finite-face gap correction coexists with the same native
+        # friction and CCD; it is neither degraded nor abruptly removed at failure.
+        from dataclasses import replace
+        from prototype.cohesive_closure import finite_face_geometry
+        finite_law = replace(self.law, compression_stiffness_mpa_per_mm=80.,
+            compression_regularization_mm=gap, compression_kinematics='finite_faces')
+        finite = interface_response(closed, topology.segments, topology.reference_gaps,
+            topology.reference_areas, history, finite_law, reference_slips=topology.reference_slips,
+            reference_closure_distances=finite_face_geometry(reference[topology.segments])[0])
+        self.assertGreater(finite['compression_stored_energy_n_mm'], 0.)
+        self.assertGreater(float(-finite['compression_gradient'].reshape(-1, 2)[moving].sum(axis=0)@normal), 0.)
+        self.assertEqual(finite['fracture_dissipation_increment_n_mm'], 0.)
         unloaded = self.response(mesh, topology, reference, old=history)
         np.testing.assert_array_equal(unloaded['damage'], 1.)
         np.testing.assert_array_equal(unloaded['traction'], 0.)

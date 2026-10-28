@@ -225,6 +225,10 @@ class CohesiveCutProblem(ViscoelasticProblem):
                 reference_interface_area_mm2=float(self.interface_areas.sum()),
                 intact_equivalence=False,
                 crack_length_definition='sum of consecutive top-surface-connected fully failed reference segments')
+        self.interface_closure_distances = None
+        if self.is_mixed_mode and self.cohesive_law.compression_kinematics == 'finite_faces':
+            from .cohesive_closure import finite_face_geometry
+            self.interface_closure_distances = finite_face_geometry(self.rest[self.interface_segments])[0]
         self.cohesive_maximum = np.zeros((len(self.interface_segments), 2)
                                         if self.is_mixed_mode else len(self.bond_lengths))
         self.previous_cohesive_maximum = self.cohesive_maximum.copy()
@@ -352,7 +356,8 @@ class CohesiveCutProblem(ViscoelasticProblem):
                                       self.interface_areas, self.previous_cohesive_maximum,
                                       self.cohesive_law, tangent=tangent,
                                       matrix_size=self.total,
-                                      reference_slips=self.interface_slips)
+                                      reference_slips=self.interface_slips,
+                                      reference_closure_distances=self.interface_closure_distances)
         return bonds_response(x, self.mesh.seam_pairs, self.bond_lengths, self.bond_areas,
                               self.previous_cohesive_maximum, self.cohesive_law,
                               tangent=tangent, matrix_size=self.total)
@@ -723,6 +728,8 @@ class CohesiveCutProblem(ViscoelasticProblem):
                 reference_interface_gaps_mm=self.interface_gaps,
                 reference_interface_slips_mm=self.interface_slips,
                 reference_interface_lengths_mm=self.interface_lengths)
+            if self.interface_closure_distances is not None:
+                result['reference_closure_distances_mm'] = self.interface_closure_distances
             if self.network_topology is not None:
                 result.update(original_interface_edges=self.network_topology.original_edges,
                     interface_exterior_seed=self.network_topology.exterior_seed_segments,
@@ -752,6 +759,8 @@ class CohesiveCutProblem(ViscoelasticProblem):
                     ('reference_interface_gaps_mm', self.interface_gaps),
                     ('reference_interface_slips_mm', self.interface_slips),
                     ('reference_interface_lengths_mm', self.interface_lengths)]
+            if self.interface_closure_distances is not None:
+                expected_fields.append(('reference_closure_distances_mm', self.interface_closure_distances))
             if self.network_topology is not None:
                 expected_fields.extend([
                     ('original_interface_edges', self.network_topology.original_edges),

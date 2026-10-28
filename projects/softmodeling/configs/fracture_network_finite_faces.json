@@ -1,0 +1,49 @@
+{
+  "schema": "softcut-cohesive/3",
+  "label": "Finite-face closure research control; not calibrated or fully qualified",
+  "cohesive_kind": "mixed_mode_energy",
+  "fracture_topology": "edge_network",
+  "angle_deg": 0,
+  "loading_rate_mm_s": 0.2,
+  "target_mm": 0.05,
+  "increment_mm": 0.005,
+  "network_metric_floor_n_per_mm": 1.0,
+  "network_predictor": "safe_affine_blend",
+  "reference_gap_mm": 6e-05,
+  "dhat_mm": 2.5e-05,
+  "tip_radius_mm": 0.02,
+  "friction_coefficient": 0.35,
+  "parameter_status": "demonstration_only_not_experimentally_calibrated",
+  "no_experimental_force_fitting": true,
+  "parameter_source": "Strength and Gc unchanged from independent demonstration law; Kn/Kc/gap are explicit numerical sensitivity axes, never force-fitted. Not a calibrated prediction.",
+  "material": {
+    "equilibrium_shear_mpa": 0.14,
+    "maxwell_shear_mpa": 1.24,
+    "relaxation_s": 1.7,
+    "bulk_mpa": 23.34333333333331
+  },
+  "cohesive": {
+    "normal_strength_mpa": 0.2,
+    "shear_strength_mpa": 0.25,
+    "normal_stiffness_mpa_per_mm": 5000.0,
+    "toughness_n_per_mm": 0.006,
+    "damage_enabled": true,
+    "compression_stiffness_mpa_per_mm": 5000.0,
+    "compression_regularization_mm": 6e-05,
+    "compression_kinematics": "finite_faces"
+  },
+  "mesh": {
+    "local_spacing_mm": 0.75,
+    "surface_spacing_mm": 0.2,
+    "coarse_spacing_mm": 1.5,
+    "seam_spacing_mm": 0.1,
+    "nose_facets": 24
+  },
+  "minimum_increment_mm": 0.00015625,
+  "preparation_clearance_mm": 0.02,
+  "closure_regularization": "finite_face_bounded_compression_penalty",
+  "ccd_tolerance_mm": 1e-09,
+  "ptc_model_backtracks": 20,
+  "ptc_residual_guard": false,
+  "ptc_shift_policy": "backtrack_aware"
+}

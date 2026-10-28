@@ -67,7 +67,7 @@ def build_matrix(*, gap_mm, normal_stiffness_mpa_per_mm, compression_stiffness_m
                  preparation_clearance_mm=.02, compression_regularization='gap_bounded',
                  local_spacing_mm=.75, coarse_spacing_mm=1.5, fine_halfwidth_mm=.2,
                  nose_facets=24, angle_deg=0., ptc_model_backtracks=12,
-                 ptc_residual_guard=False, ptc_shift_policy='residual_ratio'):
+                 ptc_residual_guard=False, ptc_shift_policy='residual_ratio', front_diagnostic=False):
     """Same physics/base mesh within each pair; only surface spacing across pairs."""
     for name, value in dict(gap=gap_mm, Kn=normal_stiffness_mpa_per_mm,
             Kc=compression_stiffness_mpa_per_mm, dhat=dhat_mm, ccd=ccd_tolerance_mm,
@@ -75,8 +75,11 @@ def build_matrix(*, gap_mm, normal_stiffness_mpa_per_mm, compression_stiffness_m
             preparation=preparation_clearance_mm, local=local_spacing_mm,
             coarse=coarse_spacing_mm, halfwidth=fine_halfwidth_mm).items():
         _positive(value, name)
-    if not 0 < target_mm <= .05 or not .000625 <= increment_mm <= .05:
-        raise ValueError('This pre-cut tool allows target <= .05 mm and increment [.000625,.05] mm')
+    if type(front_diagnostic) is not bool:
+        raise ValueError('front_diagnostic must be boolean')
+    maximum_depth = .5 if front_diagnostic else .05
+    if not 0 < target_mm <= maximum_depth or not .000625 <= increment_mm <= .05:
+        raise ValueError('Pre-cut target <= .05 mm; explicit front diagnostic <= .5 mm; increment [.000625,.05] mm')
     if minimum_increment_mm > increment_mm or gap_mm <= 2*dhat_mm:
         raise ValueError('Require minimum <= increment and gap > 2*dhat')
     if ccd_tolerance_mm > min(1e-6, gap_mm/10, dhat_mm/10):
@@ -116,7 +119,8 @@ def build_matrix(*, gap_mm, normal_stiffness_mpa_per_mm, compression_stiffness_m
         config = copy.deepcopy(base)
         config['mesh']['surface_spacing_mm'] = surface
         for model in ('intact', 'network'):
-            result.append(dict(id=f'mesh{i}_{model}', model=model, configuration=copy.deepcopy(config)))
+            result.append(dict(id=f'mesh{i}_{model}', model=model, configuration=copy.deepcopy(config),
+                front_diagnostic=front_diagnostic))
     return result
 
 
@@ -216,6 +220,13 @@ def describe_problem(problem):
 
 
 def targets(config):
+    if 'diagnostic_depths_mm' in config:
+        depth = np.asarray(config['diagnostic_depths_mm'], float)
+        if (depth.ndim != 1 or len(depth) < 2 or len(depth) > 10000
+                or not np.isfinite(depth).all() or depth[0] != 0.
+                or np.any(np.diff(depth) <= 0.) or depth[-1] != config['target_mm']):
+            raise ValueError('Explicit diagnostic schedule must increase from zero to the exact target')
+        return depth
     return np.r_[0., np.arange(config['increment_mm'], config['target_mm']-1e-12,
                               config['increment_mm']), config['target_mm']]
 
@@ -383,8 +394,12 @@ def run_case(spec, output, *, seconds=120.):
     (output/'states').mkdir()
     write_json(output/'config.json', spec['configuration'])
     config = read_config(output/'config.json')
-    if config['target_mm'] > .05 or config['cohesive']['damage_enabled'] is not False:
+    front_diagnostic = spec.get('front_diagnostic', False)
+    if type(front_diagnostic) is not bool:
+        raise ValueError('front_diagnostic must be boolean')
+    if config['target_mm'] > (.5 if front_diagnostic else .05) or config['cohesive']['damage_enabled'] is not False:
         raise ValueError('Small-depth damage-disabled compliance scope required')
+    planned_depths = targets(config)
     if not np.isclose(BASELINE['force_tolerance_n'], FORCE_TOLERANCE_N, rtol=0, atol=0):
         raise ValueError('Native force tolerance differs from declared qualification')
     source = numerical_hashes()
@@ -419,7 +434,7 @@ def run_case(spec, output, *, seconds=120.):
             def reject(event):
                 report['rejected_load_attempts'].append(event)
                 write_json(output/'result.json', report)
-            for depth in targets(config):
+            for depth in planned_depths:
                 for x, record in adaptive_load_steps(problem, x, old, float(depth),
                         started+seconds-reserve, config['minimum_increment_mm'], reject):
                     old = float(record['depth_mm'])
@@ -618,7 +633,9 @@ def run(output, specs, *, seconds=120.):
         source_sha256=source, cases=[], comparisons=[], per_case_budget_s=seconds,
         hard_worker_allowance_s=10., nominal_total_case_budget_s=len(specs)*(seconds+10.),
         experimental_inputs_used=[], no_experimental_force_fitting=True,
-        scope='actual-blade damage-disabled small-depth mesh/compliance control',
+        scope=('actual-blade damage-disabled front diagnostic; no claim that the experiment is intact'
+               if any(s.get('front_diagnostic') for s in specs) else
+               'actual-blade damage-disabled small-depth mesh/compliance control'),
         complete_cutting_qualified=False, mesh_convergence_proven=False)
     write_json(output/'manifest.json', dict(cases=specs, seconds=seconds, source_sha256=source))
     for spec in specs:
@@ -698,6 +715,7 @@ def main(argv=None):
     parser.add_argument('--ptc-residual-guard', action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument('--ptc-shift-policy', choices=('residual_ratio', 'backtrack_aware'), default='residual_ratio')
     parser.add_argument('--prepare-only', action='store_true', help='Write manifest only; do not construct or load FE')
+    parser.add_argument('--front-diagnostic', action='store_true', help='Explicit damage-disabled diagnostic through <= .5 mm, not experimental intact qualification')
     args = parser.parse_args(argv)
     _positive(args.seconds, 'per-case budget', 3600.)
     if args.case_json:

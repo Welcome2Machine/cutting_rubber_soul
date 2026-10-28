@@ -81,7 +81,7 @@ def segment_distance(a, b, c, d):
 
 
 def pairing_metrics(positions, segments, gaps, areas, slips, history, law, dhat,
-                    *, traction_tolerance_mpa=1e-12):
+                    *, traction_tolerance_mpa=1e-12, reference_closure_distances=None):
     """Evaluate saved geometry; never advance histories or solve a load increment."""
     x, seg = np.asarray(positions, float), np.asarray(segments)
     gaps, areas, slips = np.asarray(gaps), np.asarray(areas), np.asarray(slips)
@@ -95,7 +95,8 @@ def pairing_metrics(positions, segments, gaps, areas, slips, history, law, dhat,
         raise ValueError('Two accepted Gauss histories per segment required')
     if not np.isfinite(dhat) or dhat <= 0. or not np.isfinite(traction_tolerance_mpa) or traction_tolerance_mpa < 0.:
         raise ValueError('Positive dhat and nonnegative traction tolerance required')
-    q = interface_response(x, seg, gaps, areas, h, law, tangent=False, reference_slips=slips)
+    q = interface_response(x, seg, gaps, areas, h, law, tangent=False, reference_slips=slips,
+                           reference_closure_distances=reference_closure_distances)
     history_consistent = bool(np.allclose(q['history'], h, rtol=1e-10, atol=1e-12))
     damage = law.history_response(h)['damage']
     full = np.all(damage >= 1.-1e-10, axis=1)
@@ -106,7 +107,9 @@ def pairing_metrics(positions, segments, gaps, areas, slips, history, law, dhat,
         local_segments = np.arange(len(ids)*4).reshape(-1, 4)
         local_q = interface_response(local_x.reshape(-1, 2), local_segments,
             np.asarray(gaps)[ids], np.asarray(areas)[ids], h[ids], law,
-            tangent=False, reference_slips=np.asarray(slips)[ids])
+            tangent=False, reference_slips=np.asarray(slips)[ids],
+            reference_closure_distances=(None if reference_closure_distances is None else
+                                         np.asarray(reference_closure_distances)[ids]))
         local_g = local_q['compression_gradient'].reshape(-1, 4, 2)
         for j, interface_id in enumerate(ids):
             xx, gg = local_x[j], local_g[j]
@@ -122,6 +125,10 @@ def pairing_metrics(positions, segments, gaps, areas, slips, history, law, dhat,
             scale = max(1., float(np.max(np.abs(xx))), float(mean_length))
             geometry_tol = 128*np.finfo(float).eps*scale
             tc = local_q['compression_traction'][j]
+            if 'finite_face_closure' in local_q:
+                tc = local_q['finite_face_closure']['traction'][j].ravel()
+            support = float(np.max(gaps[interface_id])) if reference_closure_distances is None else float(
+                np.max(reference_closure_distances[interface_id]))
             active = bool(np.any(np.abs(tc) > traction_tolerance_mpa))
             forces = -gg
             moments = np.array([np.sum(cross(left-left.mean(axis=0), forces[[0, 2]])),
@@ -130,6 +137,8 @@ def pairing_metrics(positions, segments, gaps, areas, slips, history, law, dhat,
                 finite_face_distance_mm=distance, geometry_tolerance_mm=geometry_tol,
                 geometrically_disjoint=bool(distance > geometry_tol),
                 outside_ipc_activation_distance=bool(distance > dhat+geometry_tol),
+                outside_virtual_closure_support=bool(distance > support+geometry_tol),
+                virtual_closure_support_mm=support,
                 mean_face_length_mm=float(mean_length), mean_director_length_mm=float(np.linalg.norm(mean)),
                 centroid_tangential_offset_mm=offset, tangential_offset_over_mean_length=abs(offset)/float(mean_length),
                 finite_face_projected_tangential_gap_mm=projected_gap,
@@ -144,12 +153,14 @@ def pairing_metrics(positions, segments, gaps, areas, slips, history, law, dhat,
                 total_internal_moment_about_pair_centroid_n_mm=float(np.sum(cross(xx-xx.mean(axis=0), forces))),
                 compression_stored_energy_n_mm=float(.5*areas[interface_id]*np.sum(local_q['compression_stored'][j]))))
     remote = [r for r in records if r['outside_ipc_activation_distance'] and r['compression_active']]
+    unsupported = [r for r in records if r['outside_virtual_closure_support'] and r['compression_active']]
     return dict(history_consistent_with_saved_geometry=history_consistent,
         candidate_interfaces=len(seg), fully_failed_interfaces=len(records),
         partially_failed_interfaces=int(np.count_nonzero(np.any(damage >= 1.-1e-10, axis=1)&~full)),
         fully_failed_compression_active_pairs=sum(r['compression_active'] for r in records),
         geometrically_disjoint_compression_active_pairs=sum(r['geometrically_disjoint'] and r['compression_active'] for r in records),
         outside_ipc_activation_compression_active_pairs=len(remote),
+        outside_virtual_closure_support_active_pairs=len(unsupported),
         maximum_remote_compression_traction_mpa=max((max(map(abs, r['compression_traction_mpa'])) for r in remote), default=0.),
         maximum_remote_local_gradient_norm_n=max((r['compression_gradient_norm_n'] for r in remote), default=0.),
         maximum_remote_face_couple_norm_n_mm=max((r['face_centroid_couple_norm_n_mm'] for r in remote), default=0.),
@@ -210,6 +221,15 @@ def audit_result(result, *, source_root=PROJECT, input_config=None, traction_tol
             if not required <= set(saved.files):
                 raise ValueError(f'State {i}: missing saved fields {sorted(required-set(saved.files))}')
             positions, segments = saved['positions'], saved['interface_segments']
+            closure_reference = None
+            if law.compression_kinematics == 'finite_faces':
+                if 'reference_closure_distances_mm' not in saved:
+                    raise ValueError('Finite-face checkpoint missing explicit closure reference')
+                from prototype.cohesive_closure import finite_face_geometry
+                closure_reference = saved['reference_closure_distances_mm']
+                reconstructed = finite_face_geometry(saved['reference_xy'][segments])[0]
+                if not np.array_equal(closure_reference, reconstructed):
+                    reasons.append('finite_face_closure_reference_mismatch')
             gaps, areas, slips = saved['reference_interface_gaps_mm'], saved['reference_interface_areas_mm2'], saved['reference_interface_slips_mm']
             history, old = saved['cohesive_maximum'], saved['previous_cohesive_maximum']
             if int(saved['body_nodes']) <= 0 or np.any(segments >= int(saved['body_nodes'])):
@@ -229,7 +249,8 @@ def audit_result(result, *, source_root=PROJECT, input_config=None, traction_tol
                 chain_valid = False
             previous = history.copy()
             metrics = pairing_metrics(positions, segments, gaps, areas, slips, history, law,
-                config['dhat_mm'], traction_tolerance_mpa=traction_tolerance_mpa)
+                config['dhat_mm'], traction_tolerance_mpa=traction_tolerance_mpa,
+                reference_closure_distances=closure_reference)
             if not metrics['history_consistent_with_saved_geometry']:
                 reasons.append('saved_history_behind_geometry')
             if not np.isclose(float(saved['depth_mm']), step.get('depth_mm', np.nan), rtol=0., atol=1e-12):
@@ -285,6 +306,7 @@ def audit_result(result, *, source_root=PROJECT, input_config=None, traction_tol
         maximum_remote_local_gradient_norm_n=max((m['maximum_remote_local_gradient_norm_n'] for m in available), default=0.),
         maximum_remote_face_couple_norm_n_mm=max((m['maximum_remote_face_couple_norm_n_mm'] for m in available), default=0.),
         maximum_outside_ipc_activation_compression_active_pairs=max((m['outside_ipc_activation_compression_active_pairs'] for m in available), default=0),
+        maximum_outside_virtual_closure_support_active_pairs=max((m['outside_virtual_closure_support_active_pairs'] for m in available), default=0),
         scope_notes=[
             'Only both Gauss points with damage >= 1-1e-10 identify a fully failed interface; a single failed point is not promoted.',
             'Outside IPC activation refers only to the distance between these two finite paired faces, not every other surface or the blade.',

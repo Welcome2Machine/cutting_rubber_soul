@@ -28,6 +28,7 @@ class MixedModeLaw:
     damage_enabled: bool = True
     compression_stiffness_mpa_per_mm: float = 0.
     compression_regularization_mm: float | None = None
+    compression_kinematics: str = 'projected_gap'
 
     def __post_init__(self):
         parameters = [self.normal_strength_mpa, self.shear_strength_mpa,
@@ -45,6 +46,10 @@ class MixedModeLaw:
                 or self.compression_stiffness_mpa_per_mm < 0.):
             raise ValueError('Finite nonnegative compression stiffness required')
         ell = self.compression_regularization_mm
+        if self.compression_kinematics not in ('projected_gap', 'finite_faces'):
+            raise ValueError('Choose projected_gap or finite_faces compression kinematics')
+        if self.compression_kinematics == 'finite_faces' and (ell is None or self.compression_stiffness_mpa_per_mm <= 0.):
+            raise ValueError('Finite-face closure requires positive bounded compression')
         if ell is not None:
             if (isinstance(ell, (bool, np.bool_)) or not np.isfinite(ell) or ell <= 0.
                     or not np.isfinite(self.compression_stiffness_mpa_per_mm*ell)):
@@ -65,7 +70,11 @@ class MixedModeLaw:
         return 2 * self.toughness_n_per_mm / self.normal_strength_mpa
 
     def to_dict(self):
-        return dict(asdict(self),
+        parameters = asdict(self)
+        # Preserve exact legacy checkpoint identity for the unchanged branch.
+        if self.compression_kinematics == 'projected_gap':
+            parameters.pop('compression_kinematics')
+        return dict(parameters,
                     shear_stiffness_mpa_per_mm=self.shear_stiffness_mpa_per_mm,
                     peak_opening_mm=self.peak_opening_mm,
                     final_opening_mm=self.final_opening_mm,
@@ -95,7 +104,7 @@ class MixedModeLaw:
         """
         return self.response(maximum, np.zeros_like(maximum), maximum)
 
-    def response(self, opening_n, slip_s, previous_maximum):
+    def response(self, opening_n, slip_s, previous_maximum, *, include_compression=True):
         """Return a pure trial response; traction ordering is (normal, shear).
 
         ``incremental_potential`` is stored energy plus the increment of damage
@@ -124,7 +133,8 @@ class MixedModeLaw:
         w = np.stack((positive_normal, alpha*slip), axis=-1)
         damageable_traction = factor[..., None]*kn*w
         compression_opening = np.minimum(normal, 0.)
-        kc, ell = self.compression_stiffness_mpa_per_mm, self.compression_regularization_mm
+        kc = self.compression_stiffness_mpa_per_mm if include_compression else 0.
+        ell = self.compression_regularization_mm
         if ell is None:
             compression_traction = kc*compression_opening
             compression_tangent = np.full_like(normal, kc)
@@ -191,7 +201,7 @@ def _projection_geometry(x, weights, rotation):
 
 def interface_response(positions, segments, reference_gaps, reference_areas,
                        previous_maximum, law, *, tangent=True, matrix_size=None,
-                       reference_slips=None):
+                       reference_slips=None, reference_closure_distances=None):
     """Assemble two-point Gauss quadrature on [L0, R0, L1, R1] segments.
 
     Reference areas are segment length times reference specimen width.  Gaps
@@ -248,15 +258,32 @@ def interface_response(positions, segments, reference_gaps, reference_areas,
         jacobian[:, g, 0], jacobian[:, g, 1] = jun, jus
         curvature[:, g, 0], curvature[:, g, 1] = hun, hus
         directions[:, g] = t
-    q = law.response(opening, slip, old)
+    finite_faces = law.compression_kinematics == 'finite_faces'
+    q = law.response(opening, slip, old, include_compression=not finite_faces)
+    closure = None
+    if finite_faces:
+        from .cohesive_closure import finite_face_closure
+        closure = finite_face_closure(x[segments], reference_closure_distances, law)
+        q['compression_stored'] = closure['stored'].mean(axis=1)
+        q['stored'] += q['compression_stored']
+        q['incremental_potential'] += q['compression_stored']
+        q['finite_face_closure'] = closure
+        q['traction_semantics'] = 'traction/tangent are damageable projected components only; finite-face compression uses its own geometry jets'
     weights = areas[:, None]/2.
     local_gradient = np.einsum('ngai,nga,ng->ni', jacobian, q['traction'],
                                 np.broadcast_to(weights, (count, 2)))
+    if closure is not None:
+        local_gradient += areas[:, None]*closure['gradient']
     dofs = (2*segments[..., None]+np.arange(2)).reshape(count, 8)
     gradient = np.zeros(n)
     np.add.at(gradient, dofs.ravel(), local_gradient.ravel())
     local_compression_gradient = np.einsum('ngi,ng,ng->ni', jacobian[:, :, 0],
         q['compression_traction'], np.broadcast_to(weights, (count, 2)))
+    if closure is not None:
+        local_compression_gradient = areas[:, None]*closure['gradient']
+        # Retain a two-Gauss diagnostic, explicitly an average over both sides.
+        # The complete quadrature tractions remain in finite_face_closure.
+        q['compression_traction'] = closure['traction'].mean(axis=1)
     compression_gradient = np.zeros(n)
     np.add.at(compression_gradient, dofs.ravel(), local_compression_gradient.ravel())
     q.update(length=length, tangent_direction=directions,
@@ -275,6 +302,8 @@ def interface_response(positions, segments, reference_gaps, reference_areas,
                                   q['tangent'], jacobian)
         local_hessian += np.einsum('nga,ngaij->ngij', q['traction'], curvature)
         local_hessian = np.sum(weights[..., None, None]*local_hessian, axis=1)
+        if closure is not None:
+            local_hessian += areas[:, None, None]*closure['hessian']
         # Roundoff symmetrization leaves the exact constitutive/geometric
         # tangent intact; only the separate globalization metric is projected.
         local_hessian = .5*(local_hessian+local_hessian.swapaxes(-1, -2))

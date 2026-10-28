@@ -13,9 +13,42 @@ from prototype.cohesive_mixed import MixedModeLaw
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_finite_face_closure_is_explicit_and_cannot_alias_projected_mode(tmp_path):
+    config = json.loads((ROOT/'configs/fracture_network_regularized.json').read_text())
+    config['closure_regularization'] = 'finite_face_bounded_compression_penalty'
+    path = tmp_path/'finite.json'
+    path.write_text(json.dumps(config))
+    with pytest.raises(ValueError, match='kinematics'):
+        read_config(path)
+    config['cohesive']['compression_kinematics'] = 'finite_faces'
+    path.write_text(json.dumps(config))
+    assert read_config(path)['cohesive']['compression_kinematics'] == 'finite_faces'
+    config['closure_regularization'] = 'bounded_reversible_compression_penalty'
+    path.write_text(json.dumps(config))
+    with pytest.raises(ValueError, match='kinematics'):
+        read_config(path)
+
+
+def test_finite_face_checkpoint_binds_reference_geometry_before_restore():
+    from prototype.cohesive_cut import make_cohesive_problem
+    from prototype.cohesive_closure import finite_face_geometry
+    config = json.loads((ROOT/'configs/fracture_network_regularized.json').read_text())
+    config['cohesive']['compression_kinematics'] = 'finite_faces'
+    config['closure_regularization'] = 'finite_face_bounded_compression_penalty'
+    problem = make_cohesive_problem(config)
+    reference = finite_face_geometry(problem.rest[problem.interface_segments])[0]
+    np.testing.assert_array_equal(problem.interface_closure_distances, reference)
+    state = problem.checkpoint_data()
+    np.testing.assert_array_equal(state['reference_closure_distances_mm'], reference)
+    assert np.linalg.norm(problem.cohesive_response(problem.rest)['gradient']) < 1e-8
+    state['reference_closure_distances_mm'] = reference*1.01
+    with pytest.raises(RuntimeError, match='reference_closure_distances_mm'):
+        problem.audit_state(state, {})
+
+
 def test_reviewed_configurations_and_legacy_remain_distinct():
     for name in ['fracture_demo.json', 'fracture_mixed.json', 'fracture_network.json',
-                 'fracture_network_regularized.json']:
+                 'fracture_network_regularized.json', 'fracture_network_finite_faces.json']:
         config = read_config(ROOT/'configs'/name)
         assert config['target_mm'] <= 2
     assert read_config(ROOT/'configs/fracture_network.json')['fracture_topology'] == 'edge_network'

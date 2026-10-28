@@ -15,6 +15,7 @@
 | `ipc_viscoelastic.py` | 黏弹性增量问题、材料历史及耗散管理 |
 | `cohesive.py`、`cohesive_cut.py` | 未标定的径向双线性界面、两侧独立网格、完整裂面接触和共同历史提交；限预设 0° 路径 |
 | `cohesive_mixed.py` | 共转四节点、两Gauss点的混合模式强度/共同Gc势；不可逆损伤、解析残量/切线，非比例加载能量闭合 |
+| `cohesive_closure.py` | 可选双侧有限线段距离闭合势的解析几何导数；修正远距滑开配对仍承压的缺陷，仍需独立切割/间隙/能量验证 |
 | `cohesive_network.py` | 所有内部网格边的候选界面拓扑；独立三角形、真实IPC面、参考间隙/滑移、底面身份和面积损失 |
 | `material_case.py` | 完整体加载流程、检查点、独立物理审查与 CSV 输出 |
 | `material_performance.py` | 可选材料分块及线性后端配置；单独记录性能策略签名 |
