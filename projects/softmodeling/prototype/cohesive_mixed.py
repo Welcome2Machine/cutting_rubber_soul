@@ -3,7 +3,11 @@
 The scalar damage potential uses one toughness for every separation direction.
 Normal and shear strengths differ through an anisotropic elastic metric, with
 Ks = Kn (Ts/Tn)**2.  This is an explicit material restriction, not a general
-mode-dependent toughness law.  Compression is carried by the host's IPC.
+mode-dependent toughness law. An optional nondegrading, reversible compression
+branch acts relative to the stress-free reference gap. This is an explicit
+virtual-gap closure penalty; the host's physical IPC contact remains separate.
+An optional length regularizes this branch to a globally bounded constitutive
+traction. It is a numerical pressure cap, not a material or friction error bound.
 
 The four-node interface rotates with its current mean tangent.  Its analytic
 gradient and Hessian include derivatives of that director.  Trial responses do
@@ -22,6 +26,8 @@ class MixedModeLaw:
     normal_stiffness_mpa_per_mm: float = 50.
     toughness_n_per_mm: float = .006
     damage_enabled: bool = True
+    compression_stiffness_mpa_per_mm: float = 0.
+    compression_regularization_mm: float | None = None
 
     def __post_init__(self):
         parameters = [self.normal_strength_mpa, self.shear_strength_mpa,
@@ -34,6 +40,15 @@ class MixedModeLaw:
             raise ValueError('Require delta_f=2 Gc/Tn > delta_0=Tn/Kn')
         if not np.isfinite(self.shear_stiffness_mpa_per_mm):
             raise ValueError('Derived shear stiffness must be finite')
+        if (isinstance(self.compression_stiffness_mpa_per_mm, (bool, np.bool_))
+                or not np.isfinite(self.compression_stiffness_mpa_per_mm)
+                or self.compression_stiffness_mpa_per_mm < 0.):
+            raise ValueError('Finite nonnegative compression stiffness required')
+        ell = self.compression_regularization_mm
+        if ell is not None:
+            if (isinstance(ell, (bool, np.bool_)) or not np.isfinite(ell) or ell <= 0.
+                    or not np.isfinite(self.compression_stiffness_mpa_per_mm*ell)):
+                raise ValueError('Positive finite compression regularization and finite pressure cap required')
 
     @property
     def shear_stiffness_mpa_per_mm(self):
@@ -55,7 +70,12 @@ class MixedModeLaw:
                     peak_opening_mm=self.peak_opening_mm,
                     final_opening_mm=self.final_opening_mm,
                     mode_toughness='shared_reference_area_toughness',
-                    shear_stiffness_rule='Kn*(Ts/Tn)^2')
+                    shear_stiffness_rule='Kn*(Ts/Tn)^2',
+                    compression_model=('linear' if self.compression_regularization_mm is None
+                                       else 'bounded_reversible_pseudo_huber'),
+                    compression_traction_cap_mpa=(None if self.compression_regularization_mm is None else
+                        self.compression_stiffness_mpa_per_mm*self.compression_regularization_mm),
+                    compression_role='nondegrading reversible virtual-gap closure; physical IPC remains separate')
 
     def _dissipation(self, maximum):
         """Exact cumulative damage dissipation per reference area, in N/mm."""
@@ -102,7 +122,25 @@ class MixedModeLaw:
             damage[history >= df] = 1.
         factor = 1.-damage
         w = np.stack((positive_normal, alpha*slip), axis=-1)
-        traction = factor[..., None]*kn*w
+        damageable_traction = factor[..., None]*kn*w
+        compression_opening = np.minimum(normal, 0.)
+        kc, ell = self.compression_stiffness_mpa_per_mm, self.compression_regularization_mm
+        if ell is None:
+            compression_traction = kc*compression_opening
+            compression_tangent = np.full_like(normal, kc)
+            compression_stored = .5*kc*compression_opening**2
+        else:
+            # hypot avoids (u/ell)**2 overflow. Rationalizing hypot-ell avoids
+            # catastrophic cancellation of the quadratic near-zero energy.
+            radius = np.hypot(ell, compression_opening)
+            ratio = ell/radius
+            cap = kc*ell
+            compression_traction = cap*(compression_opening/radius)
+            compression_tangent = kc*ratio**3
+            absolute_opening = -compression_opening
+            compression_stored = cap*(absolute_opening*(absolute_opening/radius)/(1.+ratio))
+        traction = damageable_traction.copy()
+        traction[..., 0] += compression_traction
         tangent = np.zeros(normal.shape+(2, 2))
         tangent[..., 0, 0] = factor*kn*(normal > 0.)
         tangent[..., 1, 1] = factor*ks
@@ -110,7 +148,9 @@ class MixedModeLaw:
         coefficient = np.zeros_like(history)
         coefficient[loading] = kn*df*d0/((df-d0)*effective[loading]**3)
         tangent -= coefficient[..., None, None]*w[..., :, None]*w[..., None, :]
-        stored = .5*factor*kn*effective**2
+        tangent[..., 0, 0] += compression_tangent*(normal <= 0.)
+        damageable_stored = .5*factor*kn*effective**2
+        stored = damageable_stored+compression_stored
         dissipated = self._dissipation(history)
         increment = dissipated-self._dissipation(old)
         return dict(traction=traction, tangent=tangent, history=history,
@@ -118,6 +158,10 @@ class MixedModeLaw:
                     dissipation_increment=increment, opening=normal, slip=slip,
                     effective_opening=effective,
                     initiation_ratio=effective/d0,
+                    damageable_traction=damageable_traction,
+                    compression_traction=compression_traction,
+                    damageable_stored=damageable_stored,
+                    compression_stored=compression_stored,
                     incremental_potential=stored+increment)
 
 
@@ -211,10 +255,18 @@ def interface_response(positions, segments, reference_gaps, reference_areas,
     dofs = (2*segments[..., None]+np.arange(2)).reshape(count, 8)
     gradient = np.zeros(n)
     np.add.at(gradient, dofs.ravel(), local_gradient.ravel())
+    local_compression_gradient = np.einsum('ngi,ng,ng->ni', jacobian[:, :, 0],
+        q['compression_traction'], np.broadcast_to(weights, (count, 2)))
+    compression_gradient = np.zeros(n)
+    np.add.at(compression_gradient, dofs.ravel(), local_compression_gradient.ravel())
     q.update(length=length, tangent_direction=directions,
              normal_direction=directions@normal_rotation.T,
              gradient=gradient,
+             compression_gradient=compression_gradient,
+             damageable_gradient=gradient-compression_gradient,
              stored_energy_n_mm=float(np.sum(weights*q['stored'])),
+             compression_stored_energy_n_mm=float(np.sum(weights*q['compression_stored'])),
+             damageable_stored_energy_n_mm=float(np.sum(weights*q['damageable_stored'])),
              fracture_dissipation_n_mm=float(np.sum(weights*q['dissipated'])),
              fracture_dissipation_increment_n_mm=float(np.sum(weights*q['dissipation_increment'])),
              incremental_potential_n_mm=float(np.sum(weights*q['incremental_potential'])))

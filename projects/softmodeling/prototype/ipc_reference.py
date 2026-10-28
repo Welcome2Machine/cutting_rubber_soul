@@ -57,6 +57,20 @@ def residual_merit_decrease(norm, trial_norm, directional_slope, alpha):
             and trial_norm**2 <= norm**2 + 2e-4*alpha*directional_slope)
 
 
+def residual_armijo_decrease(norm, trial_norm, directional_slope, alpha):
+    """Strict fresh-residual Armijo guard without a fixed percentage drop.
+
+    Small CCD-safe steps may decrease less than ten percent. Requiring an
+    actual representable decrease also prevents roundoff from accepting an
+    unchanged merit when the Armijo right-hand side rounds back to norm**2.
+    This is an iteration safeguard, never a replacement equilibrium test.
+    """
+    return (all(np.isfinite(v) for v in (norm, trial_norm, directional_slope, alpha))
+            and norm > 0 and 0 <= trial_norm < norm and alpha > 0
+            and directional_slope < 0
+            and trial_norm**2 <= norm**2 + 2e-4*alpha*directional_slope)
+
+
 def toolkit():
     try:
         module = importlib.import_module("ipctk")
@@ -412,6 +426,16 @@ class IPCProblem:
         initial_shift = .1
         shift = initial_shift
         best_norm, last_progress = np.inf, 0
+        model_backtracks = getattr(self, 'ptc_model_backtracks', 0)
+        residual_guard = getattr(self, 'ptc_residual_guard', False)
+        shift_policy = getattr(self, 'ptc_shift_policy', 'residual_ratio')
+        self.ptc_shift_summary = dict(policy=shift_policy, accepted_directions=0,
+            backtrack_increases=0, last_shift_used=None, last_shift_next=None,
+            last_residual_ratio_next_shift=None, last_model_halvings=None)
+        if model_backtracks:
+            self.ptc_model_backtrack_summary = dict(max_backtracks=model_backtracks,
+                trial_evaluations=0, shortened_accepted_directions=0,
+                maximum_halvings_used=0, exhausted_searches=0)
         linear = None
         if self.linear_solver == 'reused-lu':
             from .linear_solve import ReusedLUSolver
@@ -482,9 +506,97 @@ class IPCProblem:
                                 and residual_merit_decrease(norm, nt, float(r@linear_action), alpha))
                 accepted = (np.isfinite(nt) and not np.array_equal(trial, x)
                             and (model_accept or merit_accept))
+                if residual_guard:
+                    guard_slope = float(r@linear_action)
+                    guard_accept = (nt <= BASELINE['force_tolerance_n'] or
+                        residual_armijo_decrease(norm, nt, guard_slope, alpha))
+                    accepted = accepted and guard_accept
+                if model_backtracks:
+                    original_alpha = alpha
+                    halvings = 0
+
+                    def record_model_trial(index, status):
+                        print('PTC_MODEL_BACKTRACK '+json.dumps(dict(
+                            depth_mm=float(depth), iteration=iteration, retry=retry,
+                            backtrack=index, alpha=float(alpha),
+                            ccd_j_safe_alpha=float(geometric_fraction),
+                            initial_capped_alpha=float(original_alpha),
+                            residual_n=norm, trial_residual_n=nt,
+                            model_error_n=error, model_limit_n=.25*max(norm, nt),
+                            metric_shift=shift, status=status,
+                            criterion=('fresh_residual_merit' if merit_accept else 'model_error')
+                                if accepted else 'rejected',
+                            **(dict(residual_guard_passed=bool(guard_accept),
+                                    residual_merit_slope=guard_slope,
+                                    residual_merit_limit_n2=norm**2+2e-4*alpha*guard_slope)
+                               if residual_guard else {})), sort_keys=True), flush=True)
+
+                    record_model_trial(0, 'accepted' if accepted else 'rejected')
+                    if not accepted:
+                        # This searches only a prefix of the exact same CCD/J
+                        # safe ray; it changes neither the physical load/time nor
+                        # the Jacobian, metric or final force-balance criterion.
+                        for halvings in range(1, model_backtracks+1):
+                            if time.monotonic() > deadline:
+                                raise TimeoutError('IPC friction pseudo-transient wall budget')
+                            alpha *= .5
+                            trial = x+alpha*direction
+                            if np.array_equal(trial, x):
+                                gt = r.copy();nt = norm
+                                error = float(np.linalg.norm(alpha*linear_action))
+                                model_accept = merit_accept = accepted = False
+                                if residual_guard:
+                                    guard_accept = False
+                                record_model_trial(halvings, 'no_representable_update')
+                                break
+                            phase_start = time.perf_counter()
+                            trial_lag = self.lag(trial)
+                            self._record_phase('friction_build', phase_start)
+                            gt = self.evaluate(trial, trial_lag, tangent=False)[1][self.free]
+                            self.ptc_model_backtrack_summary['trial_evaluations'] += 1
+                            nt = float(np.linalg.norm(gt))
+                            error = float(np.linalg.norm(gt-r-alpha*linear_action))
+                            model_accept = error <= .25*max(norm, nt) or nt <= BASELINE['force_tolerance_n']
+                            merit_accept = (not model_accept and self.friction_globalization == 'residual-merit'
+                                and residual_merit_decrease(norm, nt, float(r@linear_action), alpha))
+                            accepted = np.isfinite(nt) and (model_accept or merit_accept)
+                            if residual_guard:
+                                guard_accept = (nt <= BASELINE['force_tolerance_n'] or
+                                    residual_armijo_decrease(norm, nt, guard_slope, alpha))
+                                accepted = accepted and guard_accept
+                            record_model_trial(halvings, 'accepted' if accepted else 'rejected')
+                            if accepted:
+                                break
+                        self.ptc_model_backtrack_summary['maximum_halvings_used'] = max(
+                            self.ptc_model_backtrack_summary['maximum_halvings_used'], halvings)
+                        if accepted:
+                            self.ptc_model_backtrack_summary['shortened_accepted_directions'] += 1
+                        else:
+                            self.ptc_model_backtrack_summary['exhausted_searches'] += 1
                 next_shift = ((max(initial_shift, shift) if merit_accept else
                     max(1e-10, min(1e6, shift*nt/max(norm, 1e-15)/1.2))) if accepted
                     else max(initial_shift, 2*shift))
+                residual_ratio_next_shift = next_shift
+                if (shift_policy == 'backtrack_aware' and accepted
+                        and model_backtracks and halvings > 0):
+                    # Extra force-model backtracking diagnoses an inadequate
+                    # local direction. CCD/J clipping alone does not trigger
+                    # this heuristic; no physical damping/history is added.
+                    next_shift = max(next_shift,
+                        min(1e6, max(initial_shift, shift*2.**halvings)))
+                if accepted:
+                    self.ptc_shift_summary['accepted_directions'] += 1
+                    self.ptc_shift_summary['backtrack_increases'] += int(next_shift > residual_ratio_next_shift)
+                    self.ptc_shift_summary.update(last_shift_used=float(shift),
+                        last_shift_next=float(next_shift),
+                        last_residual_ratio_next_shift=float(residual_ratio_next_shift),
+                        last_model_halvings=halvings if model_backtracks else 0)
+                    if shift_policy == 'backtrack_aware':
+                        print('PTC_SHIFT_POLICY '+json.dumps(dict(policy=shift_policy,
+                            depth_mm=float(depth), iteration=iteration, retry=retry,
+                            model_halvings=halvings, shift_used=float(shift),
+                            residual_ratio_next_shift=float(residual_ratio_next_shift),
+                            shift_next=float(next_shift)), sort_keys=True), flush=True)
                 if getattr(self, 'solver_diagnostics', False):
                     detail = dict(depth_mm=float(depth), iteration=iteration, retry=retry,
                         residual_n=norm, trial_residual_n=nt, residual_ratio=nt/norm,
@@ -498,6 +610,8 @@ class IPCProblem:
                         criterion=('fresh_residual_merit' if merit_accept else 'model_error')
                             if accepted else 'rejected',
                         linear_s=solve_seconds, trial_s=time.perf_counter()-trial_start,
+                        **(dict(model_backtracks_taken=halvings,
+                                alpha_before_model_backtracking=original_alpha) if model_backtracks else {}),
                         **getattr(self,'step_limits',{}))
                     self.ptc_state = dict(positions=x.copy(), direction=direction.copy(),
                         residual=r.copy(), trial_residual=gt.copy(), **detail)

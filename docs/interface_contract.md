@@ -86,6 +86,16 @@ flowchart LR
 
 新检查点的 `cohesive_maximum` 为 `[界面段数,2]`，与 `interface_segments` 四节点、逐Gauss参考法向间隙/切向偏置绑定；不能读作旧径向节点历史。完整失效段要求两个Gauss点均完全失效，事件名为 `first_fully_separated_segment`；保存段/积分点编号和参考/当前位置。网络连通长度是与原外表面连通的失效原边总长，可含分叉；它不是竖直裂深。旧 `*_bonds` 计数字段在混合分支仅作段计数兼容别名，明确标注。全过程能量余项及数值路径审查各有资格，2%余项诊断线不是模型通过网格收敛或实验验证的声明。
 
+`softcut-cohesive/3` 新增显式有限间隙闭合正则化：`closure_regularization=reversible_compression_penalty`、正的 `cohesive.compression_stiffness_mpa_per_mm`、固定 `preparation_clearance_mm`、`minimum_increment_mm` 及 `ccd_tolerance_mm`。后者不超过原生默认1e-6 mm，且不超过间隙及dhat的十分之一；只收紧完整CCD精度。准备净空是竖直行程定义，所有物理时间仍按实际行程/速度推进。旧版本不隐式启用压缩项或自定义最小步。网络可显式选择 `safe_affine_blend`，在刀具精确达到目标位置的候选中，以完整CCD/J、边界和新鲜残量选择安全的材料初猜；原affine重试继续保留。
+
+新输出的 `compression_stored_energy_n_mm` 与 `damageable_stored_energy_n_mm` 加和等于原 `cohesive_stored_energy_n_mm`；能量账使用总量一次，不把可恢复压缩功计入Gc。压缩从参考正间隙开始且完全损伤后仍保留，与IPC法向力相加；现摩擦仅基于IPC法向载荷。`compression_internal_force_norm_n` 是全体节点内力范数，不是刀具反力或法向载荷份额。`regularization_scales` 中尺度比只作诊断，不能代替柔度、网格及间隙验证。缺失的载荷分担保持null。
+
+网络可显式设 `ptc_model_backtracks`（整数0–30，默认0）。它只在原PTC候选未通过局部力模型检查时，沿已经通过CCD/J的同一方向减半数值步长，再以新鲜接触/摩擦残量检验原判据。失败后才回到原增大shift流程；18次方向重试、500次迭代、墙钟、物理时间与最终残量均保持。该数值缩步不是新的物理加载态，不提交材料或损伤历史。
+
+版本3的 `bounded_reversible_compression_penalty` 模式额外强制 `cohesive.compression_regularization_mm=reference_gap_mm`；该派生长度不能单独拟合。它保留近零Kc切线，同时将配对本构法向压力限制在Kc乘该长度以内，防止已经远滑开的失效配对产生无界虚拟压力。旧线性模式要求该字段缺失或null。gap控制族仅允许这一强制派生字段随gap联动，仍固定dhat、CCD和其他物性。实际牵引上界不等于总接触力或摩擦误差界。
+
+`tools.verify_network_compliance` 是独立无损伤弹性patch验证，不是刀切。`tools.verify_network_sensitivity` 的 `template` 仅生成清单、`compare` 只读保存证据、`runstudy` 才按清单逐例有界求解。控制族仅允许声明的网格/间隙/刚度/时间等轴变化；材料、强度、Gc、摩擦、准备净空等保持。未完成目标、缺审计、哈希不符或近零参考力一律保留inconclusive，不能靠裁短共同前缀认证完整行程。两两差异可用不代表收敛通过，能量资格也不由比较器自动升级。
+
 这些输出尚未作为 `softcut-result/1` 裂后观测适配器发布，不直接接入现有完整体—视频位移比较器。完整体导出器和起裂诊断入口均拒绝耦合损伤历史，资产列表也将其排除在完整体候选之外。后续必须明确裂面拓扑、材料点所在侧、失效点支持和裂后资格，才能建立跨模型的共同观测。
 
 ### 实验标签与对照
@@ -95,3 +105,9 @@ flowchart LR
 新增 `right_censored_observation` 表示观察窗口内未裂，使用 `censoring=right`、`lower_bound_mm`、`bound_relation=strictly_greater`、`depth_interval_mm=null`，不能进入 calibration。用户报告的57°重复试验截至2 mm未裂按 `observation_scope=condition` 保存，`trial_id=null`，具体次数/编号不补造；这是一条已接受的用户报告约束，独立图像/时钟核查状态另列。条件级比较必须显式指认 `condition_constraint_id` 与 `condition_id`；深度参考尚未注册时必须声明 `depth_reference_assumption`，结果保留条件性，不能冒充逐试次验证。输出 `contradicted/consistent/unresolved`。未触发路径另需 `qualified_no_event_history={depth_interval_mm:[start,end], continuous:true, from_initial_intact_state:true}`，沿用预测的同一深度参考；声明的连续合格无事件区间必须覆盖观察下限，不能只因末态深度足够就把晚开始片段或资格中断当未裂。事件区间按保守闭区间处理，`[2,2.01]` 对严格 `d_c>2` 仍为 unresolved。此接口只检验给定预测，不选取或反演阈值。
 
 模型公式、文献、运行状态与下一步验证见 [起裂与裂后实现说明](fracture_implementation.md)。
+
+版本3可选 `ptc_residual_guard` 为布尔值，默认false；true要求正的`ptc_model_backtracks`并仅用于全边网络。在原模型误差门之外叠加新鲜残差平方的Armijo下降门（c=1e-4），不含旧残差merit后备的10%固定下降要求；控制迭代过程，不替代最终1e-4 N验收。此严格策略仍可能停滞，必须报告实际验证，不自动认证完整切割。历史检查点绑定该开关。
+
+版本3的`mesh.fine_halfwidth_mm`为可选正有限值，省略保留原3 mm。它只设置已有graded网格刀尖细化区域的半宽，实际mesh/hash随几何保存；同一尺寸敏感性族需固定它，不能把外围改变隐藏为纯表面细化。准备净空、速度、材料时间、刀尖半径与刀鼻面片数仍单独固定。
+
+版本3可选 `ptc_shift_policy=residual_ratio|backtrack_aware`，默认前者；后者要求正`ptc_model_backtracks`并仅在网络启用。它读取已接受方向的额外模型回溯次数调整下一次PTC移位，几何初始截步本身不触发；独立于`ptc_residual_guard`。配置、接受记录和检查点绑定策略，不允许跨策略直接恢复。原物理方程、500次迭代与残量门槛不变。

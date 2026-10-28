@@ -171,6 +171,8 @@ def audit(p,out,report,*,destination=None,progress=None,deadline=None):
         total_dissipation+=record['material']['viscous_dissipation_increment_n_mm']
         np.testing.assert_allclose(float(state['cumulative_viscous_dissipation_n_mm']),
                                    total_dissipation,rtol=1e-10,atol=1e-10)
+        np.testing.assert_allclose(record['material']['cumulative_viscous_dissipation_n_mm'],
+                                   total_dissipation,rtol=1e-10,atol=1e-10)
         prior_x=state['positions'].copy();prior_metric=state['material_metric'].copy()
         prior_depth=record['depth_mm']
         row['checkpoint_sha256']=hashlib.sha256(path.read_bytes()).hexdigest();rows.append(row)

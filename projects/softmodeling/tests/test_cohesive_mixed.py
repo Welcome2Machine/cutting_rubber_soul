@@ -1,5 +1,6 @@
 """Mixed-mode potential and objective interface regression tests; no FE loading."""
 import unittest
+from dataclasses import replace
 
 import numpy as np
 
@@ -136,6 +137,156 @@ class MixedModeLawTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.law.response(0., 0., -.01)
 
+    def test_optional_compression_is_reversible_and_does_not_drive_damage(self):
+        law = replace(self.law, compression_stiffness_mpa_per_mm=80.)
+        opening = np.r_[np.linspace(0., -.01, 1001), np.linspace(-.01, 0., 1001)[1:]]
+        q = law.response(opening, 0., 0.)
+        np.testing.assert_array_equal(q['damage'], 0.)
+        np.testing.assert_array_equal(q['history'], 0.)
+        np.testing.assert_array_equal(q['dissipated'], 0.)
+        np.testing.assert_array_equal(q['damageable_stored'], 0.)
+        np.testing.assert_allclose(q['compression_traction'], 80.*opening)
+        np.testing.assert_allclose(q['compression_stored'], .5*80.*opening**2)
+        np.testing.assert_allclose(q['stored'], q['compression_stored'])
+        work = np.trapezoid(q['traction'][:, 0], opening)
+        self.assertAlmostEqual(work, 0., places=14)
+        self.assertEqual(law.response(0., 0., 0.)['tangent'][0, 0], 80.)
+
+    def test_compression_is_not_degraded_after_complete_cohesive_failure(self):
+        law = replace(self.law, compression_stiffness_mpa_per_mm=80.)
+        old = 2*law.final_opening_mm
+        q = law.response(-.002, .005, old)
+        np.testing.assert_array_equal(q['damageable_traction'], 0.)
+        self.assertEqual(q['damageable_stored'], 0.)
+        self.assertEqual(q['damage'], 1.)
+        self.assertEqual(q['history'], old)
+        self.assertEqual(q['dissipation_increment'], 0.)
+        self.assertAlmostEqual(q['dissipated'], law.toughness_n_per_mm)
+        np.testing.assert_allclose(q['traction'], [-.16, 0.])
+        np.testing.assert_allclose(q['tangent'], [[80., 0.], [0., 0.]])
+        self.assertAlmostEqual(q['stored'], .5*80.*.002**2)
+
+    def test_compression_and_shear_damage_have_consistent_potential_derivatives(self):
+        law = replace(self.law, compression_stiffness_mpa_per_mm=80.)
+        for u, old in (([-.002, .007], 0.), ([-.003, -.002], .025),
+                       ([.001, .0002], 0.), ([-.002, .005], .08)):
+            with self.subTest(jump=u, history=old):
+                u = np.asarray(u)
+                q = law.response(*u, old)
+                baseline = self.law.response(*u, old)
+                for name in ('history', 'damage', 'dissipated', 'initiation_ratio'):
+                    self.assertEqual(q[name], baseline[name])
+                finite = np.empty((2, 2))
+                gradient = np.empty(2)
+                h = 1e-7
+                for j in range(2):
+                    shift = np.eye(2)[j]*h
+                    plus, minus = law.response(*(u+shift), old), law.response(*(u-shift), old)
+                    finite[:, j] = (plus['traction']-minus['traction'])/(2*h)
+                    gradient[j] = (plus['incremental_potential']-minus['incremental_potential'])/(2*h)
+                np.testing.assert_allclose(q['tangent'], finite, rtol=2e-8, atol=2e-8)
+                np.testing.assert_allclose(q['traction'], gradient, rtol=2e-8, atol=2e-10)
+
+    def test_nonproportional_compression_and_damage_work_is_energy_consistent(self):
+        law = replace(self.law, compression_stiffness_mpa_per_mm=80.)
+        vertices = np.array([[0., 0.], [-.003, 0.], [-.003, .015],
+                             [-.001, -.02], [.012, -.01], [-.004, 0.], [0., 0.]])
+        path = np.concatenate([np.linspace(a, b, 1501)[1:]
+                               for a, b in zip(vertices[:-1], vertices[1:])])
+        old = 0.
+        last_u = vertices[0]
+        last_t = np.zeros(2)
+        work = 0.
+        for jump in path:
+            q = law.response(*jump, old)
+            self.assertGreaterEqual(q['history'], old)
+            self.assertGreaterEqual(q['dissipation_increment'], 0.)
+            work += .5*(q['traction']+last_t)@(jump-last_u)
+            old, last_u, last_t = q['history'], jump, q['traction']
+        self.assertAlmostEqual(work, q['stored']+q['dissipated'], delta=3e-8)
+
+    def test_compression_parameter_is_explicit_validated_and_defaults_to_zero(self):
+        self.assertEqual(self.law.compression_stiffness_mpa_per_mm, 0.)
+        self.assertEqual(self.law.to_dict()['compression_stiffness_mpa_per_mm'], 0.)
+        for value in (-1., np.nan, np.inf, True):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                replace(self.law, compression_stiffness_mpa_per_mm=value)
+
+    def test_bounded_compression_validation_and_linear_default_compatibility(self):
+        linear = replace(self.law, compression_stiffness_mpa_per_mm=80.)
+        explicit = replace(linear, compression_regularization_mm=None)
+        for key, value in linear.response(-.002, .001, .01).items():
+            np.testing.assert_array_equal(value, explicit.response(-.002, .001, .01)[key])
+        self.assertEqual(linear.to_dict()['compression_model'], 'linear')
+        self.assertIsNone(linear.to_dict()['compression_traction_cap_mpa'])
+        for value in (0., -1., np.nan, np.inf, True):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                replace(linear, compression_regularization_mm=value)
+
+    def test_bounded_compression_is_globally_capped_and_stable_near_zero(self):
+        law = replace(self.law, compression_stiffness_mpa_per_mm=80., compression_regularization_mm=.001)
+        opening = np.r_[-np.logspace(-100, 100, 401), 0., .001]
+        q = law.response(opening, 0., 0.)
+        self.assertTrue(np.isfinite(q['compression_stored']).all())
+        self.assertTrue(np.isfinite(q['compression_traction']).all())
+        self.assertTrue(np.all(np.abs(q['compression_traction']) <= .08))
+        self.assertTrue(np.all(q['compression_stored'] <= .08*np.abs(np.minimum(opening, 0.))))
+        self.assertEqual(law.response(0., 0., 0.)['tangent'][0, 0], 80.)
+        tiny = law.response(-1e-12, 0., 0.)
+        self.assertGreater(tiny['compression_stored'], 0.)
+        np.testing.assert_allclose(tiny['compression_stored'], .5*80.*1e-24, rtol=1e-12, atol=0.)
+        np.testing.assert_allclose(tiny['compression_traction'], -80.*1e-12, rtol=1e-12, atol=0.)
+        self.assertEqual(law.to_dict()['compression_traction_cap_mpa'], .08)
+
+    def test_bounded_compression_consistent_derivatives_and_unchanged_damage(self):
+        law = replace(self.law, compression_stiffness_mpa_per_mm=80., compression_regularization_mm=.001)
+        for u, old in (([-.002, .007], 0.), ([-.003, -.002], .025), ([-.002, .005], .08)):
+            with self.subTest(jump=u, old=old):
+                u = np.asarray(u)
+                q, baseline = law.response(*u, old), self.law.response(*u, old)
+                for key in ('damage', 'history', 'dissipated', 'dissipation_increment', 'initiation_ratio'):
+                    self.assertEqual(q[key], baseline[key])
+                finite, gradient = np.empty((2, 2)), np.empty(2)
+                h = 1e-7
+                for j in range(2):
+                    shift = np.eye(2)[j]*h
+                    plus, minus = law.response(*(u+shift), old), law.response(*(u-shift), old)
+                    finite[:, j] = (plus['traction']-minus['traction'])/(2*h)
+                    gradient[j] = (plus['incremental_potential']-minus['incremental_potential'])/(2*h)
+                np.testing.assert_allclose(q['tangent'], finite, rtol=2e-8, atol=2e-8)
+                np.testing.assert_allclose(q['traction'], gradient, rtol=2e-8, atol=2e-10)
+
+    def test_bounded_compression_reversible_work_and_small_length_limit(self):
+        law = replace(self.law, compression_stiffness_mpa_per_mm=80., compression_regularization_mm=.001)
+        opening = np.r_[np.linspace(0., -.01, 10001), np.linspace(-.01, 0., 10001)[1:]]
+        q = law.response(opening, 0., 0.)
+        self.assertAlmostEqual(np.trapezoid(q['compression_traction'], opening), 0., places=15)
+        np.testing.assert_array_equal(q['dissipated'], 0.)
+        np.testing.assert_array_equal(q['history'], 0.)
+        load_work = np.trapezoid(q['compression_traction'][:10001], opening[:10001])
+        self.assertAlmostEqual(load_work, q['compression_stored'][10000], delta=1e-11)
+        responses = [replace(law, compression_regularization_mm=ell).response(-.2, 0., .08)
+                     for ell in (.001, .0001, .00001)]
+        for before, after in zip(responses[:-1], responses[1:]):
+            self.assertLess(abs(after['compression_traction']), .101*abs(before['compression_traction']))
+            self.assertLess(after['compression_stored'], .101*before['compression_stored'])
+            self.assertEqual(after['damage'], 1.)
+            self.assertEqual(after['dissipation_increment'], 0.)
+
+    def test_bounded_compression_nonproportional_work_including_damage(self):
+        law = replace(self.law, compression_stiffness_mpa_per_mm=80., compression_regularization_mm=.001)
+        vertices = np.array([[0., 0.], [-.003, 0.], [-.003, .015],
+                             [-.001, -.02], [.012, -.01], [-.004, 0.], [0., 0.]])
+        path = np.concatenate([np.linspace(a, b, 1501)[1:] for a, b in zip(vertices[:-1], vertices[1:])])
+        old, work, previous = 0., 0., vertices[0]
+        traction = np.zeros(2)
+        for u in path:
+            q = law.response(*u, old)
+            self.assertGreaterEqual(q['dissipation_increment'], 0.)
+            work += .5*(q['traction']+traction)@(u-previous)
+            old, previous, traction = q['history'], u, q['traction']
+        self.assertAlmostEqual(work, q['stored']+q['dissipated'], delta=3e-8)
+
 
 class MixedInterfaceTests(unittest.TestCase):
     def setUp(self):
@@ -235,6 +386,61 @@ class MixedInterfaceTests(unittest.TestCase):
             self.response(collapsed)
         with self.assertRaises(ValueError):
             self.response(self.reference, matrix_size=3)
+
+    def test_compression_geometric_tangent_and_separate_energy_force_accounting(self):
+        self.law = replace(self.law, compression_stiffness_mpa_per_mm=80.)
+        x = np.array([[-.003, 0.], [.001, .004], [-.002, .1], [.0015, .106]])
+        q = self.response(x)
+        self.assertTrue(np.all(q['opening'] < 0.))
+        self.assertGreater(q['compression_stored_energy_n_mm'], 0.)
+        self.assertGreater(q['fracture_dissipation_n_mm'], 0.)
+        self.assertAlmostEqual(q['stored_energy_n_mm'],
+            q['compression_stored_energy_n_mm']+q['damageable_stored_energy_n_mm'])
+        np.testing.assert_allclose(q['gradient'], q['compression_gradient']+q['damageable_gradient'])
+        h = 1e-7
+        finite, gradient = np.empty((8, 8)), np.empty(8)
+        for j in range(8):
+            shift = (np.eye(8)[j]*h).reshape(4, 2)
+            plus, minus = self.response(x+shift), self.response(x-shift)
+            finite[:, j] = (plus['gradient']-minus['gradient'])/(2*h)
+            gradient[j] = (plus['incremental_potential_n_mm']-minus['incremental_potential_n_mm'])/(2*h)
+        np.testing.assert_allclose(q['hessian'].toarray(), finite, rtol=2e-7, atol=2e-8)
+        np.testing.assert_allclose(q['gradient'], gradient, rtol=2e-8, atol=2e-10)
+        rotation = np.array([[np.cos(.7), -np.sin(.7)], [np.sin(.7), np.cos(.7)]])
+        rotated = self.response(x@rotation.T+[1., -2.])
+        self.assertAlmostEqual(rotated['compression_stored_energy_n_mm'], q['compression_stored_energy_n_mm'], places=12)
+        np.testing.assert_allclose(rotated['compression_gradient'].reshape(-1, 2),
+                                   q['compression_gradient'].reshape(-1, 2)@rotation.T, atol=2e-12)
+
+    def test_bounded_compression_geometry_tangent_and_far_failed_pair_pressure_cap(self):
+        self.law = replace(self.law, compression_stiffness_mpa_per_mm=80., compression_regularization_mm=.0005)
+        x = np.array([[-.003, 0.], [.001, .004], [-.002, .1], [.0015, .106]])
+        q = self.response(x)
+        finite, gradient, h = np.empty((8, 8)), np.empty(8), 1e-7
+        for j in range(8):
+            shift = (np.eye(8)[j]*h).reshape(4, 2)
+            plus, minus = self.response(x+shift), self.response(x-shift)
+            finite[:, j] = (plus['gradient']-minus['gradient'])/(2*h)
+            gradient[j] = (plus['incremental_potential_n_mm']-minus['incremental_potential_n_mm'])/(2*h)
+        np.testing.assert_allclose(q['hessian'].toarray(), finite, rtol=2e-7, atol=2e-8)
+        np.testing.assert_allclose(q['gradient'], gradient, rtol=2e-8, atol=2e-10)
+        # Fully failed faces have slid past their endpoints. Their real nearest
+        # distance exceeds 1 mm even though their paired normal projection < 0.
+        far = np.array([[0., 0.], [-.2, 2.], [0., 1.], [-.2, 3.]])
+        ell = 6e-7
+        law = MixedModeLaw(normal_stiffness_mpa_per_mm=5000., compression_stiffness_mpa_per_mm=5000.,
+                           compression_regularization_mm=ell)
+        failed = np.full((1, 2), law.final_opening_mm)
+        q = interface_response(far, self.segments, np.array([ell]), np.array([1.]), failed, law)
+        self.assertGreater(np.hypot(.2, 1.), 1.)
+        np.testing.assert_array_equal(q['damage'], 1.)
+        self.assertEqual(q['damageable_stored_energy_n_mm'], 0.)
+        self.assertEqual(q['fracture_dissipation_increment_n_mm'], 0.)
+        self.assertTrue(np.all(np.abs(q['compression_traction']) <= .003))
+        self.assertLess(q['compression_stored_energy_n_mm'], .000601)
+        linear = interface_response(far, self.segments, np.array([ell]), np.array([1.]), failed,
+                                    replace(law, compression_regularization_mm=None))
+        self.assertGreater(linear['compression_stored_energy_n_mm'], 100.)
 
 
 if __name__ == '__main__':

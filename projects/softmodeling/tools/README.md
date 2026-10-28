@@ -19,6 +19,37 @@
 | `verify_cohesive_mixed.py` | 纯模式、非比例历史、转动客观性、切线和功收敛；独立示例参数，不读取实验力 |
 | `verify_cohesive_network.py` | 四三角形自由选路平衡验证；镜像加载与步长减半，含全IPC/CCD，但拉伸算例不验证实际闭合摩擦 |
 
+## 断裂收敛与有限间隙验证
+
+显式版本3配置 `configs/fracture_network_regularized.json` 是独立数值研究示例，采用有界可恢复压缩支路、固定准备净空和PTC方向回溯；它没有材料预测或完整切割资格，不会在工作台启动时运行。版本1/2与完整体默认行为保留。新配置仍需通过自身范围的残量、历史、接触和能量验证。
+
+此配置保留已完成并审查的0.05 mm短程基准设置：g=0.00006 mm、dhat=0.000025 mm、名义步长0.005 mm、Kn=Kc=5000。它不代表网格/间隙独立或2 mm全程通过；更小间隙及高刚度的算例只按各自报告范围使用。UI原默认配置未被此研究配置替换。
+
+| 工具 | 使用范围 |
+|---|---|
+| `verify_network_compliance.py` | 27个无损伤自由侧边拉/压小试样，分离网格、gap、界面刚度及联合极限；记录真实IPC接触数，不能替代刀切 |
+| `verify_cutting_compliance.py` | 原圆鼻刀具下完整体/无损伤网络配对，刀尖网格三档、相同材料与真实时间，量化网络替代的切前反力偏差 |
+| `verify_network_sensitivity.py` | 显式清单执行或只读比较；要求同物性、同准备与同目标，核对源/状态/审查，不外推未完成段 |
+| `audit_network_pairing.py` | 只读检查完整失效原配对面的真实有限段距离及残余虚拟压缩力/力偶/能量；不求解FE、不把内部力范数当刀具载荷份额 |
+
+```powershell
+python -m tools.verify_network_compliance --output outputs/new_compliance --seconds 15 --steps 8 --strain .0002 --compression-regularization gap_bounded
+python -m tools.verify_cutting_compliance --output outputs/new_blade_compliance --seconds 240 --gap-mm 6e-5 --dhat-mm 2.5e-5 --ccd-tolerance-mm 1e-9 --normal-stiffness 5000 --compression-stiffness 5000 --ptc-shift-policy backtrack_aware
+python -m tools.verify_network_sensitivity runstudy --manifest <明确清单.json> --output <新目录> --python <解释器路径>
+python -m tools.verify_network_sensitivity compare --manifest <已执行manifest.json> --output <新比较目录>
+python -m tools.audit_network_pairing <已结束result目录> --output <新审计.json>
+```
+
+`runstudy` 才启动新加载，各案有软预算和额外60秒硬启动/收尾余量；`compare`与配对审计仅后处理。结果/源码在读取期间变化或指纹不符会降级，缺失不补猜。三档间隙相差小也不证明网格独立；完整的网格选路还需方向、接触、时间尺度及裂后共同区间检验。当前证据与限制见[研究状态](../docs/research_status.md)和总仓库[实现说明第16节](../../../docs/fracture_implementation.md)。
+
+刀具柔度工具显式启动六个独立初态子进程，每案预算由`--seconds`给定，另有10秒硬收尾余量。默认目标仅0.01 mm，损伤关闭；表面网格0.02/0.01/0.005 mm、细化半宽0.2 mm。每对核对原完整网格、准备位置和零深度刀具的指纹，并要求实际接受深度/Maxwell时间完全一致。提高Kn/Kc是数值刚度对照，不拟合切割力，也不自动认证裂后接触。
+
+两者共享内缩前的网格与外边界支撑线，实际材料域并不完全相同。反力差包含内缩面积损失、内聚柔度、内部IPC/摩擦及有界压缩的综合影响，不能直接当作单独界面模量误差；Kn/Kc对照只检验综合反力差对数值刚度的敏感性。
+
+工具使用十倍力残量门（0.001 N）作为声明的反力比较筛查尺度，不把近零分母提升为可靠相对误差；它不是经条件数分析得到的严格反力误差上界。局部刀尖细化也不能替代远场、网格方向、物理时间或裂后区间的收敛验证。
+
+保存态之间的额外几何审查允许将**同一直线路径**分片；每片仍须由原完整CCD/J以原容差和保守系数证明安全，连续覆盖[0,1]才通过。原整段CCD分数保留；不能将小于1的分数直接改成通过。最多64片、无进展或未覆盖均为未通过。分片只是几何后处理，不添加物理时间、不改变材料/断裂历史。
+
 ## HTML 工作台
 
 ```powershell

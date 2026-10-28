@@ -27,19 +27,24 @@ def law_from_config(config):
 
 def read_config(path):
     config = json.loads(Path(path).read_text(encoding='utf-8-sig'))
-    if config.get('schema') not in {'softcut-cohesive/1', 'softcut-cohesive/2'}:
-        raise ValueError('Expected softcut-cohesive/1 or softcut-cohesive/2 config')
-    mixed = config.get('schema') == 'softcut-cohesive/2'
+    if config.get('schema') not in {'softcut-cohesive/1', 'softcut-cohesive/2', 'softcut-cohesive/3'}:
+        raise ValueError('Expected softcut-cohesive/1, /2 or /3 config')
+    regularized = config.get('schema') == 'softcut-cohesive/3'
+    mixed = config.get('schema') in {'softcut-cohesive/2', 'softcut-cohesive/3'}
+    fine_width = config.get('mesh', {}).get('fine_halfwidth_mm')
+    if fine_width is not None and (not regularized or isinstance(fine_width, bool)
+            or not isinstance(fine_width, (int, float)) or not np.isfinite(fine_width) or fine_width <= 0):
+        raise ValueError('Explicit fine_halfwidth_mm requires version 3 and a positive finite value')
     if mixed:
         if config.get('cohesive_kind') != 'mixed_mode_energy':
-            raise ValueError('Version 2 requires explicit mixed_mode_energy')
+            raise ValueError('Mixed versions require explicit mixed_mode_energy')
         if config.get('fracture_topology') not in {'prescribed_seam', 'edge_network'}:
             raise ValueError('Choose prescribed_seam or edge_network explicitly')
         if config['fracture_topology'] == 'edge_network':
             floor=config.get('network_metric_floor_n_per_mm')
             if isinstance(floor, bool) or not isinstance(floor, (int,float)) or not np.isfinite(floor) or floor <= 0:
                 raise ValueError('Declare a positive finite network numerical metric floor')
-            if config.get('network_predictor') not in {'body_stationary_if_safe', 'baseline'}:
+            if config.get('network_predictor') not in {'body_stationary_if_safe', 'baseline', 'safe_affine_blend'}:
                 raise ValueError('Declare the network loading predictor policy explicitly')
         angle = config.get('angle_deg')
         if isinstance(angle, bool) or not isinstance(angle, (int, float)) or not np.isfinite(angle) or not 0 <= angle < 90:
@@ -59,6 +64,48 @@ def read_config(path):
         raise ValueError('Require target (0,2] mm and increment [.000625,.05] mm')
     if config.get('parameter_status') != 'demonstration_only_not_experimentally_calibrated':
         raise ValueError('This model cannot claim experimentally calibrated fracture parameters')
+    if regularized:
+        if config.get('fracture_topology') != 'edge_network':
+            raise ValueError('Version 3 currently requires edge_network')
+        closure = config.get('closure_regularization')
+        if closure not in {'reversible_compression_penalty', 'bounded_reversible_compression_penalty'}:
+            raise ValueError('Version 3 requires explicit reversible compression regularization')
+        length = config.get('cohesive', {}).get('compression_regularization_mm')
+        if closure == 'bounded_reversible_compression_penalty':
+            if (isinstance(length, bool) or not isinstance(length, (int, float))
+                    or not np.isfinite(length) or length <= 0 or length != config['reference_gap_mm']):
+                raise ValueError('Bounded compression length must equal the reference gap, not a fitted parameter')
+        elif length is not None:
+            raise ValueError('Linear compression mode must not specify a bounded length')
+        for name, value in (
+                ('compression stiffness', config.get('cohesive', {}).get('compression_stiffness_mpa_per_mm')),
+                ('preparation clearance', config.get('preparation_clearance_mm')),
+                ('CCD tolerance', config.get('ccd_tolerance_mm')),
+                ('minimum increment', config.get('minimum_increment_mm'))):
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not np.isfinite(value) or value <= 0:
+                raise ValueError(f'Declare positive finite {name}')
+        if config['minimum_increment_mm'] > increment:
+            raise ValueError('Minimum increment must not exceed nominal increment')
+        if config['ccd_tolerance_mm'] > min(1e-6, config['reference_gap_mm']/10, config['dhat_mm']/10):
+            raise ValueError('CCD tolerance must resolve gap/contact scale and never exceed legacy tolerance')
+        backtracks = config.get('ptc_model_backtracks', 0)
+        if type(backtracks) is not int or not 0 <= backtracks <= 30:
+            raise ValueError('ptc_model_backtracks must be an integer in [0,30]')
+        guard = config.get('ptc_residual_guard', False)
+        if type(guard) is not bool or guard and backtracks == 0:
+            raise ValueError('ptc_residual_guard must be boolean and requires positive backtracks')
+        shift_policy = config.get('ptc_shift_policy', 'residual_ratio')
+        if (not isinstance(shift_policy, str) or shift_policy not in {'residual_ratio', 'backtrack_aware'}
+                or shift_policy == 'backtrack_aware' and backtracks == 0):
+            raise ValueError('ptc_shift_policy requires residual_ratio or backtrack_aware with positive backtracks')
+    elif (config.get('closure_regularization') is not None
+          or config.get('cohesive', {}).get('compression_stiffness_mpa_per_mm', 0.) != 0.
+          or config.get('cohesive', {}).get('compression_regularization_mm') is not None
+          or config.get('ptc_model_backtracks', 0) != 0
+          or config.get('ptc_residual_guard', False) is not False
+          or config.get('ptc_shift_policy', 'residual_ratio') != 'residual_ratio'
+          or 'minimum_increment_mm' in config):
+        raise ValueError('Compression regularization or custom minimum increment requires version 3')
     law_from_config(config)
     return config
 
@@ -75,6 +122,35 @@ def saved_damage(state, law):
     if maximum.ndim == 2:
         return law.history_response(maximum)['damage']
     return law.response(maximum, maximum)['damage']
+
+
+def regularization_scales(problem, config):
+    """Dimensionless diagnostics, not a substitute for a full-field comparison."""
+    if not problem.is_mixed_mode:
+        return None
+    lengths = np.asarray(problem.interface_lengths)
+    if not lengths.size:
+        return None
+    material = config['material']
+    shear = material['equilibrium_shear_mpa']+material['maxwell_shear_mpa']
+    bulk = material['bulk_mpa']
+    young = 9*bulk*shear/(3*bulk+shear)
+    poisson = (3*bulk-2*shear)/(2*(3*bulk+shear))
+    plane_strain = young/(1-poisson**2)
+    law = problem.cohesive_law
+    h = float(np.min(lengths))
+    return dict(reference_edge_min_mm=h, reference_edge_median_mm=float(np.median(lengths)),
+        maximum_gap_over_reference_edge=config['reference_gap_mm']/h,
+        instantaneous_young_mpa=young, instantaneous_plane_strain_scale_mpa=plane_strain,
+        maximum_Eprime_over_Kn_h=plane_strain/(law.normal_stiffness_mpa_per_mm*h),
+        Kc_gap_over_normal_strength=law.compression_stiffness_mpa_per_mm*config['reference_gap_mm']/law.normal_strength_mpa,
+        compression_traction_bound_mpa=(None if law.compression_regularization_mm is None else
+                                        law.compression_stiffness_mpa_per_mm*law.compression_regularization_mm),
+        compression_bound_scope='paired constitutive normal traction only; not a nodal-force, total contact-load or friction-error bound',
+        cohesive_characteristic_length_mm=plane_strain*law.toughness_n_per_mm/law.normal_strength_mpa**2,
+        qualification='small-strain dimensional scales only; no universal network compliance or process-zone error bound',
+        compression_ipc_normal_load_share=None,
+        load_partition_status='unavailable; compression internal-force norm is not a contact normal-load share')
 
 
 def events(steps, output=None, law=None):
@@ -167,6 +243,7 @@ def energy_ledger(steps):
         eq=a['equilibrium_energy_n_mm']-b['equilibrium_energy_n_mm']
         neq=a['overstress_energy_n_mm']-b['overstress_energy_n_mm']
         cohesive=fa['cohesive_stored_energy_n_mm']-fb['cohesive_stored_energy_n_mm']
+        compression=fa.get('compression_stored_energy_n_mm',0.)-fb.get('compression_stored_energy_n_mm',0.)
         viscous=a['cumulative_viscous_dissipation_n_mm']-b['cumulative_viscous_dissipation_n_mm']
         fracture=fa['fracture_dissipation_n_mm']-fb['fracture_dissipation_n_mm']
         friction=after['friction_work_n_mm']
@@ -176,6 +253,8 @@ def energy_ledger(steps):
         rows.append(dict(from_depth_mm=before['depth_mm'], to_depth_mm=after['depth_mm'],
             external_work_n_mm=external, equilibrium_stored_change_n_mm=eq,
             nonequilibrium_stored_change_n_mm=neq, cohesive_stored_change_n_mm=cohesive,
+            compression_stored_change_n_mm=compression,
+            damageable_cohesive_stored_change_n_mm=cohesive-compression,
             viscous_dissipation_n_mm=viscous, fracture_dissipation_n_mm=fracture,
             friction_work_n_mm=friction, ipc_barrier_stored_change_n_mm=barrier,
             unaccounted_energy_n_mm=residual, force_change_n=after['reaction_fz_n']-before['reaction_fz_n'],
@@ -218,6 +297,10 @@ def run(config_path, output, seconds):
              if config['fracture_topology'] == 'edge_network' else 'single prescribed reference seam; not free-path selection'),
             'no cutting-force inverse fitting; no threshold selection from reported no-fracture observations',
             'quasistatic branch jumps require independent energy qualification; no hidden stabilizing dissipation']
+        if config.get('schema') == 'softcut-cohesive/3':
+            report['assumptions'].extend([
+                'reversible compression penalty acts relative to the positive reference gap and persists after failure; not an intact-equivalence proof',
+                'IPC Coulomb friction uses IPC normal loads only, not the additional reversible compression force; contact-load partition remains unqualified'])
     write_json(out/'result.json', report)
     started = time.monotonic();p = None;x = None
     with (out/'run.log').open('w', encoding='utf-8') as log, contextlib.redirect_stdout(log), threadpool_limits(limits=1):
@@ -226,9 +309,15 @@ def run(config_path, output, seconds):
             physical_signature=signature(p)
             physical_signature['fracture']=dict(kind=config.get('cohesive_kind','radial_mode_i'),
                 topology=config.get('fracture_topology','prescribed_seam'), law=p.cohesive_law.to_dict(),
-                history_shape=list(p.cohesive_maximum.shape), reference_gap_mm=config['reference_gap_mm'])
+                history_shape=list(p.cohesive_maximum.shape), reference_gap_mm=config['reference_gap_mm'],
+                preparation_clearance_mm=config.get('preparation_clearance_mm'), initial_depth_mm=p.start)
             report['solver_policy']=dict(network_metric_floor_n_per_mm=config.get('network_metric_floor_n_per_mm',0.),
                 network_predictor=config.get('network_predictor','baseline'),
+                minimum_increment_mm=config.get('minimum_increment_mm', .000625),
+                ccd_tolerance_mm=config.get('ccd_tolerance_mm'),
+                ptc_model_backtracks=config.get('ptc_model_backtracks', 0),
+                ptc_residual_guard=config.get('ptc_residual_guard', False),
+                ptc_shift_policy=config.get('ptc_shift_policy', 'residual_ratio'),
                 role='iteration-direction regularization only; not a force, energy or physical dissipation')
             report.update(signature=physical_signature, reference_contact_check=p.reference_contact_check,
                           mesh=dict(nodes=p.n, elements=len(p.mesh.triangles)),
@@ -236,6 +325,7 @@ def run(config_path, output, seconds):
                           reference_interface_area_mm2=float((p.interface_areas if p.is_mixed_mode else p.bond_areas).sum()),
                           fracture_topology=getattr(p, 'fracture_topology', 'prescribed_seam'),
                           fracture_topology_metadata=getattr(p, 'fracture_topology_metadata', {}))
+            report['regularization_scales']=regularization_scales(p, config)
             x=p.rest.copy();old=p.start;deadline=started+solve_budget
             targets=np.r_[0., np.arange(config['increment_mm'], config['target_mm']-1e-12,
                                        config['increment_mm']), config['target_mm']]
@@ -244,7 +334,8 @@ def run(config_path, output, seconds):
                 write_json(out/'result.json', report)
             report['status']='running'
             for depth in targets:
-                for x, record in adaptive_load_steps(p, x, old, float(depth), deadline, .000625, rejected):
+                for x, record in adaptive_load_steps(p, x, old, float(depth), deadline,
+                                                    config.get('minimum_increment_mm', .000625), rejected):
                     i=len(report['steps']);old=record['depth_mm']
                     save_npz(out/'states'/f'{i:04d}.npz', reference_xy=p.rest,
                         triangles=p.mesh.triangles, positions=x, previous_positions=p.previous,
@@ -295,6 +386,7 @@ def run(config_path, output, seconds):
         first, last=steps[0], steps[-1]
         bulk=last['material']['stored_energy_n_mm']-first['material']['stored_energy_n_mm']
         cohesive=last['fracture']['cohesive_stored_energy_n_mm']-first['fracture']['cohesive_stored_energy_n_mm']
+        compression=last['fracture'].get('compression_stored_energy_n_mm',0.)-first['fracture'].get('compression_stored_energy_n_mm',0.)
         viscous=last['material']['cumulative_viscous_dissipation_n_mm']-first['material']['cumulative_viscous_dissipation_n_mm']
         fracture=last['fracture']['fracture_dissipation_n_mm']-first['fracture']['fracture_dissipation_n_mm']
         friction=sum(s['friction_work_n_mm'] for s in steps[1:])
@@ -303,6 +395,8 @@ def run(config_path, output, seconds):
             equilibrium_stored_change_n_mm=last['material']['equilibrium_energy_n_mm']-first['material']['equilibrium_energy_n_mm'],
             nonequilibrium_stored_change_n_mm=last['material']['overstress_energy_n_mm']-first['material']['overstress_energy_n_mm'],
             cohesive_stored_change_n_mm=cohesive, viscous_dissipation_n_mm=viscous,
+            compression_stored_change_n_mm=compression,
+            damageable_cohesive_stored_change_n_mm=cohesive-compression,
             fracture_dissipation_n_mm=fracture, friction_work_n_mm=friction,
             remainder_n_mm=work-bulk-cohesive-viscous-fracture-friction,
             remainder_note='This pre-barrier subtotal is supplemented by the explicit increment ledger. Unaccounted release at an equilibrium branch jump is not assigned to friction or fracture.',
