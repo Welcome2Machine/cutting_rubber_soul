@@ -157,3 +157,19 @@ python -m tools.render_solver_dashboard --study outputs/new_angles
 - `python -m tools.audit_fracture_energy <已有结果目录> --output <新JSON>`：认证既有独立审查绑定的接受记录与检查点，重算逐步能量，额外检查Σ|R|以防抵消。不重算FE，不把能量差额改名为动能或耗散。
 - `tools.run_cohesive_cut`的版本3可显式选`nonlinear_solver="newton_lm"`作研究诊断；默认仍`ptc`。真实残差最小化可能停滞于非零值，不是已验证的全程收敛修复。输入、预算、失败和审查照常记录。
 - 独立材料试验的待填数据字段与工作量见`configs/independent_fracture_test_plan.json`。它是计划，不是运行配置或已标定物性。
+
+### 实际刀具零间隙二维动力学控制
+
+在FE项目目录显式执行：
+
+```powershell
+python -m tools.run_zero_gap_cut --config configs/zero_gap_dynamic_energy.json --out ../../runs/<唯一新目录> --seconds 1800
+python -m tools.audit_zero_gap_cut ../../runs/<已有目录> --output ../../runs/<已有目录>/audit-new.json --seconds 600
+```
+
+第一条从初态启动有界加载，第二条只读取保存态并重新组装，不推进加载、不覆盖旧审查。
+运行中不编辑数值源码；记录解释器、源码/配置/状态哈希。预算不足即停止，不自动续算。
+`zero_gap_dynamic_energy.json`采用割线卸载、机械储能归一化的数值能量门，仍是未标定
+研究配置，不能把小局部误差等同于失稳事件收敛。`zero_gap_dynamic_control.json`保留为
+最初的基础控制配置。运行结果须分别检查末行程、独立审查、接受态间CCD、能量和时间
+敏感性；30×5×20 mm居中0°镜像对称模型不代表原偏心/斜切或自由裂路已实现。

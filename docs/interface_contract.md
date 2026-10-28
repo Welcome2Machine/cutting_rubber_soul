@@ -123,3 +123,27 @@ flowchart LR
 ### 断裂专项研究接口（2026-10-28）
 
 FE版本3可显式声明`nonlinear_solver="newton_lm"`，缺省仍为`ptc`；非缺省求解器写入检查点并核查身份。该选项不改变力容差、CCD、物理时间、材料或损伤历史，不自动出现在桌面默认工况。零间隙拓扑和标量动力学仅为可验证研究内核，未提供虚假的生产切割运行入口。独立验证输出`softcut-fracture-resolution/1`，逐步能量后处理输出`softcut-fracture-energy-screen/1`；它们的`full_cutting_qualified`/`physical_evolution_qualified`保持false。`softcut-independent-fracture-plan/1`是待执行试验计划，null和空证据不能提升为物性。
+
+新增独立显式入口`tools.run_zero_gap_cut`，配置`softcut-zero-gap-dynamics/1`，输出
+`softcut-zero-gap-result/1`。这是30×5×20 mm、刀具居中s=15 mm、0°镜像对称的
+预设mode-I裂路控制；原s=7 mm基线和版本3自由边网络不迁移。它保留两个惯性分量、
+Maxwell真实时间与半域完整IPC/CCD，未断法向连接为精确约束，裂面接触为镜像半空间约束。
+它不支持一般裂面滑移、偏心/斜切或自由选路，`offcentre_or_oblique_qualified`及
+`free_path_qualified`为false。`completed_2mm_control`只表示到达行程，不能替代
+`accepted_prefix_audited`、能量/时间/网格收敛和独立材料证据。
+
+该入口必须指定唯一新输出目录、配置与墙钟预算；`attempt_seconds`控制单次尝试预算，
+`energy_tolerance`显式启用数值功缺口门，`dynamic_cutback`控制按真实质量缩小时间步。
+不读取实验力、不放大质量、不移植历史、不自动续算。保存位置及独立本步位移增量、
+速度、质量、接缝释放状态和全部前后历史；结果绑定源码及输入哈希。
+动能、材料/断裂/摩擦功、后向Euler损失、接触表面出现的势跳变及端点求积缺口分账。
+代数恒等式成立不自动令`energy_qualified=true`。此研究入口不在UI启动时触发计算。
+
+`energy_normalization`区分历史`increment_work`与`mechanical_reservoir`，后者配合
+`energy_absolute_tolerance_n_mm`使用前后平均机械储能；储能不跨步相加。
+`cohesive_unloading`为`secant`（默认）或`constant_traction`，这是物理卸载律差异，
+写入完整配置哈希，不得混为同一物理模型的时间收敛。`friction_velocity_epsilon_mm_s`
+明确速度平滑尺度，内部位移平滑为该值乘以实际dt。
+独立重算的端点方程/历史通过与`accepted_chord_ccd_safe`分开报告；后者为接受态之间
+直线路径的碰撞及正J检查，历史输出中可能为false，不能以端点审查掩盖它。
+额外的保存态审查输出独立sidecar，不覆盖原算例的预算耗尽或审查未完成状态。

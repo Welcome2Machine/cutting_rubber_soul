@@ -1,0 +1,16 @@
+{
+  "schema": "softcut-zero-gap-dynamics/1",
+  "target_mm": 2.0,
+  "increment_mm": 0.01,
+  "minimum_increment_mm": 0.00001,
+  "density_kg_m3": 1000.0,
+  "strength_mpa": 0.2,
+  "toughness_n_mm": 0.006,
+  "seam_spacing_mm": 0.1,
+  "local_spacing_mm": 0.75,
+  "surface_spacing_mm": 0.1,
+  "coarse_spacing_mm": 1.5,
+  "nose_facets": 24,
+  "damage_enabled": true,
+  "parameter_status": "independent_demonstration_not_measured"
+}

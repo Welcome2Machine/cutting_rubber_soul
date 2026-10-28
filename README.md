@@ -68,4 +68,4 @@ python tools/check_publish.py --staged
 
 详细说明：[接口契约](docs/interface_contract.md) · [起裂与裂后实现及证据](docs/fracture_implementation.md) · [环境与迁移](docs/environment.md) · [Git 管理](docs/git_workflow.md) · [首版验收记录](docs/verification.md)。
 
-最新断裂专项结果见本地[处理报告](runs/fracture_resolution_20261028/index.html)与[方法/独立试验设计第18–19节](docs/fracture_implementation.md)。零间隙连接与标量惯性验证已实现，完整切割及生产模型的网格、间隙、裂路和失稳资格尚未通过；不使用切割力反推参数。
+最新零间隙二维动力学结果见本地[实际刀具控制报告](runs/zero_gap_dynamic_20261028/index.html)与[方法/独立试验设计第18–20节](docs/fracture_implementation.md)。新增完整尺寸、居中刀具的镜像对称控制，接入精确未断连接、单边裂面接触和两个方向的惯性；原偏心/斜切及自由裂路尚未接入。三档含断裂算例均完成2 mm并通过逐态重算及时间路径CCD，但最细档全程能量缺口仍4.99%、首快速区间数值误差19.61%，失稳能量和时间/网格/裂路资格未通过。不使用切割力反推参数。旧[内核处理报告](runs/fracture_resolution_20261028/index.html)保留为历史证据。

@@ -50,16 +50,24 @@ def directions(jacobian, residual):
 
 def solve(problem, x, depth, deadline):
     from .ipc_reference import BASELINE, LoadStepFailure
-    tolerance = BASELINE['force_tolerance_n']
+    tolerance = getattr(problem, 'force_tolerance_n', BASELINE['force_tolerance_n'])
+    if not 0 < tolerance <= BASELINE['force_tolerance_n']:
+        raise ValueError('Specialized force acceptance may only be tightened')
     counters = dict(method='newton_lm', iterations=0, trials=0, newton_updates=0,
                     lm_updates=0, tolerance_n=tolerance, physical_damping=False)
     problem.force_globalization_summary = counters
+    primary = hasattr(problem, 'set_primary_increment')
+    increment = problem.step_increment(x).copy() if primary else None
     for iteration in range(problem.max_iterations+1):
         if time.monotonic() >= deadline:
             raise TimeoutError('Fresh-residual Newton/LM wall budget')
         problem.trial = x.copy()
+        if primary:
+            problem.set_primary_increment(x, increment)
         lag = problem.lag(x)
         _, gradient, hessian, minj = problem.evaluate(x, lag, projected=False)
+        if hasattr(problem, 'update_constraint_free'):
+            problem.update_constraint_free(x, gradient)
         residual = gradient[problem.free]
         norm = float(np.linalg.norm(residual))
         counters.update(iterations=iteration, residual_n=norm)
@@ -89,9 +97,16 @@ def solve(problem, x, depth, deadline):
             for cut in range(21):
                 if time.monotonic() >= deadline:
                     raise TimeoutError('Fresh-residual Newton/LM wall budget')
-                trial = x+alpha*direction
-                if np.array_equal(trial, x):
-                    break
+                if primary:
+                    trial_increment = increment+alpha*direction
+                    trial = problem.previous+trial_increment
+                    if np.array_equal(trial_increment, increment):
+                        break
+                    problem.set_primary_increment(trial, trial_increment)
+                else:
+                    trial = x+alpha*direction
+                    if np.array_equal(trial, x):
+                        break
                 _, gt, _, jt = problem.evaluate(trial, problem.lag(trial), tangent=False)
                 nt = float(np.linalg.norm(gt[problem.free]))
                 counters['trials'] += 1
@@ -101,11 +116,15 @@ def solve(problem, x, depth, deadline):
                     counters.update(last_direction=name, last_alpha=float(alpha),
                                     last_ccd_j_alpha=float(safe), last_backtracks=cut)
                     x = trial
+                    if primary:
+                        increment = trial_increment
                     accepted = True
                     break
                 alpha *= .5
             if accepted:
                 break
         if not accepted:
+            if primary:
+                problem.set_primary_increment(x, increment)
             raise LoadStepFailure(f'Fresh-residual Newton/LM stagnation at {depth:g} mm: {norm:g} N')
     raise LoadStepFailure(f'Fresh-residual Newton/LM iteration limit at {depth:g} mm')

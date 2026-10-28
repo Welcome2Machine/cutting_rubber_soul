@@ -311,6 +311,10 @@ class IPCProblem:
         """P1 constitutive assembly; explicit material candidates override this."""
         return bulk(self.mesh, u, self.config, with_tangent=with_tangent)
 
+    def step_increment(self, x):
+        """Default positional increment; dynamic hosts may retain a primary one."""
+        return x-self.previous
+
     def evaluate(self, x, lag=None, tangent=True, projected=True, *, with_metric=False):
         """Optionally assemble exact and PSD tangents from one material evaluation.
 
@@ -331,7 +335,7 @@ class IPCProblem:
         energy += self.barrier(c, self.cmesh, sx)
         cg = self.barrier.gradient(c, self.cmesh, sx)
         if lag is not None:
-            delta = (x - self.previous)[self.surface]
+            delta = self.step_increment(x)[self.surface]
             energy += self.friction(lag, self.cmesh, delta)
             cg += self.friction.gradient(lag, self.cmesh, delta)
         g[self.surface_dofs] += cg
@@ -350,7 +354,7 @@ class IPCProblem:
                 matrix = coo_matrix((local.ravel(),(rows,cols)),shape=(self.total,self.total)).tocsc()
                 ch = self.barrier.hessian(c,self.cmesh,sx,projection)
                 if lag is not None:
-                    ch += self.friction.hessian(lag,self.cmesh,(x-self.previous)[self.surface],projection)
+                    ch += self.friction.hessian(lag,self.cmesh,self.step_increment(x)[self.surface],projection)
                 ch = ch.tocoo()
                 return matrix + coo_matrix((ch.data,(self.surface_dofs[ch.row],self.surface_dofs[ch.col])),shape=matrix.shape).tocsc()
             h = assemble(kp if projected else k,projected)
@@ -396,7 +400,7 @@ class IPCProblem:
             return frozen_hessian
         jac = -self.friction.force_jacobian(
             lag, self.cmesh, self.rest[self.surface],
-            (x-self.rest)[self.surface], (x-self.previous)[self.surface],
+            (x-self.rest)[self.surface], self.step_increment(x)[self.surface],
             self.barrier, self.ipc.TangentialPotential.DiffWRT.LAGGED_DISPLACEMENTS,
         ).tocoo()
         return frozen_hessian + coo_matrix(
@@ -423,6 +427,9 @@ class IPCProblem:
         residuals may grow; only the original unshifted force test accepts a load.
         previous always remains the last accepted loading state.
         """
+        tolerance = getattr(self, 'force_tolerance_n', BASELINE['force_tolerance_n'])
+        if not 0 < tolerance <= BASELINE['force_tolerance_n']:
+            raise ValueError('A specialized host may tighten, never loosen, force acceptance')
         initial_shift = .1
         shift = initial_shift
         best_norm, last_progress = np.inf, 0
@@ -451,13 +458,15 @@ class IPCProblem:
             assembly_cpu_start = time.process_time()
             # Share the exact tangent and PSD metric at the same state.
             _,g,H,_,paired_metric = self.evaluate(x,lag,projected=False,with_metric=True)
+            if hasattr(self, 'update_constraint_free'):
+                self.update_constraint_free(x, g)
             print(f'PERF_ASSEMBLY seconds={time.perf_counter()-assembly_start:.6f} '
                   f'process_cpu_seconds={time.process_time()-assembly_cpu_start:.6f}',flush=True)
             r = g[self.free]
             norm = float(np.linalg.norm(r))
             print(f"FRICTION_PTC depth_mm={depth:.6f} iteration={iteration} "
                   f"fresh_residual_N={norm:.9g} metric_shift={shift:.9g}", flush=True)
-            if norm <= BASELINE["force_tolerance_n"]:
+            if norm <= tolerance:
                 return x, iteration
             if norm < .9*best_norm:
                 best_norm, last_progress = norm, iteration
@@ -501,7 +510,7 @@ class IPCProblem:
                 # auxiliary time step to reduce the physical residual monotonically.
                 linear_action = A@du
                 error = float(np.linalg.norm(gt-r-alpha*linear_action))
-                model_accept = error <= .25*max(norm, nt) or nt <= BASELINE["force_tolerance_n"]
+                model_accept = error <= .25*max(norm, nt) or nt <= tolerance
                 merit_accept = (not model_accept and self.friction_globalization == 'residual-merit'
                                 and residual_merit_decrease(norm, nt, float(r@linear_action), alpha))
                 accepted = (np.isfinite(nt) and not np.array_equal(trial, x)
@@ -652,7 +661,7 @@ class IPCProblem:
             raise RuntimeError("Invalid geometry at acceptance")
         dissipation = 0.
         if lag is not None:
-            delta = (x-self.previous)[self.surface]
+            delta = self.step_increment(x)[self.surface]
             dissipation = float(self.friction.gradient(lag, self.cmesh, delta) @ delta.ravel())
             if not np.isfinite(dissipation) or dissipation < -1e-12:
                 raise RuntimeError("Negative IPC friction incremental work")
