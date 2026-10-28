@@ -10,6 +10,7 @@
 |---|---|
 | `model_config.py` | 几何、材料及 P1 网格配置；保留原路径的配置签名兼容性 |
 | `zero_gap_cut.py` | 独立居中0°实际刀具控制：初始刚性mode-I连接、镜像单边接触、二维物理惯性、独立增量算术与分项能量账；非原s=7 mm/自由裂路模型 |
+| `energy_cut.py`、`../mechanics/discrete_gradient.py` | 独立C空间离散功/真实Maxwell分裂、内聚路径功、原生接触时间求积与显式theta数值耗散；局部及邻域强度规则仅为待验证假设 |
 | `geometry.py` | 刀具和试样几何、分级 P1 网格；可选直刃碰撞边细分保留原轮廓和刀尖编号 |
 | `material.py`、`../mechanics/finite_strain.py` | 平衡 Ogden 材料、有限应变 Maxwell 更新及切线；另保留 2023 论文复现所需材料律 |
 | `ipc_reference.py` | P1 力与切线装配、刀具及自接触、CCD、正 J 检查与 PTC 非线性求解 |

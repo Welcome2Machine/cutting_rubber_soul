@@ -20,7 +20,9 @@ def problem(config):
         'local_spacing_mm', 'surface_spacing_mm', 'coarse_spacing_mm',
         'nose_facets', 'damage_enabled', 'parameter_status', 'nonlinear_solver',
         'energy_tolerance', 'attempt_seconds', 'dynamic_cutback', 'friction_velocity_epsilon_mm_s',
-        'energy_normalization', 'energy_absolute_tolerance_n_mm', 'iteration_target', 'cohesive_unloading'}
+        'energy_normalization', 'energy_absolute_tolerance_n_mm', 'iteration_target', 'cohesive_unloading',
+        'time_integrator', 'barrier_quadrature', 'barrier_quadrature_rule', 'insertion_rule', 'nucleation_length_mm',
+        'kinematic_theta', 'contact_activation_mm', 'blade_surface_spacing_mm'}
     if set(config)-allowed or config['schema'] != 'softcut-zero-gap-dynamics/1':
         raise ValueError('Unknown zero-gap configuration')
     if not 0 < config['target_mm'] <= 2 or not 0 < config['minimum_increment_mm'] <= config['increment_mm']:
@@ -32,7 +34,16 @@ def problem(config):
             raise ValueError(f'{key} must be finite and positive')
     if 'dynamic_cutback' in config and type(config['dynamic_cutback']) is not bool:
         raise ValueError('dynamic_cutback must be boolean')
-    return ZeroGapCutProblem(density_kg_m3=config['density_kg_m3'],
+    integrator = config.get('time_integrator', 'backward_euler')
+    extra = {}
+    cls = ZeroGapCutProblem
+    if integrator == 'discrete_gradient':
+        from prototype.energy_cut import EnergyCutProblem
+        cls = EnergyCutProblem
+        extra = {key:config[key] for key in ('barrier_quadrature', 'barrier_quadrature_rule', 'insertion_rule', 'nucleation_length_mm', 'kinematic_theta') if key in config}
+    elif integrator != 'backward_euler' or any(key in config for key in ('barrier_quadrature', 'barrier_quadrature_rule', 'insertion_rule', 'nucleation_length_mm', 'kinematic_theta')):
+        raise ValueError('Unknown integrator or options not supported by backward Euler')
+    return cls(**extra, density_kg_m3=config['density_kg_m3'],
         strength_mpa=config['strength_mpa'], toughness_n_mm=config['toughness_n_mm'],
         seam_spacing_mm=config['seam_spacing_mm'], damage_enabled=config['damage_enabled'],
         nonlinear_solver=config.get('nonlinear_solver', 'ptc'),
@@ -42,9 +53,10 @@ def problem(config):
         cohesive_unloading=config.get('cohesive_unloading', 'secant'),
         friction_velocity_epsilon=config.get('friction_velocity_epsilon_mm_s', .0002),
         maxwell_shear=1.24, relaxation_s=1.7, loading_rate=.2,
-        bulk_modulus=23.34333333333331, shear_modulus=.14, mu=.35, dhat=.0025,
+        bulk_modulus=23.34333333333331, shear_modulus=.14, mu=.35, dhat=config.get('contact_activation_mm', .0025),
         local_spacing=config['local_spacing_mm'], surface_spacing=config['surface_spacing_mm'],
         coarse_spacing=config['coarse_spacing_mm'], nose_facets=config['nose_facets'],
+        blade_spacing=config.get('blade_surface_spacing_mm'),
         predictor='secant', max_iterations=500, hessian_mode='regularized')
 
 
@@ -109,8 +121,7 @@ def audit(p, state, rec):
     fresh = p.acceptance(x, float(state['depth_mm']), 0, 0)
     np.testing.assert_allclose(p.material_response(x)['metric'], state['material_metric'], rtol=1e-10, atol=1e-11)
     np.testing.assert_allclose(p.cohesive_response(x)['history'], state['history'], rtol=0, atol=1e-12)
-    expected_v = state['increment']/p.material_dt
-    expected_v[p.n:] = 0
+    expected_v = p.endpoint_velocity(x)
     np.testing.assert_allclose(expected_v, state['velocity'], rtol=0, atol=1e-12)
     np.testing.assert_allclose(fresh['reaction_fz_n'], rec['reaction_fz_n'], rtol=1e-9, atol=1e-8)
     for key, val in rec['energy'].items():
@@ -143,7 +154,7 @@ def report(out, result):
     <style>body{{font:16px system-ui;max-width:1200px;margin:32px auto;padding:24px;color:#172b36}}td,th{{padding:8px;border-bottom:1px solid #ddd}}pre{{white-space:pre-wrap}}.note{{background:#fff0d5;padding:18px}}</style>
     <h1>零间隙、裂面接触、二维惯性：实际刀具切割对照</h1>
     <p class="note">30×5×20 mm，刀具居中 s=15 mm；与旧基线 s=7 mm 不同。0°镜像对称、预设直裂路，不能预测斜切、非对称分叉或混合模态滑动。独立示例强度、断裂能和密度，未读取实验力。</p>
-    <p>未断连接为精确约束；裂面为零间隙单边接触；体内两个方向具有真实单位的质量和惯性。原 Maxwell 本构、刀具摩擦、半域完整 IPC/CCD 保留。时间算法为后向 Euler。</p>
+    <p>未断连接为精确约束；裂面为零间隙单边接触；体内两个方向具有真实单位的质量和惯性。时间算法：{html.escape(result['config'].get('time_integrator', 'backward_euler'))}。离散梯度分支采用定末变形Maxwell分裂更新与区间平均反力；时间、接触求积和分裂误差仍需验证。</p>
     <p>数值完成不等于失稳已分辨。能量代数恒等式闭合不等于物理收支收敛；质量未放大，数值耗散与材料耗散分别报告。2 mm 是刀具行程，并非切穿 5 mm 厚试样。</p>
     <pre>{html.escape(json.dumps(result['summary'], ensure_ascii=False, indent=2))}</pre>
     <p>状态：{html.escape(result['status'])}。<a href="result.json">完整结果、输入与源码哈希</a></p>

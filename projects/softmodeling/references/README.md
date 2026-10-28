@@ -217,6 +217,11 @@ Watson同伦综述仅保留为未确认检索线索（U），不补造题名/DOI
 
 ### 2026-10-29 零间隙、动力学与卸载假设补充
 
+Fz专项追加核查：R04正式版元数据与检索正文、[2025作者预印本全文](https://arxiv.org/html/2507.13565v1)第2.3、4.2、5.3、5.7节分别使用，不能把预印本公式疏漏或正则假设当作实测物性。本次正式版PDF下载未成功，不新增虚假的本地原文映射。
+
+- Gonzalez（2000），*Exact energy and momentum conserving algorithms for general models in nonlinear elasticity*，CMAME190,1763–1783，[DOI](https://doi.org/10.1016/S0045-7825(00)00189-4)、[作者说明](https://web.ma.utexas.edu/users/og/numerics.html)。核查出版摘要/数学框架与作者说明，支持C空间离散梯度路线；本项目Maxwell分裂、IPC时间求积和半空间约束为自行推导与验证，不冒称全文算法的完整复现或继承其所有守恒结论。
+- Leguillon（2002），*Strength or toughness? A criterion for crack onset at a notch*，EJM A/Solids21,61–72，[DOI](https://doi.org/10.1016/S0997-7538(01)01184-6)；核查出版摘要及[Leguillon与Yosibash后续原文中的准则复述](https://tzin.bgu.ac.il/me/yosibash/papers/IJF_03_Leguillon.pdf)。同一有限裂增量需同时满足强度与能量条件；当前非局部牵引规则没有虚拟裂增量重平衡，不能称为该耦合准则。
+
 - Vavasis、Papoulia、Hirmand，*Second-order cone interior-point method for quasistatic and moderate dynamic cohesive fracture*，CMAME，DOI [10.1016/j.cma.2019.112633](https://doi.org/10.1016/j.cma.2019.112633)，[预印本](https://arxiv.org/abs/1909.10641)。支持初始刚性内聚、非光滑势与隐式动态约束的路线；当前实现不是其SOCP算法复现。
 - Collins-Craft、Bourrier、Acary（2022），*On the formulation and implementation of extrinsic cohesive zone models with contact*，CMAME400，115545，[DOI](https://doi.org/10.1016/j.cma.2022.115545)。本轮核读出版摘要与[作者的动态/冲击源代码](https://github.com/nickcollins-craft/On-the-formulation-and-implementation-of-extrinsic-cohesive-zone-models-with-contact/blob/main/Python/spring_czm-dynamic_with_impacts.py)，源文件Git blob为`7eeeda2a70d3f35aaec5b2cf799cf53eb6b11b21`；未执行作者程序。代码中内聚冲量按`−h σc β`，卸载时β保持，区别于割线回原点。HAL正文受访问限制，不能声称逐式核读全文；原代码为线性弹性LCP框架，不能把其能量定理直接移给本项目的有限应变Maxwell/IPC。
 - Collins-Craft、Acary，*On the formulation and implementation of mixed mode I and mode II extrinsic cohesive zone models with contact and friction*，[作者代码](https://github.com/nickcollins-craft/mixed-mode-i-and-mode-ii-extrinsic-cohesive-zone-models-with-contact-and-friction)、[2025归档](https://doi.org/10.5281/zenodo.16911870)。核查了法向内聚/接触、摩擦及能量处理入口；代码使用Akantu/Siconos，尚未接入本项目。它是一般裂面接触与混合模式的后续候选，不是已验证的橡胶切割模型。

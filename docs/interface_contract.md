@@ -147,3 +147,25 @@ Maxwell真实时间与半域完整IPC/CCD，未断法向连接为精确约束，
 独立重算的端点方程/历史通过与`accepted_chord_ccd_safe`分开报告；后者为接受态之间
 直线路径的碰撞及正J检查，历史输出中可能为false，不能以端点审查掩盖它。
 额外的保存态审查输出独立sidecar，不覆盖原算例的预算耗尽或审查未完成状态。
+
+2026-10-29新增`time_integrator=backward_euler|discrete_gradient`，缺省BE保持旧算法。
+后者是独立研究分支：C空间体离散梯度、内聚路径功、末变形Maxwell真实dt分裂，
+`barrier_quadrature_rule=gauss|lobatto`及`barrier_quadrature=2|3|5`写入配置。
+内部Gauss不保持步末屏障发散性，保留供反例重算；当前修正采用Lobatto。
+`kinematic_theta`范围[.5,1]，缺省.5；大于.5的惯性数值耗散必须分账。
+旧能量键`backward_euler_inertia_loss_n_mm`在该分支存放
+`(2theta−1) sum_full(m*|Δv|²)/2`，不是物理阻尼；其余`*_endpoint_defect`键表示
+算法功与能量增量的缺口，不能仍按BE端点求积解释。
+`viscous_endpoint_dissipation_n_mm`在该分支表示固定末变形的Maxwell能量减少，
+实际定义同时写入`material.dissipation_quadrature`。
+`reaction_sampling=algorithmic interval-average`明确Fz采样方式。
+
+新分支可选`insertion_rule=local_strength|connected_patch|nonlocal_tensile|nonlocal_intact`。
+后三者需要独立的正`nucleation_length_mm`；不是已标定参数或耦合FFM。
+`nonlocal_intact`只在未释放连接上平均约束牵引；旧`nonlocal_tensile`含已释放点的零残量，
+保留为已发现稀释问题的对照，不能把它解释为真实邻域体应力。
+`contact_activation_mm`仅改变IPC的数值激活距离，缺省.0025 mm；零参考裂缝间隙不变。
+可选`blade_surface_spacing_mm`范围(0,.05]，保持原刀具轮廓/鼻部顶点，只细分直边并向
+远端渐粗；缺省保留旧分段。它改变接触权重与拓扑，必须从自身初态验证。
+负摩擦功不接受；离散功分支将其转为可回退失败，最小步仍失败即退出。
+这些配置只能从自身初态执行有界任务。完整体基线和UI默认仍不迁移。

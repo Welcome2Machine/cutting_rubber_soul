@@ -68,4 +68,6 @@ python tools/check_publish.py --staged
 
 详细说明：[接口契约](docs/interface_contract.md) · [起裂与裂后实现及证据](docs/fracture_implementation.md) · [环境与迁移](docs/environment.md) · [Git 管理](docs/git_workflow.md) · [首版验收记录](docs/verification.md)。
 
-最新零间隙二维动力学结果见本地[实际刀具控制报告](runs/zero_gap_dynamic_20261028/index.html)与[方法/独立试验设计第18–20节](docs/fracture_implementation.md)。新增完整尺寸、居中刀具的镜像对称控制，接入精确未断连接、单边裂面接触和两个方向的惯性；原偏心/斜切及自由裂路尚未接入。三档含断裂算例均完成2 mm并通过逐态重算及时间路径CCD，但最细档全程能量缺口仍4.99%、首快速区间数值误差19.61%，失稳能量和时间/网格/裂路资格未通过。不使用切割力反推参数。旧[内核处理报告](runs/fracture_resolution_20261028/index.html)保留为历史证据。
+此前零间隙二维动力学结果见本地[实际刀具控制报告](runs/zero_gap_dynamic_20261028/index.html)与[方法/独立试验设计第18–20节](docs/fracture_implementation.md)。新增完整尺寸、居中刀具的镜像对称控制，接入精确未断连接、单边裂面接触和两个方向的惯性；原偏心/斜切及自由裂路尚未接入。三档含断裂算例均完成2 mm并通过逐态重算及时间路径CCD，但最细档全程能量缺口仍4.99%、首快速区间数值误差19.61%，失稳能量和时间/网格/裂路资格未通过。不使用切割力反推参数。旧[内核处理报告](runs/fracture_resolution_20261028/index.html)保留为历史证据。
+
+最新[Fz异常修复与判据验证](runs/fracture_repair_20261029/index.html)接入C空间离散梯度、精确内聚路径功、Lobatto接触求积、刀身保形细分和独立邻域强度候选。已定位长刀边摩擦权重抵消产生负功的失败态；保守算法的已审查前缀显著降低能量缺口，但大降力仍存在，不能将其全部归于旧积分误差。完整含断裂2 mm、时间/网格/裂路和物理参数资格仍未通过；无释放的2 mm方案已否决。方法与独立试验增补见[第21节](docs/fracture_implementation.md)，生成图中的实验仅作趋势参考。

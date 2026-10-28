@@ -192,6 +192,15 @@ class ZeroGapCutProblem(ViscoelasticProblem):
             self.previous_history if history is None else history, self.strength, self.toughness,
             self.cohesive_unloading)
 
+    def endpoint_velocity(self, x):
+        velocity = self.step_increment(x)/self.material_dt
+        velocity[self.n:] = 0.
+        return velocity
+
+    def insertion_mask(self, traction):
+        return ((~self.released) & (traction > self.strength)
+                & (self.mesh.local_sn[self.seam, 1] > 0))
+
     def set_primary_increment(self, x, increment):
         if not np.allclose(x, self.previous+increment, rtol=0, atol=1e-13):
             raise ValueError('Primary increment and positions differ beyond roundoff')
@@ -257,7 +266,7 @@ class ZeroGapCutProblem(ViscoelasticProblem):
             total_iterations += iterations+1
             g = self.evaluate(x, self.lag(x), tangent=False)[1].reshape(-1, 2)
             traction = -g[self.seam, 0]/self.seam_area
-            insert = (~self.released) & (traction > self.strength) & (self.mesh.local_sn[self.seam, 1] > 0)
+            insert = self.insertion_mask(traction)
             if self.damage_enabled and insert.any():
                 self.insertion_events.append(dict(nodes=self.seam[insert].tolist(),
                     reference_y_mm=self.rest[self.seam[insert], 1].tolist(),
@@ -319,8 +328,7 @@ class ZeroGapCutProblem(ViscoelasticProblem):
                     raise EnergyResolutionRequired(f'Numerical energy defect {defect:g} exceeds reservoir allowance {allowed:g}')
             elif self.energy_tolerance is not None and error > self.energy_tolerance:
                 raise EnergyResolutionRequired(f'Numerical energy ratio {error:g} exceeds {self.energy_tolerance:g}')
-            velocity = self.step_increment(value)/self.material_dt
-            velocity[self.n:] = 0.  # prescribed rigid blade has no specimen mass
+            velocity = self.endpoint_velocity(value)
             history = self.cohesive_response(value)['history'].copy()
             metric = self.material_response(value)['metric'].copy()
             self._remember_predictor_acceptance(value, depth, old)

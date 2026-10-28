@@ -100,8 +100,40 @@
     "Confined/compressibility test or independent lateral DIC with adequate volume-strain resolution; lateral strain indistinguishable from incompressibility gives only a K lower bound",
     "Uniformity-verified multiaxial test if a hydrostatic-strength parameter remains unidentified; bonded poker-chip failure requires inverse field analysis and is not a direct uniform-strength value",
     "Independent blade/rubber sliding tests at >=3 normal loads and 3 sliding speeds, dry/lubricated conditions separately; blade radius/thickness measured before and after",
-    "Cyclic/Mullins pilot: if significant, augment bulk law or enforce the same independently documented preconditioning in characterization and cutting"
+    "Cyclic/Mullins pilot: if significant, augment bulk law or enforce the same independently documented preconditioning in characterization and cutting",
+    "Broadband DMA/high-rate relaxation pilot with instrument bandwidth and temperature recorded; establish whether the millisecond fracture transient is covered before adding fast viscous branches. No specimen count allocated yet; excluded from the 233 enumerated specimens and never inferred from cutting force or numerical energy loss."
   ],
+  "additional_tests_20261029": {
+    "status": "planned_not_measured",
+    "core_specimens_unchanged": 164,
+    "additional_specimens": 69,
+    "total_if_all_executed": 233,
+    "groups": [
+      {
+        "id": "notched_open_unload_reload",
+        "planned_specimens": 27,
+        "design": "3 opening rates x 3 unloading stages x 3 fresh specimens; stages selected from a separate pilot opening test, never from cutting force",
+        "measure": "synchronized force, local opening, crack reference length, temperature and complete unload/reload path",
+        "discriminates": "secant versus constant-traction unloading, softening shape, rate dependence; distinguish recoverable work and irreversible crack work"
+      },
+      {
+        "id": "blade_sliding_pressure_speed",
+        "planned_specimens": 27,
+        "design": "3 normal pressures x 3 sliding speeds x 3 fresh contact patches; pilot speeds 0.02/0.2/2 mm/s; same blade surface and same rubber batch; dry and lubricated conditions require separate designs",
+        "measure": "normal and tangential loads, actual contact area, local slip, dwell, temperature, surface condition and wear before/after",
+        "discriminates": "mu pressure slope versus pressure-independent tau_w intercept; uncertainty and low-pressure contact loss must be included"
+      },
+      {
+        "id": "nucleation_length_identification",
+        "planned_specimens": 15,
+        "design": "3 geometrically scaled uncracked/notched tensile specimens x 5; preserve a separately measured notch family; original notch-radius holdouts stay excluded from fitting",
+        "measure": "full-field strain and crack-onset interval at independently measured bulk/strength/Gc",
+        "discriminates": "whether a finite nonlocal length is identifiable across sizes; report only bounds if not identifiable"
+      }
+    ],
+    "forbidden_identification_inputs": ["cutting_force", "57deg_uncracked_2mm", "numerical_energy_residual"],
+    "measured_evidence": []
+  },
   "data_template": {
     "specimen_id": null,
     "batch_id": null,

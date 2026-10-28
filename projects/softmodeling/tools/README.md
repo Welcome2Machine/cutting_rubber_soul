@@ -158,6 +158,16 @@ python -m tools.render_solver_dashboard --study outputs/new_angles
 - `tools.run_cohesive_cut`的版本3可显式选`nonlinear_solver="newton_lm"`作研究诊断；默认仍`ptc`。真实残差最小化可能停滞于非零值，不是已验证的全程收敛修复。输入、预算、失败和审查照常记录。
 - 独立材料试验的待填数据字段与工作量见`configs/independent_fracture_test_plan.json`。它是计划，不是运行配置或已标定物性。
 
+2026-10-29离散功研究支路沿用`tools.run_zero_gap_cut`的显式新目录/预算入口，配置示例
+`configs/zero_gap_discrete_work.json`。`time_integrator=discrete_gradient`并不表示整条路径
+已通过能量或时间验证；算法Fz为区间平均，theta额外耗散和Maxwell物理耗散必须分开。
+`barrier_quadrature_rule=lobatto`包含步末屏障；`gauss`保留用于重算已发现的内部求积反例。
+`insertion_rule=nonlocal_intact`另需独立长度，邻域只覆盖未释放连接；旧`nonlocal_tensile`
+将已释放点的零约束残量计入，保留为负对照。`connected_patch`在本轮2 mm未释放，
+不可当作修复后裂后结果。实际证据见[本轮报告](../../../runs/fracture_repair_20261029/index.html)。
+`blade_surface_spacing_mm`显式设置既有保形直边细分，示例配置采用.05 mm，theta=.5。
+此文件仅是待验证配置；不表示这组空间/时间离散已经收敛。
+
 ### 实际刀具零间隙二维动力学控制
 
 在FE项目目录显式执行：
