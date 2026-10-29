@@ -7,9 +7,12 @@ import sys
 import time
 import numpy as np
 from threadpoolctl import threadpool_limits
+from numerical_runtime import runtime_entry, add_thread_arguments, thread_arguments
 from run_support import write_json
 from .run_zero_gap_cut import problem, hashes
 from prototype.finite_increment_cut import FrozenVirtualCrack, coupled_margin
+from virtual_friction_work import interval_decision
+from .virtual_work_audit import audit_work
 
 
 def stored_equilibrium(p, x):
@@ -25,7 +28,7 @@ def stored_equilibrium(p, x):
     return g, residual
 
 
-def audit_evidence(p, state, check, fields):
+def audit_evidence(p, state, check, fields, deadline=float('inf')):
     for key in ('seed_positions', 'before_positions', 'after_positions'):
         if not np.array_equal(fields[key][p.n:], state['positions'][p.n:]):
             raise ValueError('Finite-crack virtual blade position differs')
@@ -75,23 +78,43 @@ def audit_evidence(p, state, check, fields):
     _, r1 = stored_equilibrium(post, after)
     stress = np.minimum(physical, -bg.reshape(-1,2)[p.seam,0]/p.seam_area)
     u0, u1 = base.stored(before), post.stored(after)
-    d5, d9, d17 = [post.friction_path_work(before, after, n) for n in (5,9,17)]
-    # Extra diagnostic for extending a quasistatic gate to a dynamic seed.
-    # The physical seed is not generally the frozen static comparator. Report
-    # its available stored energy through BOTH virtual chords separately;
-    # a passing comparator criterion alone does not certify this stronger test.
-    pre5,pre9,pre17=[base.friction_path_work(seed,before,n) for n in (5,9,17)]
-    seed_stored=base.stored(seed)
     required = p.toughness*float(p.seam_area[indices].sum())
-    passed, margin = coupled_margin(stress[indices], p.strength, u0-u1, d9, required, 2*abs(d9-d5))
-    refined, refined_margin = coupled_margin(stress[indices], p.strength, u0-u1, d17, required, 2*abs(d17-d9))
-    seed_margin=seed_stored-u1-pre17-d17-required-2*abs(pre17-pre9)-2*abs(d17-d9)
+    independent = pre_independent = None
+    if 'friction_integration' in check:
+        independent = audit_work(post, before, after, deadline)
+        pre_independent = audit_work(base, seed, before, deadline)
+        recorded = check['friction_integration']
+        if not recorded['converged'] or recorded['method'] != 'geometry_partitioned_adaptive_gauss_kronrod':
+            raise ValueError('Accepted insertion lacks completed production quadrature')
+        d9 = check['virtual_friction_work_n_mm']
+        d17 = independent['work_n_mm']
+        uncertainty = recorded['empirical_uncertainty_n_mm']
+        if abs(d9-d17) > uncertainty+independent['empirical_uncertainty_n_mm']+1e-7:
+            raise ValueError('Independent friction integration disagrees with production interval')
+        decision = interval_decision(u0-u1, required, d17,
+            independent['empirical_uncertainty_n_mm'], independent['converged'])
+        refined = decision['status'] == 'accepted'
+        refined_margin = decision['margin_lower_n_mm']
+        passed, margin = coupled_margin(stress[indices],p.strength,u0-u1,d9,required,uncertainty)
+        pre17 = pre_independent['work_n_mm']
+        seed_stored = base.stored(seed)
+        seed_margin = seed_stored-u1-pre17-d17-required-independent['empirical_uncertainty_n_mm']-pre_independent['empirical_uncertainty_n_mm']
+    else:
+        # Historical bundles retain their original arithmetic, marked separately.
+        d5, d9, d17 = [post.friction_path_work(before, after, n) for n in (5,9,17)]
+        pre5,pre9,pre17=[base.friction_path_work(seed,before,n) for n in (5,9,17)]
+        seed_stored=base.stored(seed)
+        passed, margin = coupled_margin(stress[indices],p.strength,u0-u1,d9,required,2*abs(d9-d5))
+        refined, refined_margin = coupled_margin(stress[indices],p.strength,u0-u1,d17,required,2*abs(d17-d9))
+        seed_margin=seed_stored-u1-pre17-d17-required-2*abs(pre17-pre9)-2*abs(d17-d9)
     for key, value in dict(virtual_stored_before_n_mm=u0, virtual_stored_after_n_mm=u1,
         virtual_friction_work_n_mm=d9, required_fracture_work_n_mm=required, energy_margin_n_mm=margin).items():
         np.testing.assert_allclose(check[key], value, rtol=1e-8, atol=1e-8)
     if not passed or not check['accepted']:
         raise ValueError('Stored accepted crack does not satisfy both conditions')
     return dict(passed=True, stronger_quadrature_passed=refined,
+        independent_friction_integration=independent,pre_independent_friction_integration=pre_independent,
+        quadrature_convergence_validated=independent is not None and independent['converged'],
         physical_seed_residual_n=seed_residual,physical_seed_min_j=seed_j,
         primary_seed_increment_saved=seed_increment_present, virtual_pre_residual_n=r0,
         virtual_post_residual_n=r1, energy_margin_n_mm=margin, refined_energy_margin_n_mm=refined_margin,
@@ -100,11 +123,12 @@ def audit_evidence(p, state, check, fields):
         extra_quadrature_work_n_mm=d17, virtual_friction_work_n_mm=d9,
         seed_stored_n_mm=seed_stored,pre_virtual_stored_change_n_mm=u0-seed_stored,
         pre_virtual_friction_work_n_mm=pre17,
-        seed_path_energy_margin_n_mm=seed_margin,seed_path_energy_supported=bool(seed_margin>=0),
+        seed_path_energy_margin_n_mm=seed_margin,seed_path_energy_supported=bool(seed_margin>=0 and (pre_independent is None or pre_independent['converged'])),
         reference_tributary_area_mm2=float(p.seam_area[indices].sum()))
 
 
-def inspect(directory, seconds):
+@runtime_entry
+def inspect(directory, seconds, *, runtime=None):
     if not np.isfinite(seconds) or not 1 <= seconds <= 3600:
         raise ValueError('Explicit audit budget 1..3600 s required')
     directory=Path(directory).resolve()
@@ -115,9 +139,9 @@ def inspect(directory, seconds):
         result_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),source_hashes=source,
         auditor_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         producer_source_matches_current=source==result['source_hashes'],
-        interpreter=sys.executable,budget_s=seconds,passed=False,checks=[])
-    p=problem(result['config']);p.ipc.set_num_threads(2)
-    with threadpool_limits(limits=2):
+        interpreter=sys.executable,budget_s=seconds,thread_runtime=runtime,passed=False,checks=[])
+    p=problem(result['config']);p.ipc.set_num_threads(runtime['requested']['ipc_threads'])
+    with threadpool_limits(limits=runtime['requested']['blas_threads'], user_api='blas'):
         try:
             for rec in result['steps']:
                 if time.monotonic()-start >= seconds:raise TimeoutError('Finite-increment audit budget')
@@ -131,7 +155,7 @@ def inspect(directory, seconds):
                     if ep.parent!=directory or hashlib.sha256(ep.read_bytes()).hexdigest()!=check['evidence_sha256']:
                         raise ValueError('Virtual evidence identity differs')
                     with np.load(ep,allow_pickle=False) as data:fields={k:data[k].copy() for k in data.files}
-                    audit=audit_evidence(p,state,check,fields)
+                    audit=audit_evidence(p,state,check,fields,start+seconds)
                     audit.update(depth_mm=rec['depth_mm'],evidence_file=ep.name)
                     report['checks'].append(audit)
                     audited.update(check['nodes'])
@@ -153,9 +177,10 @@ def main():
     parser.add_argument('directory',type=Path)
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--seconds',type=float,required=True)
+    add_thread_arguments(parser)
     args=parser.parse_args()
     if args.output.exists():raise FileExistsError('Preserve existing audit')
-    report=inspect(args.directory,args.seconds);write_json(args.output,report)
+    report=inspect(args.directory,args.seconds,**thread_arguments(args));write_json(args.output,report)
     print(json.dumps({k:v for k,v in report.items() if k not in ('source_hashes','checks')}))
 
 

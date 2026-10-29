@@ -12,6 +12,7 @@ import time
 
 import numpy as np
 from threadpoolctl import threadpool_limits
+from numerical_runtime import runtime_entry, add_thread_arguments, thread_arguments
 
 from run_support import write_json
 from .run_zero_gap_cut import problem, hashes
@@ -132,7 +133,8 @@ def probe_equilibrium(v, seed, depth, deadline, mode):
     return value, g, residual
 
 
-def inspect(directory, output, seconds, candidate=None, probe='production'):
+@runtime_entry
+def inspect(directory, output, seconds, candidate=None, probe='production', *, runtime=None):
     if not np.isfinite(seconds) or not 1 <= seconds <= 600:
         raise ValueError('Explicit diagnostic budget must be 1..600 seconds')
     if probe not in ('production', 'wide_smoothing', 'lagged_friction', 'lagged_newton') or (probe != 'production' and candidate is None):
@@ -154,10 +156,10 @@ def inspect(directory, output, seconds, candidate=None, probe='production'):
         result_sha256=hashlib.sha256(result_path.read_bytes()).hexdigest(),
         failed_sha256=hashlib.sha256(failed.read_bytes()).hexdigest(),
         source_hashes=source, diagnostic_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-        budget_s=seconds, equilibrium_probe=probe, candidates=[], completed=False, intact_certified=False)
+        budget_s=seconds, thread_runtime=runtime, equilibrium_probe=probe, candidates=[], completed=False, intact_certified=False)
     try:
         p = problem(raw['config'])
-        p.ipc.set_num_threads(2)
+        p.ipc.set_num_threads(runtime['requested']['ipc_threads'])
         with np.load(failed, allow_pickle=False) as data:
             fields = {k: data[k].copy() for k in data.files}
         x, depth = restore_failed_seed(p, fields)
@@ -248,9 +250,10 @@ def main():
     parser.add_argument('--candidate', type=int, nargs='+', help='Only this exact contiguous seam patch')
     parser.add_argument('--probe', choices=['production', 'wide_smoothing', 'lagged_friction', 'lagged_newton'], default='production',
                         help='Diagnostic root directions only; requires --candidate for a non-production probe')
+    add_thread_arguments(parser)
     args = parser.parse_args()
-    with threadpool_limits(limits=2):
-        result = inspect(args.directory, args.output, args.seconds, args.candidate, args.probe)
+    result = inspect(args.directory, args.output, args.seconds, args.candidate, args.probe, **thread_arguments(args))
+    write_json(args.output/'diagnostic.json', result)
     print(json.dumps({k: v for k, v in result.items() if k != 'source_hashes'}, indent=2))
 
 

@@ -17,6 +17,8 @@ from .ipc_reference import IPCProblem, LoadStepFailure, determinant_step
 from .zero_gap_cut import ZeroGapCutProblem
 from .energy_cut import EnergyCutProblem
 from .force_globalization import solve
+from virtual_path_geometry import native_partitioned_chord
+from virtual_friction_work import virtual_work, interval_decision
 
 
 def finite_patches(traction, released, y, area, strength):
@@ -173,6 +175,9 @@ class FrozenVirtualCrack(ZeroGapCutProblem):
         Whole-chord positive J and exact halfspace conditions are checked first.
         """
         maximum = getattr(self, 'ffm_chord_max_queries', 0)
+        if getattr(self, 'ffm_chord_partition', 'dyadic') == 'geometry':
+            self.virtual_chord_certificate = native_partitioned_chord(self, x, maximum)
+            return self.virtual_chord_certificate['complete']
         if not maximum:
             return super().accepted_chord_is_safe(x)
         self.virtual_chord_certificate = dict(complete=False, native_queries=0, segments=[])
@@ -380,7 +385,7 @@ class FrozenVirtualCrack(ZeroGapCutProblem):
 class FiniteIncrementMixin:
     def __init__(self, *, ffm_virtual_seconds=10., ffm_friction_epsilon_mm=1e-6,
                  ffm_max_candidates=256, ffm_virtual_solver='legacy', ffm_ccd_tolerance=None,
-                 ffm_chord_max_queries=0, **kwargs):
+                 ffm_chord_max_queries=0, ffm_chord_partition='dyadic', **kwargs):
         super().__init__(**kwargs)
         if (not np.isfinite([ffm_virtual_seconds, ffm_friction_epsilon_mm]).all()
                 or min(ffm_virtual_seconds, ffm_friction_epsilon_mm) <= 0
@@ -401,6 +406,10 @@ class FiniteIncrementMixin:
         if type(ffm_chord_max_queries) is not int or not 0 <= ffm_chord_max_queries <= 256:
             raise ValueError('Virtual chord cover requires 0..256 native queries')
         self.ffm_chord_max_queries = ffm_chord_max_queries
+        if ffm_chord_partition not in ('dyadic', 'geometry') or (
+                ffm_chord_partition == 'geometry' and not ffm_chord_max_queries):
+            raise ValueError('Geometry partition needs an explicit positive native query budget')
+        self.ffm_chord_partition = ffm_chord_partition
         self.ffm_pending, self.ffm_checks = [], []
         self.ffm_failure = None
         self.ffm_scan = None
@@ -457,12 +466,28 @@ class FiniteIncrementMixin:
                 self.capture_virtual_failure(post, x, metric, history, removed, depth, 'after', exc)
                 raise
             released_energy = u0-post.stored(after)
-            d5 = post.friction_path_work(before, after, 5)
-            d9 = post.friction_path_work(before, after, 9)
-            uncertainty = 2*abs(d9-d5)
             area = float(self.seam_area[ids].sum())
-            accepted, margin = coupled_margin(stress[ids], self.strength, released_energy, d9,
-                                               self.toughness*area, uncertainty)
+            required = self.toughness*area
+            # Nonnegative Coulomb work gives a valid necessary energy condition.
+            # It can reject before quadrature, but never accept an insertion.
+            if released_energy < required:
+                work_report = dict(method='nonnegative_coulomb_lower_bound', converged=True,
+                    work_n_mm=0., empirical_uncertainty_n_mm=0., actual_integral_evaluated=False,
+                    rejection_uses_rigorous_nonnegativity_only=True)
+            else:
+                work_report = virtual_work(post, before, after, virtual_deadline)
+            d9 = work_report['work_n_mm']
+            uncertainty = work_report['empirical_uncertainty_n_mm']
+            decision = (dict(status='unknown') if d9 is None else
+                interval_decision(released_energy, required, d9, uncertainty, work_report['converged']))
+            if decision['status'] == 'unknown':
+                post.trial = after.copy()
+                exc = LoadStepFailure('Virtual friction work/energy interval unresolved; candidate unknown')
+                self.capture_virtual_failure(post, x, metric, history, removed, depth, 'quadrature', exc)
+                self.ffm_failure['metadata'].update(friction_integration=work_report, energy_interval=decision)
+                raise exc
+            accepted = decision['status'] == 'accepted'
+            margin = decision['margin_lower_n_mm']
             opened = np.r_[removed[:-1] | removed[1:]]
             existing = self.released[:-1] | self.released[1:]
             support = self.config.width_mm*float(np.diff(self.rest[self.seam, 1])[opened & ~existing].sum())
@@ -473,6 +498,7 @@ class FiniteIncrementMixin:
                 reference_tributary_area_mm2=area, newly_exposed_support_area_mm2=support,
                 virtual_stored_before_n_mm=u0, virtual_stored_after_n_mm=post.stored(after),
                 virtual_friction_work_n_mm=d9, friction_quadrature_uncertainty_n_mm=uncertainty,
+                friction_integration=work_report, energy_interval=decision,
                 required_fracture_work_n_mm=self.toughness*area, energy_margin_n_mm=margin,
                 virtual_pre_residual_n=norm, virtual_post_residual_n=postnorm, accepted=accepted,
                 virtual_pre_solver=base.virtual_solver_method, virtual_post_solver=post.virtual_solver_method,

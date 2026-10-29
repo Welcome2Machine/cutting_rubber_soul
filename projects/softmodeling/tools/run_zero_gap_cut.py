@@ -12,6 +12,7 @@ import sys
 import time
 import numpy as np
 from threadpoolctl import threadpool_limits
+from numerical_runtime import runtime_entry, add_thread_arguments, thread_arguments
 from run_support import source_hashes, write_json
 from prototype.zero_gap_cut import ZeroGapCutProblem, EnergyResolutionRequired
 from prototype.ipc_reference import LoadStepFailure
@@ -27,7 +28,7 @@ def problem(config):
         'time_integrator', 'barrier_quadrature', 'barrier_quadrature_rule', 'insertion_rule', 'nucleation_length_mm',
         'kinematic_theta', 'contact_activation_mm', 'blade_surface_spacing_mm',
         'fracture_criterion', 'ffm_virtual_seconds', 'ffm_friction_epsilon_mm', 'ffm_max_candidates',
-        'ffm_virtual_solver', 'ffm_ccd_tolerance', 'ffm_chord_max_queries'}
+        'ffm_virtual_solver', 'ffm_ccd_tolerance', 'ffm_chord_max_queries', 'ffm_chord_partition'}
     if set(config)-allowed or config['schema'] != 'softcut-zero-gap-dynamics/1':
         raise ValueError('Unknown zero-gap configuration')
     if not 0 < config['target_mm'] <= 2 or not 0 < config['minimum_increment_mm'] <= config['increment_mm']:
@@ -55,7 +56,7 @@ def problem(config):
         from prototype.finite_increment_cut import FiniteIncrementEnergyCutProblem, FiniteIncrementBackwardCutProblem
         cls = FiniteIncrementEnergyCutProblem if integrator == 'discrete_gradient' else FiniteIncrementBackwardCutProblem
         extra.update({key:config[key] for key in ('ffm_virtual_seconds', 'ffm_friction_epsilon_mm',
-            'ffm_max_candidates', 'ffm_virtual_solver', 'ffm_ccd_tolerance', 'ffm_chord_max_queries') if key in config})
+            'ffm_max_candidates', 'ffm_virtual_solver', 'ffm_ccd_tolerance', 'ffm_chord_max_queries', 'ffm_chord_partition') if key in config})
     elif criterion != 'local_or_neighbourhood' or any(key.startswith('ffm_') for key in config):
         raise ValueError('Unknown fracture criterion or unbound virtual options')
     return cls(**extra, density_kg_m3=config['density_kg_m3'],
@@ -77,6 +78,8 @@ def problem(config):
 
 def hashes():
     value = source_hashes()
+    for name in ('numerical_runtime.py', 'virtual_path_geometry.py', 'virtual_friction_work.py'):
+        value[name] = hashlib.sha256((Path(__file__).parents[1]/name).read_bytes()).hexdigest()
     value['tools/run_zero_gap_cut.py'] = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     baseline = Path(__file__).parents[1]/'prototype/ipc_baseline.json'
     value['prototype/ipc_baseline.json'] = hashlib.sha256(baseline.read_bytes()).hexdigest()
@@ -193,18 +196,20 @@ def report(out, result):
     (out/'index.html').write_text(text, encoding='utf-8')
 
 
-def run(config, out, seconds):
+@runtime_entry
+def run(config, out, seconds, *, runtime=None):
     if not np.isfinite(seconds) or seconds < 30 or seconds > 3600:
         raise ValueError('Explicit budget must be 30..3600 s')
     out.mkdir(parents=True, exist_ok=False)
     from prototype.ipc_reference import toolkit
-    toolkit().set_num_threads(2)
+    toolkit().set_num_threads(runtime['requested']['ipc_threads'])
     started = time.monotonic()
     initial_hashes = hashes()
     result = dict(schema='softcut-zero-gap-result/1', config=config,
         config_sha256=hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest(),
         started_utc=datetime.now(timezone.utc).isoformat(), interpreter=sys.executable,
-        budget_s=seconds, native_ipc_threads=2, blas_threads=2,
+        budget_s=seconds, native_ipc_threads=runtime['ipc_threads_effective'],
+        blas_threads=runtime['requested']['blas_threads'], thread_runtime=runtime,
         source_hashes=initial_hashes, steps=[], attempts=[], audits=[],
         no_experimental_force_inputs=True, geometry='centred symmetric 30x5x20 mm; NOT s=7 baseline',
         status='running')
@@ -307,12 +312,11 @@ def main():
     parser.add_argument('--config', required=True, type=Path)
     parser.add_argument('--out', required=True, type=Path)
     parser.add_argument('--seconds', required=True, type=float)
+    add_thread_arguments(parser)
     args = parser.parse_args()
     config = json.loads(args.config.read_text(encoding='utf-8-sig'))
-    from prototype.ipc_reference import toolkit
-    toolkit().set_num_threads(2)
-    with threadpool_limits(limits=2):
-        result = run(config, args.out, args.seconds)
+    result = run(config, args.out, args.seconds, **thread_arguments(args))
+    write_json(args.out/'result.json', result)
     print(json.dumps(result['summary'], ensure_ascii=False), flush=True)
 
 

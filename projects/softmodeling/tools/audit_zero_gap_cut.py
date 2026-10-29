@@ -7,11 +7,13 @@ import sys
 import time
 import numpy as np
 from threadpoolctl import threadpool_limits
+from numerical_runtime import runtime_entry, add_thread_arguments, thread_arguments
 from run_support import write_json
 from .run_zero_gap_cut import problem, audit, hashes
 
 
-def inspect(directory, seconds):
+@runtime_entry
+def inspect(directory, seconds, *, runtime=None):
     if not np.isfinite(seconds) or not 1 <= seconds <= 3600:
         raise ValueError('Saved-state audit budget must be 1..3600 seconds')
     directory=Path(directory).resolve()
@@ -26,11 +28,12 @@ def inspect(directory, seconds):
         source_hashes=source,original_source_hashes=result['source_hashes'],
         auditor_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         producer_source_matches_current=source==result['source_hashes'],
-        interpreter=sys.executable,budget_s=seconds,native_threads=2,blas_threads=2,
+        interpreter=sys.executable,budget_s=seconds,native_threads=runtime['ipc_threads_effective'],
+        blas_threads=runtime['requested']['blas_threads'],thread_runtime=runtime,
         passed=False,endpoint_history_passed=False,accepted_chord_ccd_verified=False,audits=[])
     from prototype.ipc_reference import toolkit
-    toolkit().set_num_threads(2)
-    with threadpool_limits(limits=2):
+    toolkit().set_num_threads(runtime['requested']['ipc_threads'])
+    with threadpool_limits(limits=runtime['requested']['blas_threads'], user_api='blas'):
         p=problem(result['config'])
         previous=dict(positions=p.rest,velocity=p.velocity,material_metric=p.material_metric,
                       history=p.history,released=p.released,depth_mm=p.start)
@@ -73,10 +76,11 @@ def main():
     parser.add_argument('directory',type=Path)
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--seconds',type=float,required=True)
+    add_thread_arguments(parser)
     args=parser.parse_args()
     if args.output.exists():
         raise FileExistsError('Use a new audit output; preserve previous evidence')
-    report=inspect(args.directory,args.seconds)
+    report=inspect(args.directory,args.seconds,**thread_arguments(args))
     write_json(args.output,report)
     print(json.dumps({k:v for k,v in report.items() if k not in
         ('source_hashes','original_source_hashes','audits')},ensure_ascii=False))
