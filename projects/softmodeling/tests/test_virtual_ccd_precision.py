@@ -11,13 +11,15 @@ from tools.run_zero_gap_cut import problem
 from test_finite_increment import config
 
 
-def near_miss():
+def near_miss(start=None, end=None):
     # Minimal three-vertex witness from the server's virtual failure. The point
     # (0) approaches the opposite edge (1,2) without ever becoming collinear.
-    start = np.array([[15., 3.715043108781945], [15.1029213229608, 3.8368949894176096],
-                      [15., 3.718068930652552]])
-    end = np.array([[15.04047744071824, 3.757255779154387],
-                    [15.113619320202934, 3.867404703914534], [15., 3.7014800992549253]])
+    if start is None:
+        start = [[15., 3.715043108781945], [15.1029213229608, 3.8368949894176096],
+                 [15., 3.718068930652552]]
+        end = [[15.04047744071824, 3.757255779154387],
+               [15.113619320202934, 3.867404703914534], [15., 3.7014800992549253]]
+    start,end = np.array(start),np.array(end)
     v = object.__new__(FrozenVirtualCrack)
     v.ipc = toolkit();v.ipc.set_num_threads(1)
     v.n = 3;v.rest = start.copy();v.previous = start.copy();v.surface = np.arange(3)
@@ -79,3 +81,61 @@ def test_virtual_precision_does_not_change_physical_loading_ccd():
     assert not hasattr(p,'virtual_narrow_phase_ccd')
     assert v.virtual_narrow_phase_ccd.tolerance == 1e-9
     assert v.virtual_narrow_phase_ccd.conservative_rescaling == .8
+
+
+def buffer_near_miss():
+    return near_miss([[15.,3.715052882775612], [15.102925435649878,3.836903048806188],
+                     [15.,3.71807881412435]],
+                    [[15.040477467774148,3.75725579433116], [15.113619334493869,3.8674047692065208],
+                     [15.,3.7014800389597258]])
+
+
+def test_native_subdivision_covers_entire_same_chord_without_changing_scaling():
+    v,start,end = buffer_near_miss()
+    assert v.ipc.compute_collision_free_stepsize(v.cmesh,start,end,
+        narrow_phase_ccd=v.virtual_narrow_phase_ccd) < 1
+    v.ffm_chord_max_queries = 64
+    assert v.accepted_chord_is_safe(end)
+    cert = v.virtual_chord_certificate
+    segments = cert['segments']
+    assert cert['complete'] and 1 < cert['native_queries'] <= 64
+    assert segments[0][0] == 0 and segments[-1][1] == 1
+    assert all(a[1] == b[0] for a,b in zip(segments[:-1],segments[1:]))
+    assert v.virtual_narrow_phase_ccd.conservative_rescaling == .8
+    for a,b in segments:
+        assert v.ipc.compute_collision_free_stepsize(v.cmesh,start+a*(end-start),start+b*(end-start),
+            narrow_phase_ccd=v.virtual_narrow_phase_ccd) >= 1-1e-10
+
+
+def test_incomplete_cover_cannot_accept_a_native_query_budget_exhaustion():
+    v,start,end = buffer_near_miss()
+    v.ffm_chord_max_queries = 1
+    assert not v.accepted_chord_is_safe(end)
+    assert not v.virtual_chord_certificate['complete']
+    assert v.virtual_chord_certificate['native_queries'] == 1
+
+
+def test_subdivisions_cannot_step_across_real_collision_even_without_bulk_gate():
+    v,start,_ = near_miss()
+    # Isolate surface CCD: remove the bulk triangle, leaving the native EV pair.
+    v.mesh.triangles = np.empty((0,3),int);v.grad = np.empty((0,3,2))
+    end = start.copy();end[0] = .5*(start[1]+start[2])-[.01,0.]
+    v.ffm_chord_max_queries = 64
+    assert not v.accepted_chord_is_safe(end)
+    assert not v.virtual_chord_certificate['complete']
+
+
+def test_subdivision_keeps_whole_chord_j_and_halfspace_gates():
+    v,start,_ = near_miss();v.ffm_chord_max_queries = 64
+    end = start.copy();end[0] = .5*(start[1]+start[2])-[.01,0.]
+    assert not v.accepted_chord_is_safe(end)
+    assert v.virtual_chord_certificate['native_queries'] == 0
+    end=start.copy();end[0,0] -= .01
+    assert not v.accepted_chord_is_safe(end)
+    assert v.virtual_chord_certificate['native_queries'] == 0
+
+
+@pytest.mark.parametrize('queries', [False,-1,257,1.5])
+def test_virtual_chord_work_bound_is_explicit(queries):
+    with pytest.raises(ValueError, match='0..256'):
+        problem(dict(config(),ffm_chord_max_queries=queries))

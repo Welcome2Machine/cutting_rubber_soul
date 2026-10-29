@@ -68,6 +68,7 @@ class FrozenVirtualCrack(ZeroGapCutProblem):
         self.virtual_solver_load = np.zeros(self.total)
         self.virtual_friction_epsilon = epsilon
         self.virtual_solver_phases = []
+        self.virtual_chord_certificate = None
         tolerance = getattr(host, 'ffm_ccd_tolerance', None)
         self.virtual_narrow_phase_ccd = (None if tolerance is None else
             self.ipc.TightInclusionCCD(tolerance=tolerance,
@@ -161,6 +162,53 @@ class FrozenVirtualCrack(ZeroGapCutProblem):
         if getattr(self, 'solver_diagnostics', False):
             self.step_limits = dict(j_fraction=float(j_fraction), ccd_fraction=float(ccd_fraction))
         return max(0., safe)
+
+    def accepted_chord_is_safe(self, x):
+        """Cover the SAME straight chord with full native CCD certificates.
+
+        IPC's conservative initial-distance buffer is an update safeguard, not
+        a physical minimum gap. A rejected long query may still admit a finite
+        partition whose every segment passes the unchanged native CCD. No
+        failed interval is omitted; real collisions or exhausted work reject.
+        Whole-chord positive J and exact halfspace conditions are checked first.
+        """
+        maximum = getattr(self, 'ffm_chord_max_queries', 0)
+        if not maximum:
+            return super().accepted_chord_is_safe(x)
+        self.virtual_chord_certificate = dict(complete=False, native_queries=0, segments=[])
+        if not np.isfinite(x).all() or np.any(x[:self.n, 0] < self.config.drop_s_mm):
+            return False
+        delta = x-self.previous
+        f = np.eye(2)+np.einsum('eai,eaJ->eiJ',
+            (self.previous[:self.n]-self.mesh.reference_xy)[self.mesh.triangles], self.grad)
+        d = np.einsum('eai,eaJ->eiJ', delta[:self.n][self.mesh.triangles], self.grad)
+        if determinant_step(f, d) < 1-1e-10:
+            return False
+        pending, segments, calls = [(0., 1.)], [], 0
+        kwargs = ({} if self.virtual_narrow_phase_ccd is None else
+                  dict(narrow_phase_ccd=self.virtual_narrow_phase_ccd))
+        while pending:
+            if calls >= maximum:
+                self.virtual_chord_certificate.update(native_queries=calls)
+                return False
+            a, b = pending.pop()
+            first = self.previous+a*delta
+            last = x if b == 1. else self.previous+b*delta
+            fraction = self.ipc.compute_collision_free_stepsize(
+                self.cmesh, first[self.surface], last[self.surface], **kwargs)
+            calls += 1
+            if fraction >= 1-1e-10:
+                segments.append([a, b])
+                continue
+            middle = .5*(a+b)
+            if middle == a or middle == b:
+                self.virtual_chord_certificate.update(native_queries=calls)
+                return False
+            pending.extend([(middle, b), (a, middle)])
+        self.virtual_chord_certificate = dict(complete=True, native_queries=calls,
+            segments=sorted(segments), unchanged_straight_path=True,
+            conservative_rescaling=self.ipc.TightInclusionCCD.DEFAULT_CONSERVATIVE_RESCALING)
+        return True
 
     def equilibrium(self, seed, depth, deadline):
         # Fresh-force PTC crosses nonzero force-merit minima that trapped LM
@@ -331,7 +379,8 @@ class FrozenVirtualCrack(ZeroGapCutProblem):
 
 class FiniteIncrementMixin:
     def __init__(self, *, ffm_virtual_seconds=10., ffm_friction_epsilon_mm=1e-6,
-                 ffm_max_candidates=256, ffm_virtual_solver='legacy', ffm_ccd_tolerance=None, **kwargs):
+                 ffm_max_candidates=256, ffm_virtual_solver='legacy', ffm_ccd_tolerance=None,
+                 ffm_chord_max_queries=0, **kwargs):
         super().__init__(**kwargs)
         if (not np.isfinite([ffm_virtual_seconds, ffm_friction_epsilon_mm]).all()
                 or min(ffm_virtual_seconds, ffm_friction_epsilon_mm) <= 0
@@ -349,6 +398,9 @@ class FiniteIncrementMixin:
                 0 < ffm_ccd_tolerance <= self.ipc.TightInclusionCCD.DEFAULT_TOLERANCE):
             raise ValueError('Virtual CCD tolerance may only tighten the native error bound')
         self.ffm_ccd_tolerance = ffm_ccd_tolerance
+        if type(ffm_chord_max_queries) is not int or not 0 <= ffm_chord_max_queries <= 256:
+            raise ValueError('Virtual chord cover requires 0..256 native queries')
+        self.ffm_chord_max_queries = ffm_chord_max_queries
         self.ffm_pending, self.ffm_checks = [], []
         self.ffm_failure = None
 
@@ -422,6 +474,8 @@ class FiniteIncrementMixin:
                 virtual_pre_solver_phases=base.virtual_solver_phases,
                 virtual_post_solver_phases=post.virtual_solver_phases,
                 virtual_ccd_tolerance=self.ffm_ccd_tolerance,
+                virtual_pre_chord_certificate=base.virtual_chord_certificate,
+                virtual_post_chord_certificate=post.virtual_chord_certificate,
                 viscous_metric_frozen=True, virtual_physical_time_advance_s=0.,
                 virtual_dissipation_is_physical_ledger_input=False)
             self.ffm_checks.append(check)

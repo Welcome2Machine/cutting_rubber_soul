@@ -95,6 +95,8 @@ def audit_evidence(p, state, check, fields):
         physical_seed_residual_n=seed_residual,physical_seed_min_j=seed_j,
         primary_seed_increment_saved=seed_increment_present, virtual_pre_residual_n=r0,
         virtual_post_residual_n=r1, energy_margin_n_mm=margin, refined_energy_margin_n_mm=refined_margin,
+        virtual_pre_chord_certificate=base.virtual_chord_certificate,
+        virtual_post_chord_certificate=post.virtual_chord_certificate,
         extra_quadrature_work_n_mm=d17, virtual_friction_work_n_mm=d9,
         seed_stored_n_mm=seed_stored,pre_virtual_stored_change_n_mm=u0-seed_stored,
         pre_virtual_friction_work_n_mm=pre17,

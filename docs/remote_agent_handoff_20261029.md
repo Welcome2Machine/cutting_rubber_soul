@@ -2,7 +2,15 @@
 
 交接日期：2026-10-29。本文用于从 Windows 整合工程迁移到远程服务器，
 是接管入口，不替代各项目的 AGENTS.md、数值规格与当前研究状态。
-尚未登录或验证远程服务器；以下 Linux 命令需由接管 agent 在目标机执行。
+原交接时尚未登录或验证远程服务器；以下 Linux 命令是当时的接管指引。
+
+服务器接管回填（2026-10-29）：已在空的`1029`目录从`15b705f`建立
+`codex/server-fracture-20261029`，完成Linux依赖核查、回归及自有初态失败复算。
+历史Windows结果和实验/视频资产未传输，没有重放Windows失败现场。
+后续实现、失败证据和未通过项以[当前研究状态](../projects/softmodeling/docs/research_status.md)、
+[方法第23节](fracture_implementation.md)和本机
+[`runs/server_1029_round1/index.html`](../runs/server_1029_round1/index.html)为准；
+本文件后文保留原交接边界与操作要求，不能据其历史描述启动旧队列。
 
 ## 1. 正确仓库与位置
 
