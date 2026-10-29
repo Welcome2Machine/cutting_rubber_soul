@@ -28,6 +28,7 @@ def main():
     parser.add_argument('case', type=Path)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--seconds', type=float, default=480.)
+    parser.add_argument('--corrector', choices=['newton', 'newton_ptc'], default='newton')
     add_thread_arguments(parser)
     args = parser.parse_args()
     if not 1 <= args.seconds <= 500:
@@ -46,7 +47,8 @@ def main():
         report=dict(schema='softcut-frozen-load-branch/1',scene=scene,runtime=runtime,
             source_hashes=source,diagnostic_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
             loading_started=False,physical_history_committed=False,stages=[],status='unknown',
-            auxiliary_load_is_solver_only=True,unchanged_anchor_and_straight_path=True)
+            auxiliary_load_is_solver_only=True,unchanged_anchor_and_straight_path=True,
+            corrector=args.corrector)
         try:
             while fraction>0 and len(report['stages'])<200:
                 if time.monotonic()>=deadline:raise TimeoutError('Branch budget')
@@ -55,7 +57,17 @@ def main():
                 v.max_iterations=40;start=time.monotonic();row=dict(from_fraction=fraction,target_fraction=target,accepted=False)
                 report['stages'].append(row)
                 try:
-                    value,_=solve(v,x.copy(),scene['physical_seed']['depth_mm'],min(deadline,start+15.))
+                    try:
+                        value,_=solve(v,x.copy(),scene['physical_seed']['depth_mm'],min(deadline,start+15.))
+                        row['method']='newton'
+                    except (LoadStepFailure,TimeoutError) as exc:
+                        if args.corrector!='newton_ptc':
+                            raise
+                        row['newton_error']=str(exc)
+                        seed=v.trial.copy();v.max_iterations=80
+                        v.set_primary_increment(seed,seed-v.previous)
+                        value,_=v.solve_friction(seed,scene['physical_seed']['depth_mm'],min(deadline,start+30.))
+                        row['method']='newton_then_ptc'
                     _,g,_,j=v.evaluate(value,v.lag(value),tangent=False);v.update_constraint_free(value,g)
                     residual=np.sqrt(2)*float(np.linalg.norm(g[v.free]))
                     if residual>1e-6 or j<=0 or not v.accepted_chord_is_safe(value):
