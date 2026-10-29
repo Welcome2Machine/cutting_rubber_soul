@@ -42,18 +42,29 @@ def check_archived_equations(raw, root):
     differences = {}
     execution = {'tools/run_zero_gap_cut.py', 'numerical_runtime.py',
                  'virtual_path_geometry.py', 'virtual_path_probe.py', 'virtual_friction_work.py',
-                 'virtual_constrained_root.py'}
+                 'virtual_constrained_root.py', 'step_control.py'}
     for name in sorted(original.keys() | current.keys()):
         if original.get(name) == current.get(name):
             continue
         differences[name] = dict(original=original.get(name), current=current.get(name))
         if name in execution:
             continue
-        if name not in ('prototype/finite_increment_cut.py', 'prototype/force_globalization.py'):
+        if name not in ('prototype/finite_increment_cut.py', 'prototype/force_globalization.py', 'prototype/zero_gap_cut.py'):
             raise ValueError(f'Archived force-equation source differs: {name}')
         source = subprocess.check_output(['git', 'show', f'{ref}:projects/softmodeling/{name}'], cwd=root)
         if hashlib.sha256(source).hexdigest() != original[name]:
             raise ValueError('Recorded Git source does not reproduce archived producer hash')
+        if name.endswith('zero_gap_cut.py'):
+            # Execution controls may differ for archived DIAGNOSIS only. All
+            # other definitions, including force, storage, dt and history
+            # formulas outside these drivers, must remain AST-identical.
+            def without_step_drivers(text):
+                tree = ast.parse(text)
+                cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == 'ZeroGapCutProblem')
+                cls.body = [n for n in cls.body if not (isinstance(n, ast.FunctionDef) and n.name in ('step', 'solve_active'))]
+                return ast.dump(tree, include_attributes=False)
+            if without_step_drivers(source.decode()) != without_step_drivers((root/name).read_text()):
+                raise ValueError('Archived physical zero-gap equation changed')
         if name.endswith('finite_increment_cut.py'):
             if force_equation_ast(source.decode()) != force_equation_ast((root/name).read_text()):
                 raise ValueError('Frozen physical force equation changed')
@@ -65,14 +76,13 @@ def check_archived_equations(raw, root):
     def factory(text, normalize=False):
         node = next(n for n in ast.parse(text).body
             if isinstance(n, ast.FunctionDef) and n.name == 'problem')
-        # Only an additional optional solver partition selector; archived config
-        # must not contain it, so the original constructor receives no new value.
+        # Remove only optional numerical selectors absent from the archived
+        # configuration. Every constitutive argument and explicit option stays.
         if normalize:
-            if 'ffm_chord_partition' in raw['config']:
-                raise ValueError('Changed factory requires original partition configuration')
+            optional = {'ffm_chord_partition', 'ffm_recovery_attempts'}-set(raw['config'])
             for child in ast.walk(node):
                 if isinstance(child, (ast.Set, ast.Tuple)):
-                    child.elts = [e for e in child.elts if not (isinstance(e, ast.Constant) and e.value == 'ffm_chord_partition')]
+                    child.elts = [e for e in child.elts if not (isinstance(e, ast.Constant) and e.value in optional)]
         return ast.dump(node, include_attributes=False)
     old_factory, new_factory = source.decode(), (root/name).read_text()
     if (factory(old_factory) != factory(new_factory) and
