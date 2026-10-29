@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -152,8 +153,21 @@ def test_valid_settings_update_preserves_interpreters_and_converts_integer_text(
     updated = api.save_settings(workspace, {"simulation_port": "8877", "video_timeout_s": "240"})
     assert updated["simulation_port"] == 8877
     assert updated["video_timeout_s"] == 240
-    assert updated["video_python"] == str(Path(sys.executable).resolve())
+    assert updated["video_python"] == os.path.abspath(sys.executable)
     assert api.read_json(workspace / "settings.local.json") == updated
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX venv symlink regression")
+def test_job_preserves_selected_venv_instead_of_resolving_system_python(workspace):
+    import venv
+    environment = workspace / "isolated environment"
+    venv.EnvBuilder(with_pip=False, symlinks=True).create(environment)
+    executable = environment / "bin/python"
+    assert executable.is_symlink()
+    api.save_settings(workspace, {"simulation_python": str(executable)})
+    job = api._run_job(workspace, "simulation", ["-c", "import sys; print(sys.prefix)"])
+    assert job["command"][0] == str(executable)
+    assert job["output"].strip() == str(environment)
 
 
 def test_batch_preflight_uses_relocated_recipe_and_never_requests_execution(workspace, monkeypatch):

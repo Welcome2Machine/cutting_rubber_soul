@@ -43,7 +43,8 @@ def digest(path):
 def settings(root=ROOT):
     root = Path(root).resolve()
     value = {"simulation_python": sys.executable,
-             "video_python": str(root / "projects/rec_inc_soft_cut/.venv/Scripts/python.exe"),
+             "video_python": str(root / "projects/rec_inc_soft_cut/.venv" /
+                                 ("Scripts/python.exe" if os.name == "nt" else "bin/python")),
              "simulation_port": 8876, "video_timeout_s": 3600}
     local = root / "settings.local.json"
     if local.is_file():
@@ -59,7 +60,10 @@ def _validate_settings(value, require_files=False):
     for key in ("simulation_python", "video_python"):
         if not isinstance(current[key], str) or not current[key].strip():
             raise ValueError(f"{key} must be a non-empty interpreter path")
-        p = Path(current[key]).expanduser().resolve()
+        # On POSIX the venv executable is normally a symlink to system Python.
+        # Resolving it changes sys.prefix and silently drops the chosen packages.
+        # Normalize the spelling, but execute the configured venv entry point.
+        p = Path(os.path.abspath(Path(current[key]).expanduser()))
         if require_files and not p.is_file():
             raise ValueError(f"Python interpreter does not exist: {p}")
         current[key] = str(p)
@@ -441,7 +445,7 @@ def doctor(root=ROOT):
     root = Path(root).resolve()
     checks = {}
     probe = "import importlib.util,json,sys; print(json.dumps({'python':sys.version,'packages':{x:importlib.util.find_spec(x) is not None for x in %s}}))"
-    for kind, libs in (("simulation", ["numpy", "scipy", "matplotlib", "psutil", "threadpoolctl"]),
+    for kind, libs in (("simulation", ["numpy", "scipy", "matplotlib", "psutil", "threadpoolctl", "ipctk"]),
                        ("video", ["numpy", "scipy", "cv2", "torch", "pandas"])):
         try:
             p = subprocess.run([_python(root, kind), "-B", "-c", probe % repr(libs)], cwd=projects(root)[kind],
