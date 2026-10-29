@@ -55,6 +55,8 @@ class FrozenVirtualCrack(ZeroGapCutProblem):
         for key in ('_primary_positions', '_primary_increment', 'ffm_pending', 'ffm_checks'):
             self.__dict__.pop(key, None)
         self.previous = anchor.copy()
+        # A deadline before iteration zero must not retain the host's trial.
+        self.trial = anchor.copy()
         self.previous_material_metric = metric.copy()
         self.previous_history = history.copy()
         # A virgin extrinsic graph has no finite unloading spring. Keep its
@@ -65,6 +67,7 @@ class FrozenVirtualCrack(ZeroGapCutProblem):
         self.virtual_removed = removed.copy()
         self.virtual_solver_load = np.zeros(self.total)
         self.virtual_friction_epsilon = epsilon
+        self.virtual_solver_phases = []
         end = 2*self.toughness/self.strength
         self.virtual_secant = np.divide(self.strength*np.maximum(1-history/end, 0.), history,
             out=np.zeros_like(history), where=history > 0)*released*(~removed)
@@ -133,15 +136,60 @@ class FrozenVirtualCrack(ZeroGapCutProblem):
             value, _ = self.solve_friction(seed.copy(), depth, min(deadline, time.monotonic()+4.))
             self.virtual_solver_method = 'fresh_force_ptc'
         except (LoadStepFailure, TimeoutError):
-            value = self.continued_equilibrium(seed, depth, deadline)
-        g = self.evaluate(value, self.lag(value), tangent=False)[1]
+            if getattr(self, 'ffm_virtual_solver', 'legacy') == 'friction_continuation':
+                value = self.friction_continued_equilibrium(seed, depth, deadline)
+            else:
+                value = self.continued_equilibrium(seed, depth, deadline)
+        _, g, _, min_j = self.evaluate(value, self.lag(value), tangent=False)
         self.update_constraint_free(value, g)
         norm = np.sqrt(2)*float(np.linalg.norm(g[self.free]))
-        if norm > 1e-4 or not self.accepted_chord_is_safe(value):
+        if (not np.isfinite([norm, min_j]).all() or norm > 1e-4 or min_j <= 0
+                or not self.accepted_chord_is_safe(value)):
             raise LoadStepFailure('Finite-crack virtual force/CCD gate')
         if np.any(value[self.seam[~self.released], 0] != self.config.drop_s_mm):
             raise LoadStepFailure('Virtual intact tie lost')
         return value, g, norm
+
+    def friction_continued_equilibrium(self, seed, depth, deadline):
+        """Zero-time solver homotopy, ending at the original virtual equation.
+
+        Only the direction search uses broader friction smoothing. The anchor,
+        frozen A/kappa, blade, full CCD and straight energy path stay fixed.
+        No intermediate energy is certified or added to the physical ledger.
+        """
+        friction, maximum = self.friction, self.max_iterations
+        value = seed.copy()
+        self.virtual_solver_method = 'friction_continuation'
+        self.virtual_solver_phases = []
+        try:
+            for index, factor in enumerate((1000., 100., 10., 1.)):
+                now = time.monotonic()
+                if now >= deadline:
+                    raise TimeoutError('Virtual friction continuation budget')
+                stage_deadline = now+(deadline-now)/(4-index)
+                self.friction = (friction if factor == 1. else
+                    self.ipc.FrictionPotential(self.virtual_friction_epsilon*factor))
+                self.set_primary_increment(value, value-self.previous)
+                stage = value.copy()
+                phase = dict(factor=factor, accepted=False)
+                self.virtual_solver_phases.append(phase)
+                try:
+                    self.max_iterations = min(maximum, 60)
+                    value, iterations = solve(self, stage.copy(), depth,
+                        min(stage_deadline, now+1.))
+                    phase['method'] = 'newton_lm'
+                except (LoadStepFailure, TimeoutError):
+                    self.max_iterations = maximum
+                    self.set_primary_increment(stage, stage-self.previous)
+                    value, iterations = self.solve_friction(stage.copy(), depth, stage_deadline)
+                    phase['method'] = 'fresh_force_ptc'
+                phase.update(accepted=True, iterations=iterations,
+                    residual_n=float(np.sqrt(2)*np.linalg.norm(
+                        self.evaluate(value, self.lag(value), tangent=False)[1][self.free])))
+        finally:
+            self.friction = friction
+            self.max_iterations = maximum
+        return value
 
     def continued_equilibrium(self, seed, depth, deadline):
         # A force-merit iteration can stall at a nonzero minimum. Retry by
@@ -197,7 +245,7 @@ class FrozenVirtualCrack(ZeroGapCutProblem):
 
 class FiniteIncrementMixin:
     def __init__(self, *, ffm_virtual_seconds=10., ffm_friction_epsilon_mm=1e-6,
-                 ffm_max_candidates=256, **kwargs):
+                 ffm_max_candidates=256, ffm_virtual_solver='legacy', **kwargs):
         super().__init__(**kwargs)
         if (not np.isfinite([ffm_virtual_seconds, ffm_friction_epsilon_mm]).all()
                 or min(ffm_virtual_seconds, ffm_friction_epsilon_mm) <= 0
@@ -206,10 +254,15 @@ class FiniteIncrementMixin:
         self.ffm_virtual_seconds = ffm_virtual_seconds
         self.ffm_epsilon = ffm_friction_epsilon_mm
         self.ffm_max_candidates = ffm_max_candidates
+        if ffm_virtual_solver not in ('legacy', 'friction_continuation'):
+            raise ValueError('Unknown finite virtual solver')
+        self.ffm_virtual_solver = ffm_virtual_solver
         self.ffm_pending, self.ffm_checks = [], []
+        self.ffm_failure = None
 
     def step(self, x, old, depth, deadline):
         self.ffm_pending, self.ffm_checks = [], []
+        self.ffm_failure = None
         try:
             value, rec = super().step(x, old, depth, deadline)
             rec['finite_increment_checks'] = self.ffm_checks
@@ -229,7 +282,11 @@ class FiniteIncrementMixin:
         metric = self.material_response(x)['metric'].copy()
         history = self.cohesive_response(x)['history'].copy()
         base = FrozenVirtualCrack(self, x, metric, history, self.released, empty, self.ffm_epsilon)
-        before, gradient, norm = base.equilibrium(x, depth, virtual_deadline)
+        try:
+            before, gradient, norm = base.equilibrium(x, depth, virtual_deadline)
+        except (LoadStepFailure, TimeoutError) as exc:
+            self.capture_virtual_failure(base, x, metric, history, empty, depth, 'before', exc)
+            raise
         virtual_stress = -gradient.reshape(-1, 2)[self.seam, 0]/self.seam_area
         # Both the physical pre-insertion state and the frozen equilibrated
         # comparator must satisfy strength; a virtual readjustment alone
@@ -245,7 +302,11 @@ class FiniteIncrementMixin:
             removed = empty.copy()
             removed[ids] = True
             post = FrozenVirtualCrack(self, before, metric, history, self.released, removed, self.ffm_epsilon)
-            after, _, postnorm = post.equilibrium(before, depth, virtual_deadline)
+            try:
+                after, _, postnorm = post.equilibrium(before, depth, virtual_deadline)
+            except (LoadStepFailure, TimeoutError) as exc:
+                self.capture_virtual_failure(post, x, metric, history, removed, depth, 'after', exc)
+                raise
             released_energy = u0-post.stored(after)
             d5 = post.friction_path_work(before, after, 5)
             d9 = post.friction_path_work(before, after, 9)
@@ -266,6 +327,8 @@ class FiniteIncrementMixin:
                 required_fracture_work_n_mm=self.toughness*area, energy_margin_n_mm=margin,
                 virtual_pre_residual_n=norm, virtual_post_residual_n=postnorm, accepted=accepted,
                 virtual_pre_solver=base.virtual_solver_method, virtual_post_solver=post.virtual_solver_method,
+                virtual_pre_solver_phases=base.virtual_solver_phases,
+                virtual_post_solver_phases=post.virtual_solver_phases,
                 viscous_metric_frozen=True, virtual_physical_time_advance_s=0.,
                 virtual_dissipation_is_physical_ledger_input=False)
             self.ffm_checks.append(check)
@@ -278,6 +341,26 @@ class FiniteIncrementMixin:
                     evidence_index=len(self.ffm_checks)-1))
                 return removed
         return empty
+
+    def capture_virtual_failure(self, virtual, seed, metric, history, removed, depth, stage, exc):
+        # Capture before the host rolls back the attempted physical release set.
+        # The trial is unaccepted; its original equation must be recomputed.
+        self.ffm_failure = dict(metadata=dict(stage=stage, error=str(exc),
+            seam_indices=np.flatnonzero(removed).tolist(), depth_mm=float(depth),
+            solver=getattr(virtual, 'virtual_solver_method', 'fresh_force_ptc'),
+            solver_phases=virtual.virtual_solver_phases, candidate_status='unknown'),
+            fields=dict(seed_positions=seed.copy(), seed_increment=self.step_increment(seed),
+                virtual_anchor=virtual.previous.copy(), virtual_trial=virtual.trial.copy(),
+                frozen_metric=metric.copy(), frozen_history=history.copy(),
+                previous_released=self.released.copy(), removed=removed.copy(), depth_mm=depth))
+
+    def write_failure_evidence(self, out, attempt_index):
+        if self.ffm_failure is None:
+            return None
+        path = out/f'failed_virtual_{attempt_index:05d}.npz'
+        np.savez_compressed(path, **self.ffm_failure['fields'])
+        return dict(self.ffm_failure['metadata'], evidence_file=path.name,
+            evidence_sha256=hashlib.sha256(path.read_bytes()).hexdigest())
 
     def write_step_evidence(self, out, step_index, rec):
         for index, fields in enumerate(self.ffm_pending):

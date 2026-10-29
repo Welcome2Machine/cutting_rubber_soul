@@ -38,6 +38,39 @@ def curve_difference(da, fa, db, fb, end):
         maximum_difference_depth_mm=float(knots[imax]),knots=len(knots))
 
 
+def event_energy_window(depth, dt, energy, centre, halfwidth_mm=.001):
+    """Sum whole accepted intervals intersecting a physical event window.
+
+    Do not interpolate an energy increment or sum stored/kinetic state values.
+    The actual selected bounds expose overshoot of the requested window.
+    """
+    left = np.asarray(depth)-.2*np.asarray(dt)
+    lo, hi = float(centre-halfwidth_mm), float(centre+halfwidth_mm)
+    mask = (depth > lo) & (left < hi)
+    ids = np.flatnonzero(mask)
+    if not len(ids):
+        raise ValueError('No accepted intervals intersect the event window')
+    keys = ('external_work_n_mm', 'bulk_stored_delta_n_mm', 'cohesive_stored_delta_n_mm',
+        'barrier_delta_n_mm', 'kinetic_delta_n_mm', 'fracture_dissipation_n_mm',
+        'viscous_endpoint_dissipation_n_mm', 'friction_work_n_mm',
+        'physical_balance_defect_n_mm', 'backward_euler_inertia_loss_n_mm',
+        'bulk_endpoint_defect_n_mm', 'cohesive_endpoint_defect_n_mm',
+        'barrier_endpoint_defect_n_mm', 'contact_topology_defect_n_mm',
+        'hard_contact_endpoint_loss_n_mm')
+    ledger = {key: float(np.asarray(energy[key])[mask].sum()) for key in keys}
+    defects = keys[9:]
+    return dict(requested_depth_window_mm=[lo, hi],
+        selected_depth_window_mm=[float(left[ids[0]]), float(depth[ids[-1]])],
+        window_complete=bool(left[0] <= lo and depth[-1] >= hi),
+        interval_selection='whole intersecting accepted intervals; no fractional work allocation',
+        accepted_intervals=len(ids), energy_n_mm=ledger,
+        absolute_physical_defect_n_mm=float(np.abs(energy['physical_balance_defect_n_mm'][mask]).sum()),
+        absolute_numerical_components_n_mm=float(sum(np.abs(energy[k][mask]).sum() for k in defects)),
+        initial_kinetic_n_mm=float(energy['kinetic_energy_n_mm'][ids[0]]-energy['kinetic_delta_n_mm'][ids[0]]),
+        final_kinetic_n_mm=float(energy['kinetic_energy_n_mm'][ids[-1]]),
+        peak_kinetic_n_mm=float(energy['kinetic_energy_n_mm'][mask].max()))
+
+
 def summarize(directory):
     path = directory/'result.json'
     result = json.loads(path.read_text(encoding='utf-8'))
@@ -53,11 +86,12 @@ def summarize(directory):
     drop = maximum-f
     index = int(np.argmax(drop))
     peak_index=int(np.argmax(f[:index+1]))
-    dt = []
+    dt, speeds = [], []
     # Plot only stored data; no problem construction or numerical solve here.
     for r in rows:
         with np.load(directory/r['state_file']) as state:
             dt.append(float(state['material_dt_s']))
+            speeds.append(float(np.linalg.norm(state['velocity'][:len(state['mass'])], axis=1).max()))
     with np.load(directory/rows[-1]['state_file']) as z:
         ref = z['reference_xy']
         body_n = len(z['mass'])
@@ -97,7 +131,8 @@ def summarize(directory):
                 inserted_nodes=sum(len(event['nodes']) for event in row['insertion_events']),
                 window_halfwidth_s=.005,window_complete=bool(d[0]<=d[i]-.001 and d[-1]>=d[i]+.001),
                 absolute_defect_n_mm=float(np.abs(physical[mask]).sum()),
-                absolute_defect_over_event_reservoir=float(np.abs(physical[mask]).sum()/max(float(energy['mechanical_reservoir_n_mm'][i]),1e-12))))
+                absolute_defect_over_event_reservoir=float(np.abs(physical[mask]).sum()/max(float(energy['mechanical_reservoir_n_mm'][i]),1e-12)),
+                whole_interval_ledger=event_energy_window(d, dt, energy, d[i])))
         old_failed=row['fully_failed_nodes']
     summary = dict(name=directory.name,directory=str(directory.resolve()),
         result_sha256=result_sha,status=result['status'],
@@ -112,11 +147,16 @@ def summarize(directory):
             peak_friction_fz_n=rows[peak_index]['reaction_friction_fz_n'],trough_friction_fz_n=rows[index]['reaction_friction_fz_n'],
             new_insertion_during_drawdown=any(r['insertion_events'] for r in rows[peak_index:index+1]),
             fully_failed_node_change=rows[index]['fully_failed_nodes']-rows[peak_index]['fully_failed_nodes'],
+            peak_material_endpoint_speed_mm_s=speeds[peak_index],
+            trough_material_endpoint_speed_mm_s=speeds[index],
+            minimum_incremental_friction_work_n_mm=float(energy['friction_work_n_mm'][peak_index:index+1].min()),
             resolved_event_claim=False),
         absolute_defect_over_absolute_work=float(np.abs(physical).sum()/work) if work else None,
         peak_kinetic_n_mm=float(k[peak]),peak_kinetic_depth_mm=float(d[peak]),
         peak_window_absolute_defect_over_peak_reservoir=float(np.abs(physical[window]).sum()/reservoir),
         peak_window_complete=bool(d[0] <= d[peak]-.001 and d[-1] >= d[peak]+.001),
+        kinetic_peak_whole_interval_ledger=event_energy_window(d, dt, energy, d[peak]),
+        maximum_material_endpoint_speed_mm_s=max(speeds),
         minimum_dt_s=min(dt),max_residual_n=max(r['residual_n'] for r in rows),
         accepted_finite_increments=len(accepted),
         minimum_accepted_energy_margin_n_mm=min((c['energy_margin_n_mm'] for c in accepted),default=None),

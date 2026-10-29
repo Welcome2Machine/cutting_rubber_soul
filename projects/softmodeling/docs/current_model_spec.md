@@ -4,6 +4,12 @@
 
 有限裂增量研究分支`prototype/finite_increment_cut.py`采用同一候选段上的离散参考牵引及冻结历史虚拟能量差减摩擦功，随后由真实内聚开口支付Gc一次；见[第22节](../../../docs/fracture_implementation.md)。这不是最大主应力判据、纯脆断FFM或已认证自由裂路；其几何/材料与零间隙居中控制相同。默认完整体与旧判据保持独立。
 
+服务器研究增加显式 `ffm_virtual_solver=friction_continuation`（缺省 `legacy`）：
+只在虚拟求根中暂时加宽摩擦平滑，最终恢复原尺度、原残差/J/CCD门后才评估原能量
+判据。物性、真实时间、质量、历史和虚拟直线路径定义不变；不引入物理阻尼。
+失败候选保存独立上下文并保持未知，见[第23节](../../../docs/fracture_implementation.md)。
+这是待实际路径检验的求解选项，不代表含断裂2 mm、快速滑移或表面连通已经合格。
+
 2026-10-29新增显式离散功研究配置`configs/zero_gap_discrete_work.json`，说明见[第21节](../../../docs/fracture_implementation.md)。体C空间离散梯度、内聚路径功、Lobatto接触求积和Maxwell末变形分裂均保持独立；theta控制的数值惯性耗散不能当物理阻尼。只限居中0°镜像直裂路，Fz为算法区间平均。实际完成和失败项以研究状态及生成报告为准，不能由配置存在推断物理合格。
 
 独立零间隙二维动力学控制见`prototype/zero_gap_cut.py`及[断裂实现说明第20节](../../../docs/fracture_implementation.md)。它采用30×5×20 mm居中刀具s=15 mm、0°镜像对称、精确未断连接、单边裂面约束、双分量集中质量与后向Euler真实时间。强度.2 MPa、Gc=.006 N/mm、密度1000 kg/m³仅为独立示例；初始接口没有Kn弹簧或面积切除。此控制与本页s=7 mm基线的几何不同，不能直接替代或校准基线；一般裂面摩擦/偏心/斜切/自由选路不在已实现范围。

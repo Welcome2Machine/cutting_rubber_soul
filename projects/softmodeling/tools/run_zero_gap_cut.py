@@ -4,7 +4,10 @@ from datetime import datetime, timezone
 import hashlib
 import html
 import json
+import os
 from pathlib import Path
+import socket
+import subprocess
 import sys
 import time
 import numpy as np
@@ -23,7 +26,8 @@ def problem(config):
         'energy_normalization', 'energy_absolute_tolerance_n_mm', 'iteration_target', 'cohesive_unloading',
         'time_integrator', 'barrier_quadrature', 'barrier_quadrature_rule', 'insertion_rule', 'nucleation_length_mm',
         'kinematic_theta', 'contact_activation_mm', 'blade_surface_spacing_mm',
-        'fracture_criterion', 'ffm_virtual_seconds', 'ffm_friction_epsilon_mm', 'ffm_max_candidates'}
+        'fracture_criterion', 'ffm_virtual_seconds', 'ffm_friction_epsilon_mm', 'ffm_max_candidates',
+        'ffm_virtual_solver'}
     if set(config)-allowed or config['schema'] != 'softcut-zero-gap-dynamics/1':
         raise ValueError('Unknown zero-gap configuration')
     if not 0 < config['target_mm'] <= 2 or not 0 < config['minimum_increment_mm'] <= config['increment_mm']:
@@ -50,7 +54,8 @@ def problem(config):
             raise ValueError('Finite-increment criterion cannot combine a second insertion gate')
         from prototype.finite_increment_cut import FiniteIncrementEnergyCutProblem, FiniteIncrementBackwardCutProblem
         cls = FiniteIncrementEnergyCutProblem if integrator == 'discrete_gradient' else FiniteIncrementBackwardCutProblem
-        extra.update({key:config[key] for key in ('ffm_virtual_seconds', 'ffm_friction_epsilon_mm', 'ffm_max_candidates') if key in config})
+        extra.update({key:config[key] for key in ('ffm_virtual_seconds', 'ffm_friction_epsilon_mm',
+            'ffm_max_candidates', 'ffm_virtual_solver') if key in config})
     elif criterion != 'local_or_neighbourhood' or any(key.startswith('ffm_') for key in config):
         raise ValueError('Unknown fracture criterion or unbound virtual options')
     return cls(**extra, density_kg_m3=config['density_kg_m3'],
@@ -76,6 +81,22 @@ def hashes():
     baseline = Path(__file__).parents[1]/'prototype/ipc_baseline.json'
     value['prototype/ipc_baseline.json'] = hashlib.sha256(baseline.read_bytes()).hexdigest()
     return value
+
+
+def execution_identity():
+    """Commit is provenance; exact source hashes also cover uncommitted research."""
+    identity = dict(host=socket.gethostname(), git_commit=None, git_dirty=None,
+        slurm_job_id=os.environ.get('SLURM_JOB_ID'),
+        slurm_cpus_per_task=os.environ.get('SLURM_CPUS_PER_TASK'))
+    try:
+        head = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=Path(__file__).parent,
+            capture_output=True, text=True, timeout=5, check=True)
+        dirty = subprocess.run(['git', 'status', '--porcelain'], cwd=Path(__file__).parent,
+            capture_output=True, text=True, timeout=5, check=True)
+        identity.update(git_commit=head.stdout.strip(), git_dirty=bool(dirty.stdout.strip()))
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return identity
 
 
 def accepted_step_growth(config, record):
@@ -187,6 +208,7 @@ def run(config, out, seconds):
         source_hashes=initial_hashes, steps=[], attempts=[], audits=[],
         no_experimental_force_inputs=True, geometry='centred symmetric 30x5x20 mm; NOT s=7 baseline',
         status='running')
+    result['execution_identity'] = execution_identity()
     result['step_control'] = 'energy_error_with_nonlocking_iteration_cap_v1'
     write_json(out/'manifest.json', result)
     deadline = started+seconds
@@ -212,8 +234,11 @@ def run(config, out, seconds):
                 value, rec = p.step(x, depth, target, min(solve_deadline,
                     attempt_start+config.get('attempt_seconds', seconds)))
             except (LoadStepFailure, TimeoutError) as exc:
+                failure = (p.write_failure_evidence(out, len(result['attempts']))
+                    if hasattr(p, 'write_failure_evidence') else None)
                 result['attempts'].append(dict(from_mm=depth, target_mm=target,
-                    status='rejected', error=str(exc), elapsed_s=time.monotonic()-attempt_start))
+                    status='rejected', error=str(exc), elapsed_s=time.monotonic()-attempt_start,
+                    virtual_failure=failure))
                 if target-depth <= config['minimum_increment_mm']+4*np.spacing(max(1., abs(depth))):
                     raise
                 increment = max(config['minimum_increment_mm'], (target-depth)/2)
@@ -237,7 +262,10 @@ def run(config, out, seconds):
             increment = max(config['minimum_increment_mm'], min(config['increment_mm'], increment*growth))
         result['status'] = 'completed_2mm_control' if config['target_mm']==2 else 'completed_short_control'
     except (TimeoutError, LoadStepFailure, RuntimeError, FloatingPointError) as exc:
-        result.update(status='budget_exhausted' if isinstance(exc, TimeoutError) else 'failed', error=str(exc))
+        global_timeout = isinstance(exc, TimeoutError) and time.monotonic() >= solve_deadline
+        result.update(status='budget_exhausted' if global_timeout else 'failed', error=str(exc),
+            timeout_scope=('global_loading' if global_timeout else 'attempt_or_virtual')
+                if isinstance(exc, TimeoutError) else None)
         if hasattr(p, 'trial'):
             np.savez_compressed(out/'failed_trial.npz', positions=getattr(p, 'failed_positions', p.trial),
                 increment=getattr(p, 'failed_increment', p.step_increment(p.trial)), previous_positions=p.previous,
