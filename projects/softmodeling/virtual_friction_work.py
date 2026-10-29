@@ -83,20 +83,41 @@ def integrate_power(power, cuts, *, deadline, absolute_tolerance=1e-7, relative_
         uncertainty_is_rigorous_bound=False)
 
 
+def contact_power_function(virtual, start, end, geometry):
+    """Evaluate the same affine path in a fixed translated contact frame.
+
+    Translate BEFORE interpolation: forming global coordinates first has already
+    lost near-gap digits. Only IPC contact geometry sees these coordinates;
+    force roots, boundaries, stored energy and material histories remain global.
+    """
+    delta=end-start
+    if geometry['features']:
+        feature=min(geometry['features'],key=lambda q:q['gap_mm'])
+        vertex=virtual.surface[feature['vertices'][-1]]
+        origin=start[vertex]+feature['s']*delta[vertex]
+    else:
+        origin=start[virtual.surface[0]].copy()
+    relative=start-origin;sd=delta[virtual.surface]
+    def power(s):
+        lag=virtual.lag(relative+s*delta)
+        return 2*float(virtual.friction.gradient(lag,virtual.cmesh,sd)@sd.ravel())
+    return power,dict(method='constant_translation_before_affine_interpolation',
+        origin_mm=origin.tolist(),interpolation_dtype='float64',unchanged_mathematical_path=True,
+        shifted_coordinates_used_only_for_contact_power=True)
+
+
 def virtual_work(virtual, start, end, deadline):
     started=time.perf_counter()
-    delta=(end-start)[virtual.surface]
-    def power(s):
-        lag=virtual.lag(start+s*(end-start))
-        return 2*float(virtual.friction.gradient(lag,virtual.cmesh,delta)@delta.ravel())
-    cuts=[];geometry={}
+    cuts=[];geometry={};coordinates={}
     try:
         cuts,geometry=geometry_partitions(virtual,start,end)
+        power,coordinates=contact_power_function(virtual,start,end,geometry)
         result=integrate_power(power,cuts,deadline=deadline)
     except (ValueError,RuntimeError,FloatingPointError,np.linalg.LinAlgError) as exc:
         result=dict(method='geometry_partitioned_adaptive_gauss_kronrod',converged=False,
             work_n_mm=None,empirical_uncertainty_n_mm=None,error=f'{type(exc).__name__}: {exc}',
             uncertainty_is_rigorous_bound=False)
     result.update(elapsed_s=time.perf_counter()-started,partition_points=cuts,geometry=geometry,
+        coordinate_evaluation=coordinates,
         unchanged_straight_path=True,material_and_damage_history_frozen=True)
     return result
