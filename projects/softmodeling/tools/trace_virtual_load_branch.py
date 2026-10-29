@@ -29,7 +29,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--seconds', type=float, default=480.)
     parser.add_argument('--process', choices=['solver_homotopy','controlled_release'], default='solver_homotopy')
-    parser.add_argument('--intervals', type=int, choices=[8,16,32], default=8)
+    parser.add_argument('--intervals', type=int, choices=[8,16,32,64,128], default=8)
     parser.add_argument('--corrector', choices=['newton', 'newton_ptc'], default='newton')
     add_thread_arguments(parser)
     args = parser.parse_args()

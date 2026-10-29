@@ -23,8 +23,8 @@ def auxiliary_work(load_before, load_after, start, end):
 
 
 def inspect(case, output, intervals, seconds):
-    if intervals not in (8,16,32) or not 1 <= seconds <= 500:
-        raise ValueError('Predeclared 8/16/32 equal release intervals; 1..500 seconds')
+    if intervals not in (8,16,32,64,128) or not 1 <= seconds <= 500:
+        raise ValueError('Predeclared 8/16/32/64/128 equal release intervals; 1..500 seconds')
     output.mkdir(parents=True,exist_ok=False)
     began=time.monotonic();deadline=began+seconds;source=hashes()
     p,base,old,before,_,scene=load_scene(case,'production')

@@ -32,3 +32,24 @@ def test_contact_classification_sums_native_stencils_without_altering_power():
             assert all(c['power_n_mm']>=0 for c in q['contacts'])
         assert q['power_by_contact_n_mm']['blade']==0
 
+
+def test_archived_equation_guard_allows_step_control_but_rejects_force_changes(tmp_path,monkeypatch):
+    import hashlib
+    from tools import frozen_scene
+    zero='class ZeroGapCutProblem:\n    def step(self): return 1\n    def solve_active(self): return 2\n    def force(self): return 3\n'
+    factory='def problem(config): return 0.14\n'
+    sources={'prototype/zero_gap_cut.py':zero,'tools/run_zero_gap_cut.py':factory}
+    for name,text in sources.items():
+        p=tmp_path/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(text)
+    digest=lambda text:hashlib.sha256(text.encode()).hexdigest()
+    raw=dict(config={},source_hashes={k:digest(v) for k,v in sources.items()},execution_identity=dict(git_commit='0'*40))
+    def current():return {k:digest((tmp_path/k).read_text()) for k in sources}
+    monkeypatch.setattr(frozen_scene,'hashes',current)
+    monkeypatch.setattr(frozen_scene.subprocess,'check_output',lambda args,**kw:sources[args[-1].split('projects/softmodeling/')[1]].encode())
+    path=tmp_path/'prototype/zero_gap_cut.py'
+    path.write_text(zero.replace('def step(self): return 1','def step(self): return 10'))
+    q=frozen_scene.check_archived_equations(raw,tmp_path)
+    assert not q['exact_producer_source'] and not q['physical_continuation_permitted']
+    path.write_text(path.read_text().replace('def force(self): return 3','def force(self): return 30'))
+    with pytest.raises(ValueError,match='physical zero-gap equation changed'):
+        frozen_scene.check_archived_equations(raw,tmp_path)
