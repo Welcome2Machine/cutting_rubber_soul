@@ -16,6 +16,7 @@ from numerical_runtime import runtime_entry, add_thread_arguments, thread_argume
 from run_support import source_hashes, write_json
 from prototype.zero_gap_cut import ZeroGapCutProblem, EnergyResolutionRequired
 from prototype.ipc_reference import LoadStepFailure
+from step_control import execute_step, failure_kind, physical_cutback, reduced_increment
 
 
 def problem(config):
@@ -28,7 +29,7 @@ def problem(config):
         'time_integrator', 'barrier_quadrature', 'barrier_quadrature_rule', 'insertion_rule', 'nucleation_length_mm',
         'kinematic_theta', 'contact_activation_mm', 'blade_surface_spacing_mm',
         'fracture_criterion', 'ffm_virtual_seconds', 'ffm_friction_epsilon_mm', 'ffm_max_candidates',
-        'ffm_virtual_solver', 'ffm_ccd_tolerance', 'ffm_chord_max_queries', 'ffm_chord_partition'}
+        'ffm_virtual_solver', 'ffm_ccd_tolerance', 'ffm_chord_max_queries', 'ffm_chord_partition', 'ffm_recovery_attempts'}
     if set(config)-allowed or config['schema'] != 'softcut-zero-gap-dynamics/1':
         raise ValueError('Unknown zero-gap configuration')
     if not 0 < config['target_mm'] <= 2 or not 0 < config['minimum_increment_mm'] <= config['increment_mm']:
@@ -56,7 +57,7 @@ def problem(config):
         from prototype.finite_increment_cut import FiniteIncrementEnergyCutProblem, FiniteIncrementBackwardCutProblem
         cls = FiniteIncrementEnergyCutProblem if integrator == 'discrete_gradient' else FiniteIncrementBackwardCutProblem
         extra.update({key:config[key] for key in ('ffm_virtual_seconds', 'ffm_friction_epsilon_mm',
-            'ffm_max_candidates', 'ffm_virtual_solver', 'ffm_ccd_tolerance', 'ffm_chord_max_queries', 'ffm_chord_partition') if key in config})
+            'ffm_max_candidates', 'ffm_virtual_solver', 'ffm_ccd_tolerance', 'ffm_chord_max_queries', 'ffm_chord_partition', 'ffm_recovery_attempts') if key in config})
     elif criterion != 'local_or_neighbourhood' or any(key.startswith('ffm_') for key in config):
         raise ValueError('Unknown fracture criterion or unbound virtual options')
     return cls(**extra, density_kg_m3=config['density_kg_m3'],
@@ -79,7 +80,7 @@ def problem(config):
 def hashes():
     value = source_hashes()
     for name in ('numerical_runtime.py', 'virtual_path_geometry.py', 'virtual_path_probe.py',
-                 'virtual_friction_work.py', 'virtual_constrained_root.py'):
+                 'virtual_friction_work.py', 'virtual_constrained_root.py', 'step_control.py'):
         value[name] = hashlib.sha256((Path(__file__).parents[1]/name).read_bytes()).hexdigest()
     value['tools/run_zero_gap_cut.py'] = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     baseline = Path(__file__).parents[1]/'prototype/ipc_baseline.json'
@@ -215,7 +216,7 @@ def run(config, out, seconds, *, runtime=None):
         no_experimental_force_inputs=True, geometry='centred symmetric 30x5x20 mm; NOT s=7 baseline',
         status='running')
     result['execution_identity'] = execution_identity()
-    result['step_control'] = 'energy_error_with_nonlocking_iteration_cap_v1'
+    result['step_control'] = 'typed_failure_same_step_virtual_recovery_v2'
     write_json(out/'manifest.json', result)
     deadline = started+seconds
     solve_deadline = deadline-max(15., min(180., .2*seconds))
@@ -229,30 +230,30 @@ def run(config, out, seconds, *, runtime=None):
         full_mass_n_s2_mm=2*float(p.mass.sum()), gap_mm=0., blade_s_mm=p.config.drop_s_mm)
     x, depth = p.rest.copy(), p.start
     increment = config['increment_mm']
+    result['next_increment_mm'] = increment
     try:
         while depth < config['target_mm']-1e-12:
             if time.monotonic() >= solve_deadline:
                 raise TimeoutError('Reserved audit budget reached')
+            result['next_increment_mm'] = increment
             target = min(config['target_mm'], depth+increment)
             old_released = p.released.copy()
             attempt_start = time.monotonic()
             try:
-                value, rec = p.step(x, depth, target, min(solve_deadline,
-                    attempt_start+config.get('attempt_seconds', seconds)))
+                value, rec = execute_step(p, x, depth, target, min(solve_deadline,
+                    attempt_start+config.get('attempt_seconds', seconds)), solve_deadline)
             except (LoadStepFailure, TimeoutError) as exc:
                 failure = (p.write_failure_evidence(out, len(result['attempts']))
                     if hasattr(p, 'write_failure_evidence') else None)
+                kind = failure_kind(exc, solve_deadline)
                 result['attempts'].append(dict(from_mm=depth, target_mm=target,
+                    failure_kind=kind, physical_dt_s=(target-depth)/p.loading_rate,
+                    physical_cutback_allowed=physical_cutback(kind),
                     status='rejected', error=str(exc), elapsed_s=time.monotonic()-attempt_start,
                     virtual_failure=failure))
-                if target-depth <= config['minimum_increment_mm']+4*np.spacing(max(1., abs(depth))):
+                if (not physical_cutback(kind) or target-depth <= config['minimum_increment_mm']+4*np.spacing(max(1., abs(depth)))):
                     raise
-                increment = max(config['minimum_increment_mm'], (target-depth)/2)
-                if config.get('dynamic_cutback', False) and not isinstance(exc, EnergyResolutionRequired):
-                    # Conservative physical time scale, no mass or stiffness modification.
-                    softening = float(np.max(2*p.seam_area*p.strength/(2*p.toughness/p.strength)))
-                    inertial_dt = .25*np.sqrt(p.mass.min()/softening)
-                    increment = max(config['minimum_increment_mm'], min(increment, p.loading_rate*inertial_dt))
+                increment = reduced_increment(p, config, target-depth, kind)
                 continue
             x, depth = value, target
             if hasattr(p, 'write_step_evidence'):
@@ -266,12 +267,13 @@ def run(config, out, seconds, *, runtime=None):
             write_json(out/'progress.json', dict(depth_mm=depth, accepted=len(result['steps']), elapsed_s=time.monotonic()-started))
             growth = accepted_step_growth(config, rec)
             increment = max(config['minimum_increment_mm'], min(config['increment_mm'], increment*growth))
+            result['next_increment_mm'] = increment
         result['status'] = 'completed_2mm_control' if config['target_mm']==2 else 'completed_short_control'
     except (TimeoutError, LoadStepFailure, RuntimeError, FloatingPointError) as exc:
-        global_timeout = isinstance(exc, TimeoutError) and time.monotonic() >= solve_deadline
-        result.update(status='budget_exhausted' if global_timeout else 'failed', error=str(exc),
-            timeout_scope=('global_loading' if global_timeout else 'attempt_or_virtual')
-                if isinstance(exc, TimeoutError) else None)
+        kind = failure_kind(exc, solve_deadline)
+        result.update(status='budget_exhausted' if kind == 'global_compute_budget_exhausted' else 'failed',
+            error=str(exc), failure_kind=kind, next_increment_mm=increment,
+            timeout_scope='global_loading' if kind == 'global_compute_budget_exhausted' else kind)
         if hasattr(p, 'trial'):
             np.savez_compressed(out/'failed_trial.npz', positions=getattr(p, 'failed_positions', p.trial),
                 increment=getattr(p, 'failed_increment', p.step_increment(p.trial)), previous_positions=p.previous,

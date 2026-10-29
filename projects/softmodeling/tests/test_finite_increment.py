@@ -5,6 +5,7 @@ from mechanics.discrete_gradient import frozen_response, frozen_energy
 from prototype.finite_increment_cut import finite_patches, coupled_margin, FrozenVirtualCrack
 from tools.run_zero_gap_cut import problem
 from test_energy_cut import candidate
+from step_control import VirtualRootIncomplete
 
 
 def config():
@@ -80,7 +81,7 @@ def test_failed_virtual_probe_cannot_release_physical_ties(monkeypatch):
     previous=p.released.copy()
     def fail(*args):raise TimeoutError('virtual')
     monkeypatch.setattr(FrozenVirtualCrack,'equilibrium',fail)
-    with pytest.raises(TimeoutError):p.propose_insertion(p.rest,np.ones(len(p.seam)),0,time.monotonic()+10)
+    with pytest.raises(VirtualRootIncomplete):p.propose_insertion(p.rest,np.ones(len(p.seam)),0,time.monotonic()+10)
     np.testing.assert_array_equal(p.released,previous)
 
 

@@ -8,6 +8,7 @@ from tools.diagnose_finite_increment import inspect, restore_failed_seed, virtua
 from tools.run_zero_gap_cut import problem
 from prototype.finite_increment_cut import FrozenVirtualCrack
 from test_finite_increment import config
+from step_control import VirtualRootIncomplete, GlobalComputeBudgetExhausted
 
 
 def test_failed_seed_keeps_attempt_dt_and_sub_coordinate_increment():
@@ -137,7 +138,7 @@ def test_failed_virtual_context_survives_rollback_without_committing_histories(t
     def fail(*args):
         raise TimeoutError('virtual pre-equilibrium')
     monkeypatch.setattr(FrozenVirtualCrack, 'equilibrium', fail)
-    with pytest.raises(TimeoutError):
+    with pytest.raises(VirtualRootIncomplete):
         p.propose_insertion(p.rest, np.ones(len(p.seam)), p.start, time.monotonic()+10)
     metadata = p.write_failure_evidence(tmp_path, 0)
     assert metadata['stage'] == 'before' and metadata['candidate_status'] == 'unknown'
@@ -160,7 +161,7 @@ def test_expired_shared_scan_archives_unattempted_candidate(tmp_path, monkeypatc
         monkeypatch.setattr(module.time, 'monotonic', lambda: monotonic()+100)
         return [np.array([0])]
     monkeypatch.setattr(module, 'finite_patches', expired_candidates)
-    with pytest.raises(TimeoutError, match='shared scan budget before candidate solve'):
+    with pytest.raises(GlobalComputeBudgetExhausted, match='Global budget during virtual after'):
         p.propose_insertion(p.rest, np.ones(len(p.seam)), p.start, time.monotonic()+10)
     evidence = p.write_failure_evidence(tmp_path, 0)
     assert evidence['seam_indices'] == [0] and evidence['solver_phases'] == []

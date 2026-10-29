@@ -275,7 +275,12 @@ class ZeroGapCutProblem(ViscoelasticProblem):
             total_iterations += iterations+1
             g = self.evaluate(x, self.lag(x), tangent=False)[1].reshape(-1, 2)
             traction = -g[self.seam, 0]/self.seam_area
-            insert = self.propose_insertion(x, traction, depth, deadline) if self.damage_enabled else np.zeros_like(self.released)
+            virtual_started = time.monotonic()
+            global_limit = getattr(self, 'global_compute_deadline', deadline)
+            insert = self.propose_insertion(x, traction, depth, global_limit) if self.damage_enabled else np.zeros_like(self.released)
+            # Virtual work advances no physical time and does not consume the
+            # remaining physical nonlinear-solve allowance. The global cap stays.
+            deadline = min(global_limit, deadline+time.monotonic()-virtual_started)
             if self.damage_enabled and insert.any():
                 self.insertion_events.append(dict(nodes=self.seam[insert].tolist(),
                     reference_y_mm=self.rest[self.seam[insert], 1].tolist(),
@@ -337,6 +342,9 @@ class ZeroGapCutProblem(ViscoelasticProblem):
                     raise EnergyResolutionRequired(f'Numerical energy defect {defect:g} exceeds reservoir allowance {allowed:g}')
             elif self.energy_tolerance is not None and error > self.energy_tolerance:
                 raise EnergyResolutionRequired(f'Numerical energy ratio {error:g} exceeds {self.energy_tolerance:g}')
+            if time.monotonic() >= getattr(self, 'global_compute_deadline', float('inf')):
+                from step_control import GlobalComputeBudgetExhausted
+                raise GlobalComputeBudgetExhausted('Global loading budget before history commit')
             velocity = self.endpoint_velocity(value)
             history = self.cohesive_response(value)['history'].copy()
             metric = self.material_response(value)['metric'].copy()

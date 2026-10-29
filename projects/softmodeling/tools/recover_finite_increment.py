@@ -21,7 +21,7 @@ from prototype.finite_increment_cut import FrozenVirtualCrack
 
 @runtime_entry
 def recover(directory,log,seconds,*,runtime=None):
-    if not 1<=seconds<=3600:raise ValueError('Explicit recovery audit budget required')
+    if not 1<=seconds<=600:raise ValueError('Explicit recovery audit budget must be 1..600 s')
     directory=directory.resolve();start=time.monotonic();source=driver.hashes()
     if (directory/'result.json').exists():raise FileExistsError('Never overwrite producer result')
     result=json.loads((directory/'manifest.json').read_text(encoding='utf-8'))

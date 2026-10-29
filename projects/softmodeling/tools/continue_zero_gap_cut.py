@@ -20,7 +20,7 @@ from . import run_zero_gap_cut as driver
 from .audit_zero_gap_cut import inspect as inspect_path
 from .audit_finite_increment import inspect as inspect_finite
 from prototype.ipc_reference import LoadStepFailure
-from prototype.zero_gap_cut import EnergyResolutionRequired
+from step_control import execute_step, failure_kind, physical_cutback, reduced_increment
 
 
 def restore(p, state, records):
@@ -51,6 +51,8 @@ def continue_run(parent, output, seconds, *, runtime=None):
     if (original['source_hashes']!=source or not original['source_unchanged']
             or not original['steps'] or original['steps'][-1]['depth_mm']>=original['config']['target_mm']-1e-12):
         raise ValueError('Continuation requires an incomplete identical-source accepted prefix')
+    if original.get('failure_kind') != 'global_compute_budget_exhausted' or 'next_increment_mm' not in original:
+        raise ValueError('Continuation requires global budget stop and preserved physical controller state')
     signature=hashlib.sha256(json.dumps(original['config'],sort_keys=True).encode()).hexdigest()
     if signature!=original['config_sha256']:
         raise ValueError('Configuration signature differs')
@@ -81,7 +83,7 @@ def continue_run(parent, output, seconds, *, runtime=None):
             parent_status=original['status'],parent_elapsed_s=original['elapsed_s'],
             inherited_accepted_states=prefix_count,source_sha256=helper_sha,
             inherited_history_verified=True,configuration_changed=False))
-    for name in ('error','audit_error','summary','accepted_prefix_audited'):result.pop(name,None)
+    for name in ('error','audit_error','summary','accepted_prefix_audited','failure_kind','timeout_scope'):result.pop(name,None)
     write_json(output/'manifest.json',result)
     p=driver.problem(result['config']);p.ipc.set_num_threads(threads['ipc_threads'])
     with np.load(output/result['steps'][-1]['state_file']) as data:state={k:data[k].copy() for k in data.files}
@@ -90,22 +92,22 @@ def continue_run(parent, output, seconds, *, runtime=None):
         with np.load(output/rec['state_file']) as data:history.append((rec['depth_mm'],data['positions'].copy()))
     x,depth=restore(p,state,history);config=result['config']
     result['continuation']['predictor_policy']=p.resume_predictor_policy
-    increment=config['increment_mm'];deadline=begin+seconds
+    increment=original['next_increment_mm'];deadline=begin+seconds
     solve_deadline=deadline-max(15.,min(180.,seconds*.2))
     try:
         while depth<config['target_mm']-1e-12:
             if time.monotonic()>=solve_deadline:raise TimeoutError('Reserved continuation audit budget')
+            result['next_increment_mm']=increment
             target=min(config['target_mm'],depth+increment);old_released=p.released.copy();attempt=time.monotonic()
             try:
-                value,rec=p.step(x,depth,target,min(solve_deadline,attempt+config.get('attempt_seconds',seconds)))
+                value,rec=execute_step(p,x,depth,target,min(solve_deadline,attempt+config.get('attempt_seconds',seconds)),solve_deadline)
             except (LoadStepFailure,TimeoutError) as exc:
                 failure=p.write_failure_evidence(output,len(result['attempts'])) if hasattr(p,'write_failure_evidence') else None
-                result['attempts'].append(dict(from_mm=depth,target_mm=target,status='rejected',error=str(exc),elapsed_s=time.monotonic()-attempt,virtual_failure=failure))
-                if target-depth<=config['minimum_increment_mm']+4*np.spacing(max(1.,abs(depth))):raise
-                increment=max(config['minimum_increment_mm'],(target-depth)/2)
-                if config.get('dynamic_cutback',False) and not isinstance(exc,EnergyResolutionRequired):
-                    softening=float(np.max(2*p.seam_area*p.strength/(2*p.toughness/p.strength)))
-                    increment=max(config['minimum_increment_mm'],min(increment,p.loading_rate*.25*np.sqrt(p.mass.min()/softening)))
+                kind=failure_kind(exc,solve_deadline)
+                result['attempts'].append(dict(failure_kind=kind,physical_dt_s=(target-depth)/p.loading_rate,
+                    physical_cutback_allowed=physical_cutback(kind),from_mm=depth,target_mm=target,status='rejected',error=str(exc),elapsed_s=time.monotonic()-attempt,virtual_failure=failure))
+                if not physical_cutback(kind) or target-depth<=config['minimum_increment_mm']+4*np.spacing(max(1.,abs(depth))):raise
+                increment=reduced_increment(p,config,target-depth,kind)
                 continue
             x,depth=value,target
             if hasattr(p,'write_step_evidence'):p.write_step_evidence(output,len(result['steps']),rec)
@@ -116,9 +118,12 @@ def continue_run(parent, output, seconds, *, runtime=None):
             print('ACCEPTED '+json.dumps({k:rec[k] for k in ('depth_mm','reaction_fz_n','released_nodes','fully_failed_nodes')}),flush=True)
             write_json(output/'progress.json',dict(depth_mm=depth,accepted=len(result['steps']),inherited_accepted=prefix_count,elapsed_s=time.monotonic()-begin))
             increment=max(config['minimum_increment_mm'],min(config['increment_mm'],increment*driver.accepted_step_growth(config,rec)))
+            result['next_increment_mm']=increment
         result['status']='completed_2mm_control' if config['target_mm']==2 else 'completed_short_control'
     except (TimeoutError,LoadStepFailure,RuntimeError,FloatingPointError) as exc:
-        result.update(status='budget_exhausted' if isinstance(exc,TimeoutError) else 'failed',error=str(exc))
+        kind=failure_kind(exc,solve_deadline)
+        result.update(status='budget_exhausted' if kind=='global_compute_budget_exhausted' else 'failed',
+            error=str(exc),failure_kind=kind,next_increment_mm=increment)
         if hasattr(p,'failed_positions'):
             np.savez_compressed(output/'failed_trial.npz',positions=p.failed_positions,increment=p.failed_increment,
                 previous_positions=p.previous,previous_material_metric=p.previous_material_metric,

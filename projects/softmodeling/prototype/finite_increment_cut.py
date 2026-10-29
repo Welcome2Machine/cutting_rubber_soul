@@ -17,6 +17,7 @@ from .ipc_reference import IPCProblem, LoadStepFailure, determinant_step
 from .zero_gap_cut import ZeroGapCutProblem
 from .energy_cut import EnergyCutProblem
 from .force_globalization import solve
+from step_control import VirtualRootIncomplete, VirtualWorkUnresolved, GlobalComputeBudgetExhausted
 from virtual_path_probe import efficient_chord
 from virtual_constrained_root import solve_constrained
 from virtual_friction_work import virtual_work, interval_decision
@@ -396,12 +397,15 @@ class FrozenVirtualCrack(ZeroGapCutProblem):
 class FiniteIncrementMixin:
     def __init__(self, *, ffm_virtual_seconds=10., ffm_friction_epsilon_mm=1e-6,
                  ffm_max_candidates=256, ffm_virtual_solver='legacy', ffm_ccd_tolerance=None,
-                 ffm_chord_max_queries=0, ffm_chord_partition='dyadic', **kwargs):
+                 ffm_chord_max_queries=0, ffm_chord_partition='dyadic', ffm_recovery_attempts=2, **kwargs):
         super().__init__(**kwargs)
         if (not np.isfinite([ffm_virtual_seconds, ffm_friction_epsilon_mm]).all()
                 or min(ffm_virtual_seconds, ffm_friction_epsilon_mm) <= 0
                 or type(ffm_max_candidates) is not int or ffm_max_candidates < 1):
             raise ValueError('Explicit positive finite virtual budgets and resolution required')
+        if type(ffm_recovery_attempts) is not int or not 0 <= ffm_recovery_attempts <= 2:
+            raise ValueError('Virtual scan permits zero to two bounded budget extensions')
+        self.ffm_recovery_attempts = ffm_recovery_attempts
         self.ffm_virtual_seconds = ffm_virtual_seconds
         self.ffm_epsilon = ffm_friction_epsilon_mm
         self.ffm_max_candidates = ffm_max_candidates
@@ -431,9 +435,11 @@ class FiniteIncrementMixin:
     def step(self, x, old, depth, deadline):
         self.ffm_pending, self.ffm_checks = [], []
         self.ffm_failure = None
+        self.ffm_recoveries = []
         try:
             value, rec = super().step(x, old, depth, deadline)
             rec['finite_increment_checks'] = self.ffm_checks
+            rec['virtual_computation_recoveries'] = self.ffm_recoveries
             rec['fracture_criterion'] = 'frozen_history_finite_increment_CC_CZM'
             return value, rec
         except BaseException:
@@ -449,15 +455,15 @@ class FiniteIncrementMixin:
         scan_started = time.monotonic()
         virtual_deadline = min(deadline, scan_started+self.ffm_virtual_seconds)
         self.ffm_scan = dict(started=scan_started, deadline=virtual_deadline,
-            initial_check_count=len(self.ffm_checks), candidate_count=None)
+            initial_check_count=len(self.ffm_checks), candidate_count=None, extensions=0)
+        if not hasattr(self, 'ffm_recoveries'):
+            self.ffm_recoveries = []
         metric = self.material_response(x)['metric'].copy()
         history = self.cohesive_response(x)['history'].copy()
         base = FrozenVirtualCrack(self, x, metric, history, self.released, empty, self.ffm_epsilon)
-        try:
-            before, gradient, norm = base.equilibrium(x, depth, virtual_deadline)
-        except (LoadStepFailure, TimeoutError) as exc:
-            self.capture_virtual_failure(base, x, metric, history, empty, depth, 'before', exc)
-            raise
+        before, gradient, norm = self.virtual_operation(
+            lambda limit: base.equilibrium(base.trial.copy(), depth, limit),
+            base, x, metric, history, empty, depth, 'before', deadline)
         virtual_stress = -gradient.reshape(-1, 2)[self.seam, 0]/self.seam_area
         # Both the physical pre-insertion state and the frozen equilibrated
         # comparator must satisfy strength; a virtual readjustment alone
@@ -466,19 +472,15 @@ class FiniteIncrementMixin:
         patches = finite_patches(stress, self.released, self.rest[self.seam, 1], self.seam_area, self.strength)
         self.ffm_scan['candidate_count'] = len(patches)
         if len(patches) > self.ffm_max_candidates:
-            raise LoadStepFailure('Finite-crack candidate budget incomplete; no intact certification')
+            raise VirtualRootIncomplete('Finite-crack candidate budget incomplete; no intact certification')
         u0 = base.stored(before)
         for ids in patches:
             removed = empty.copy()
             removed[ids] = True
             post = FrozenVirtualCrack(self, before, metric, history, self.released, removed, self.ffm_epsilon)
-            try:
-                if time.monotonic() >= virtual_deadline:
-                    raise TimeoutError('Finite-crack shared scan budget before candidate solve')
-                after, _, postnorm = post.equilibrium(before, depth, virtual_deadline)
-            except (LoadStepFailure, TimeoutError) as exc:
-                self.capture_virtual_failure(post, x, metric, history, removed, depth, 'after', exc)
-                raise
+            after, _, postnorm = self.virtual_operation(
+                lambda limit: post.equilibrium(post.trial.copy(), depth, limit),
+                post, x, metric, history, removed, depth, 'after', deadline)
             released_energy = u0-post.stored(after)
             area = float(self.seam_area[ids].sum())
             required = self.toughness*area
@@ -489,14 +491,26 @@ class FiniteIncrementMixin:
                     work_n_mm=0., empirical_uncertainty_n_mm=0., actual_integral_evaluated=False,
                     rejection_uses_rigorous_nonnegativity_only=True)
             else:
-                work_report = virtual_work(post, before, after, virtual_deadline)
+                def integrate(limit):
+                    report = virtual_work(post, before, after, limit)
+                    work = report['work_n_mm']
+                    decision = (dict(status='unknown') if work is None else interval_decision(
+                        released_energy, required, work, report['empirical_uncertainty_n_mm'], report['converged']))
+                    if decision['status'] == 'unknown':
+                        error = VirtualWorkUnresolved('Virtual friction work/energy interval unresolved; candidate unknown')
+                        error.work_report, error.energy_interval = report, decision
+                        raise error
+                    return report
+                post.trial = after.copy()
+                work_report = self.virtual_operation(integrate, post, x, metric, history,
+                    removed, depth, 'quadrature', deadline)
             d9 = work_report['work_n_mm']
             uncertainty = work_report['empirical_uncertainty_n_mm']
             decision = (dict(status='unknown') if d9 is None else
                 interval_decision(released_energy, required, d9, uncertainty, work_report['converged']))
             if decision['status'] == 'unknown':
                 post.trial = after.copy()
-                exc = LoadStepFailure('Virtual friction work/energy interval unresolved; candidate unknown')
+                exc = VirtualWorkUnresolved('Virtual friction work/energy interval unresolved; candidate unknown')
                 self.capture_virtual_failure(post, x, metric, history, removed, depth, 'quadrature', exc)
                 self.ffm_failure['metadata'].update(friction_integration=work_report, energy_interval=decision)
                 raise exc
@@ -534,6 +548,40 @@ class FiniteIncrementMixin:
                 return removed
         return empty
 
+    def virtual_operation(self, operation, virtual, seed, metric, history, removed, depth, stage, global_limit):
+        # Completed candidates and the paired pre-equilibrium are kept. Only
+        # the unfinished operation is retried; anchors/metrics/dt never change.
+        # An unfinished root resumes its last iterate, still subject to the
+        # original force, whole-chord and history gates. Work keeps BOTH endpoints.
+        while True:
+            try:
+                if time.monotonic() >= self.ffm_scan['deadline']:
+                    raise TimeoutError('Finite-crack shared scan computation budget')
+                value = operation(self.ffm_scan['deadline'])
+                self.ffm_failure = None
+                return value
+            except (LoadStepFailure, TimeoutError) as error:
+                self.capture_virtual_failure(virtual, seed, metric, history, removed, depth, stage, error)
+                if hasattr(error, 'work_report'):
+                    self.ffm_failure['metadata'].update(friction_integration=error.work_report,
+                        energy_interval=error.energy_interval)
+                now = time.monotonic()
+                if now >= global_limit:
+                    raise GlobalComputeBudgetExhausted('Global budget during virtual '+stage) from error
+                event = dict(stage=stage, seam_indices=np.flatnonzero(removed).tolist(),
+                    error=str(error), material_dt_s=self.material_dt,
+                    depth_mm=float(depth), extension=self.ffm_scan['extensions'],
+                    prior_failure={k:v for k,v in self.ffm_failure['metadata'].items() if k != 'numerical_recoveries'})
+                self.ffm_recoveries.append(event)
+                if self.ffm_scan['extensions'] >= self.ffm_recovery_attempts:
+                    kind = VirtualWorkUnresolved if stage == 'quadrature' else VirtualRootIncomplete
+                    raise kind('Bounded virtual recovery exhausted: '+str(error)) from error
+                self.ffm_scan['extensions'] += 1
+                allowance = self.ffm_virtual_seconds*2**self.ffm_scan['extensions']
+                self.ffm_scan['deadline'] = min(global_limit, now+allowance)
+                event.update(retry_budget_s=self.ffm_scan['deadline']-now,
+                    same_physical_step=True, same_frozen_history=True)
+
     def capture_virtual_failure(self, virtual, seed, metric, history, removed, depth, stage, exc):
         # Capture before the host rolls back the attempted physical release set.
         # The trial is unaccepted; its original equation must be recomputed.
@@ -552,6 +600,7 @@ class FiniteIncrementMixin:
             solver=getattr(virtual, 'virtual_solver_method', 'fresh_force_ptc'),
             virtual_ccd_tolerance=self.ffm_ccd_tolerance,
             solver_phases=virtual.virtual_solver_phases, candidate_status='unknown',
+            numerical_recoveries=list(getattr(self, 'ffm_recoveries', [])),
             shared_scan_budget=scan_context),
             fields=dict(seed_positions=seed.copy(), seed_increment=self.step_increment(seed),
                 virtual_anchor=virtual.previous.copy(), virtual_trial=virtual.trial.copy(),
