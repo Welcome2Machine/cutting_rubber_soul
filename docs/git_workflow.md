@@ -2,7 +2,10 @@
 
 ## 单一总仓库
 
-当前目录是新的 monorepo，主分支 `main`。`projects/softmodeling` 与 `projects/rec_inc_soft_cut` 是普通受控子目录，没有嵌套 `.git`，不使用 submodule。这样一次提交能够原子修改两个接口与整合层，且保持一套可复现的版本。
+当前目录是整合 monorepo；协作起点为 `codex/integrated-solution-blade-profile`。
+远端 `main` 仍是旧独立 FE 工程，不作为整合开发起点。`projects/softmodeling` 与
+`projects/rec_inc_soft_cut` 是普通受控子目录，没有嵌套 `.git`，不使用 submodule。
+这样一次提交能够原子修改两个接口与整合层，且保持一套可复现的版本。
 
 初始导入保留当前源工作区，包含未提交修改与未跟踪源码。原 Git 历史保存在本地 `provenance/simulation-original.bundle`、`video-original.bundle`，未提交跟踪文件差异保存在相应 patch；未跟踪源码本身已纳入导入提交。bundle 不嵌入新仓库历史，避免带入旧数据与二进制。原项目仓库保留不动。
 
@@ -15,8 +18,8 @@ Git 管理源码、测试、方法文档、审阅后的配置、输入格式和�
 ## 日常分支与提交
 
 ```powershell
-git switch main
-git switch -c feat/point-observables
+git switch codex/integrated-solution-blade-profile
+git switch -c codex/point-observables
 # 修改、检查diff、运行对应测试
 python -m pytest -q
 git add softcut_solution tests docs configs

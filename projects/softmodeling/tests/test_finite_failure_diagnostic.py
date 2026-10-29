@@ -99,8 +99,11 @@ def test_virtual_friction_homotopy_restores_original_problem_even_on_timeout(mon
         np.testing.assert_array_equal(getattr(p, k), value)
 
 
-def test_auxiliary_solver_return_cannot_bypass_original_force_gate(monkeypatch):
-    p = problem(dict(config(), ffm_virtual_solver='friction_continuation'))
+@pytest.mark.parametrize('solver,method', [
+    ('friction_continuation', 'friction_continued_equilibrium'),
+    ('lagged_newton', 'lagged_newton_equilibrium')])
+def test_auxiliary_solver_return_cannot_bypass_original_force_gate(monkeypatch, solver, method):
+    p = problem(dict(config(), ffm_virtual_solver=solver))
     p.material_dt = .025
     v = FrozenVirtualCrack(p, p.rest, p.material_metric, p.history, p.released,
                           np.zeros_like(p.released), p.ffm_epsilon)
@@ -109,7 +112,7 @@ def test_auxiliary_solver_return_cannot_bypass_original_force_gate(monkeypatch):
     def fail(*args):
         raise TimeoutError('direct stage')
     monkeypatch.setattr(v, 'solve_friction', fail)
-    monkeypatch.setattr(v, 'friction_continued_equilibrium', lambda *args: bad)
+    monkeypatch.setattr(v, method, lambda *args: bad)
     with pytest.raises(RuntimeError, match='force/CCD gate'):
         v.equilibrium(p.rest, p.start, time.monotonic()+10)
 

@@ -27,7 +27,7 @@ def problem(config):
         'time_integrator', 'barrier_quadrature', 'barrier_quadrature_rule', 'insertion_rule', 'nucleation_length_mm',
         'kinematic_theta', 'contact_activation_mm', 'blade_surface_spacing_mm',
         'fracture_criterion', 'ffm_virtual_seconds', 'ffm_friction_epsilon_mm', 'ffm_max_candidates',
-        'ffm_virtual_solver'}
+        'ffm_virtual_solver', 'ffm_ccd_tolerance'}
     if set(config)-allowed or config['schema'] != 'softcut-zero-gap-dynamics/1':
         raise ValueError('Unknown zero-gap configuration')
     if not 0 < config['target_mm'] <= 2 or not 0 < config['minimum_increment_mm'] <= config['increment_mm']:
@@ -55,7 +55,7 @@ def problem(config):
         from prototype.finite_increment_cut import FiniteIncrementEnergyCutProblem, FiniteIncrementBackwardCutProblem
         cls = FiniteIncrementEnergyCutProblem if integrator == 'discrete_gradient' else FiniteIncrementBackwardCutProblem
         extra.update({key:config[key] for key in ('ffm_virtual_seconds', 'ffm_friction_epsilon_mm',
-            'ffm_max_candidates', 'ffm_virtual_solver') if key in config})
+            'ffm_max_candidates', 'ffm_virtual_solver', 'ffm_ccd_tolerance') if key in config})
     elif criterion != 'local_or_neighbourhood' or any(key.startswith('ffm_') for key in config):
         raise ValueError('Unknown fracture criterion or unbound virtual options')
     return cls(**extra, density_kg_m3=config['density_kg_m3'],

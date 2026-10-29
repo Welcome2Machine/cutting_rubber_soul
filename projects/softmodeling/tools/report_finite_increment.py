@@ -225,9 +225,33 @@ def build(directories, output):
     axes[0,0].set_ylabel('Deformed height [mm]')
     fig.suptitle('Saved deformed meshes\nOrange: tied nodes\nTerminal depths differ between cases', fontsize=10)
     fig.savefig(output/'deformed_seam.png',dpi=150);plt.close(fig)
+    fig,axes=plt.subplots(3,len(cases),figsize=(5*len(cases),10),layout='constrained',squeeze=False)
+    for column,(s,d,f,dt,e) in enumerate(cases):
+        rows=json.loads((Path(s['directory'])/'result.json').read_text())['steps']
+        draw=s['drawdown_diagnostic'];left=draw['peak_depth_mm'];right=draw['trough_depth_mm']
+        pad=max(.25*(right-left),1e-8)
+        axes[0,column].plot(d,f,label='total',lw=1)
+        for key,label in [('reaction_normal_fz_n','normal'),('reaction_friction_fz_n','friction')]:
+            axes[0,column].plot(d,[r[key] for r in rows],label=label,lw=1)
+        axes[0,column].set_title(s['name']+'\nMaximum raw Fz drawdown')
+        axes[0,column].set_ylabel('Interval-average Fz [N]');axes[0,column].legend(fontsize=8)
+        axes[1,column].plot(d,e['kinetic_energy_n_mm'],lw=1,color='#915985')
+        axes[1,column].set_ylabel('Endpoint kinetic energy [N mm]')
+        axes[2,column].step(d,[r['released_nodes'] for r in rows],where='post',label='released')
+        axes[2,column].step(d,[r['fully_failed_nodes'] for r in rows],where='post',label='fully failed')
+        axes[2,column].set_ylabel('Seam node count');axes[2,column].legend(fontsize=8)
+        axes[2,column].set_xlabel('Absolute blade travel [mm]')
+        for ax in axes[:,column]:
+            ax.set_xlim(left-pad,right+pad);ax.grid(alpha=.2)
+            ax.ticklabel_format(axis='x',style='sci',scilimits=(0,0),useOffset=True)
+    fig.suptitle('Saved force components, kinetic energy and fracture state\n'
+                 'Independent absolute-depth windows; no event alignment or instantaneous-force reconstruction',fontsize=10)
+    fig.savefig(output/'fast_slip.png',dpi=160);plt.close(fig)
     comparisons=[]
     families=dict(time_control={'increment_mm','energy_tolerance','energy_absolute_tolerance_n_mm'},
-        body_and_seam_mesh={'seam_spacing_mm','local_spacing_mm','surface_spacing_mm','coarse_spacing_mm'})
+        body_and_seam_mesh={'seam_spacing_mm','local_spacing_mm','surface_spacing_mm','coarse_spacing_mm'},
+        contact_activation={'contact_activation_mm'},
+        friction_regularization={'friction_velocity_epsilon_mm_s'})
     for family,keys in families.items():
         groups={}
         for case in cases:
@@ -276,6 +300,10 @@ def build(directories, output):
     <p><a href="comparison.json">完整统计、配置和独立审查</a> · <a href="{link(Path(__file__).resolve().parents[3]/'docs/fracture_implementation.md')}">方法与理论边界（第22节）</a></p>
     <div style="overflow-x:auto"><table><tr><th>算例</th><th>末行程mm / 态数</th><th>首次释放mm</th><th>释放 / 全失效节点</th><th>表面连通全失效长度mm</th><th>Σ|缺口|/Σ|外功|</th><th>最大回落N</th><th>状态</th><th>双条件审查</th><th>真实轨迹审查</th><th>原始结果</th></tr>{table}</table></div>
     <img src="force_energy_time.png" alt="实际Fz、累计能量缺口与接受时间步">
+    <h2>原始掉力窗口的分量与断裂状态</h2>
+    <img src="fast_slip.png" alt="最大原始Fz回落附近的法向及摩擦分量、动能、释放与全失效节点数">
+    <p>各列使用自己的绝对行程坐标及原始接受点，不能据此声称跨算例事件同步。
+    负的竖直摩擦分量不等于总摩擦功为负；JSON同时给出端点材料速度与最小单步摩擦功。</p>
     <h2>时间与网格敏感性：完整行程尚未通过</h2>
     <table><tr><th>控制族</th><th>配对</th><th>共同深度mm</th><th>曲线相对L2差</th><th>最大点差N</th></tr>{comparison_table}</table>
     <p>使用全部接受点的并集分段精确积分，保留极窄脉冲。小L2差仍可能伴随很大峰值差；

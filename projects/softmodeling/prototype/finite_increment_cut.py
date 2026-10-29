@@ -13,7 +13,7 @@ import time
 import numpy as np
 from scipy.sparse import diags
 from mechanics.discrete_gradient import frozen_response
-from .ipc_reference import IPCProblem, LoadStepFailure
+from .ipc_reference import IPCProblem, LoadStepFailure, determinant_step
 from .zero_gap_cut import ZeroGapCutProblem
 from .energy_cut import EnergyCutProblem
 from .force_globalization import solve
@@ -68,6 +68,11 @@ class FrozenVirtualCrack(ZeroGapCutProblem):
         self.virtual_solver_load = np.zeros(self.total)
         self.virtual_friction_epsilon = epsilon
         self.virtual_solver_phases = []
+        tolerance = getattr(host, 'ffm_ccd_tolerance', None)
+        self.virtual_narrow_phase_ccd = (None if tolerance is None else
+            self.ipc.TightInclusionCCD(tolerance=tolerance,
+                max_iterations=self.ipc.TightInclusionCCD.DEFAULT_MAX_ITERATIONS,
+                conservative_rescaling=self.ipc.TightInclusionCCD.DEFAULT_CONSERVATIVE_RESCALING))
         end = 2*self.toughness/self.strength
         self.virtual_secant = np.divide(self.strength*np.maximum(1-history/end, 0.), history,
             out=np.zeros_like(history), where=history > 0)*released*(~removed)
@@ -126,6 +131,36 @@ class FrozenVirtualCrack(ZeroGapCutProblem):
             alpha*=.5
             trial=x+alpha*direction
         return x.copy(),0.,geometric
+
+    def safe_step(self, x, direction):
+        """Optional tighter inclusion precision, with all original constraints.
+
+        The native default can conservatively report a near miss as a hit.
+        Tightening its error tolerance retains full EV/VV/self-contact, the
+        native iteration limit/rescaling, positive J and the mirror halfspace.
+        This option affects virtual searches only, never physical loading CCD.
+        """
+        if self.virtual_narrow_phase_ccd is None:
+            return super().safe_step(x, direction)
+        started = time.perf_counter()
+        f = np.eye(2)+np.einsum('eai,eaJ->eiJ',
+            (x[:self.n]-self.mesh.reference_xy)[self.mesh.triangles], self.grad)
+        d = np.einsum('eai,eaJ->eiJ', direction[:self.n][self.mesh.triangles], self.grad)
+        j_fraction = determinant_step(f, d)
+        self._record_phase('positive_j', started)
+        started = time.perf_counter()
+        ccd_fraction = self.ipc.compute_collision_free_stepsize(
+            self.cmesh, x[self.surface], (x+direction)[self.surface],
+            narrow_phase_ccd=self.virtual_narrow_phase_ccd)
+        self._record_phase('ccd', started)
+        safe = min(j_fraction, ccd_fraction)
+        moving = direction[:self.n, 0] < 0
+        if np.any(moving):
+            limit = (x[:self.n, 0][moving]-self.config.drop_s_mm)/(-direction[:self.n, 0][moving])
+            safe = min(safe, float(limit.min()))
+        if getattr(self, 'solver_diagnostics', False):
+            self.step_limits = dict(j_fraction=float(j_fraction), ccd_fraction=float(ccd_fraction))
+        return max(0., safe)
 
     def equilibrium(self, seed, depth, deadline):
         # Fresh-force PTC crosses nonzero force-merit minima that trapped LM
@@ -296,7 +331,7 @@ class FrozenVirtualCrack(ZeroGapCutProblem):
 
 class FiniteIncrementMixin:
     def __init__(self, *, ffm_virtual_seconds=10., ffm_friction_epsilon_mm=1e-6,
-                 ffm_max_candidates=256, ffm_virtual_solver='legacy', **kwargs):
+                 ffm_max_candidates=256, ffm_virtual_solver='legacy', ffm_ccd_tolerance=None, **kwargs):
         super().__init__(**kwargs)
         if (not np.isfinite([ffm_virtual_seconds, ffm_friction_epsilon_mm]).all()
                 or min(ffm_virtual_seconds, ffm_friction_epsilon_mm) <= 0
@@ -308,6 +343,12 @@ class FiniteIncrementMixin:
         if ffm_virtual_solver not in ('legacy', 'friction_continuation', 'lagged_newton'):
             raise ValueError('Unknown finite virtual solver')
         self.ffm_virtual_solver = ffm_virtual_solver
+        if ffm_ccd_tolerance is not None and (
+                not isinstance(ffm_ccd_tolerance, (int, float)) or
+                not np.isfinite(ffm_ccd_tolerance) or not
+                0 < ffm_ccd_tolerance <= self.ipc.TightInclusionCCD.DEFAULT_TOLERANCE):
+            raise ValueError('Virtual CCD tolerance may only tighten the native error bound')
+        self.ffm_ccd_tolerance = ffm_ccd_tolerance
         self.ffm_pending, self.ffm_checks = [], []
         self.ffm_failure = None
 
@@ -380,6 +421,7 @@ class FiniteIncrementMixin:
                 virtual_pre_solver=base.virtual_solver_method, virtual_post_solver=post.virtual_solver_method,
                 virtual_pre_solver_phases=base.virtual_solver_phases,
                 virtual_post_solver_phases=post.virtual_solver_phases,
+                virtual_ccd_tolerance=self.ffm_ccd_tolerance,
                 viscous_metric_frozen=True, virtual_physical_time_advance_s=0.,
                 virtual_dissipation_is_physical_ledger_input=False)
             self.ffm_checks.append(check)
@@ -399,6 +441,7 @@ class FiniteIncrementMixin:
         self.ffm_failure = dict(metadata=dict(stage=stage, error=str(exc),
             seam_indices=np.flatnonzero(removed).tolist(), depth_mm=float(depth),
             solver=getattr(virtual, 'virtual_solver_method', 'fresh_force_ptc'),
+            virtual_ccd_tolerance=self.ffm_ccd_tolerance,
             solver_phases=virtual.virtual_solver_phases, candidate_status='unknown'),
             fields=dict(seed_positions=seed.copy(), seed_increment=self.step_increment(seed),
                 virtual_anchor=virtual.previous.copy(), virtual_trial=virtual.trial.copy(),
