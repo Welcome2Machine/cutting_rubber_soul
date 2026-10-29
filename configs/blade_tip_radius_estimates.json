@@ -1,0 +1,171 @@
+{
+  "schema": "softcut-image-radius-estimates/1",
+  "tool_sha256": "05ed9f228d9755fcb5d656da5216704a08deafbf16c1ae50d5384485086571a7",
+  "manifest_sha256": "35119d682bb5fcb470719e4bebb0ab446d34765f64b717a886e4d1992ea0f63d",
+  "method": {
+    "background_strips_y": [
+      [
+        39,
+        44
+      ],
+      [
+        78,
+        83
+      ]
+    ],
+    "background_shifts_px": [
+      -2,
+      0,
+      2
+    ],
+    "contrast_levels_255": [
+      15,
+      25,
+      35,
+      45
+    ],
+    "sampling": "Both raw marching-square vertices and uniform 0.5 pixel arclength; interpolated samples are not independent optical measurements.",
+    "fit": "Orthogonal-distance local circle, NumPy damped Gauss-Newton, multiple starts. Center must lie behind leftmost point; radius 0.1 to 200 pixels. Boundary hits are reported.",
+    "qualification": "Sensitivity ranges do not include optical blur, out-of-plane projection, edge-location variability or instrument calibration. Not statistical confidence intervals."
+  },
+  "experimental_force_read": false,
+  "loading_started": false,
+  "uncertainty_kind": "Processing and scale sensitivity; NOT statistical CI or optical-resolution uncertainty",
+  "purpose": "Reviewed image-only curvature estimates. Not a solver config. No automatic FE substitution.",
+  "prior_fe_radius_mm": 0.02,
+  "prior_fe_radius_status": "Historical assumption, not a measurement of these images",
+  "observations": [
+    {
+      "id": "a_tip_image_1",
+      "image_number": 1,
+      "source_sha256": "6574efa9953aa2b8165e4a6152a9fbdbae13277ed052cc98996ea0de1a58d77a",
+      "scale": {
+        "length_um": 100,
+        "span_pixels": 50,
+        "x_first": 214,
+        "x_last": 263,
+        "um_per_pixel": 2.0,
+        "endpoint_sensitivity_um_per_pixel": [
+          1.9230769230769231,
+          2.0833333333333335
+        ]
+      },
+      "physical_tip_radius_mm": null,
+      "physical_prediction_qualified": false,
+      "features": [
+        {
+          "feature": "whole_tip",
+          "interpretation": "Local equivalent radius; slightly flattened terminal edge is not an ideal circular nose.",
+          "radius_median_um": 7.600716661094888,
+          "image_processing_range_um": [
+            6.756202194470166,
+            8.78435974629442
+          ],
+          "with_scale_endpoint_range_um": [
+            6.496348263913622,
+            9.150374735723355
+          ],
+          "rms_range_px": [
+            0.1537538430143194,
+            0.35109732098469987
+          ],
+          "bound_active_count": 0,
+          "fit_count": 72,
+          "physical_prediction_qualified": false,
+          "single_circle_representation_rejected": false,
+          "image_equivalent_radius_um": 7.600716661094888,
+          "radius_median_semantics": "Median across processing choices, not specimen statistics"
+        }
+      ]
+    },
+    {
+      "id": "a_tip_image_2",
+      "image_number": 2,
+      "source_sha256": "373e2e32d3f357861d2686283983483e98addf39a7b6fa9e1b81c1ad11e4ee0e",
+      "scale": {
+        "length_um": 100,
+        "span_pixels": 50,
+        "x_first": 214,
+        "x_last": 263,
+        "um_per_pixel": 2.0,
+        "endpoint_sensitivity_um_per_pixel": [
+          1.9230769230769231,
+          2.0833333333333335
+        ]
+      },
+      "physical_tip_radius_mm": null,
+      "physical_prediction_qualified": false,
+      "features": [
+        {
+          "feature": "whole_tip",
+          "interpretation": "REJECTED as one physical radius: concave indentation between two protrusions and strong window sensitivity.",
+          "radius_median_um": 27.15593169026777,
+          "image_processing_range_um": [
+            15.951729770642823,
+            398.8706735085111
+          ],
+          "with_scale_endpoint_range_um": [
+            15.338201702541175,
+            415.49028490469914
+          ],
+          "rms_range_px": [
+            0.4660103476380233,
+            1.3196630026643208
+          ],
+          "bound_active_count": 11,
+          "fit_count": 144,
+          "physical_prediction_qualified": false,
+          "single_circle_representation_rejected": true,
+          "image_equivalent_radius_um": null,
+          "radius_median_semantics": "Invalid-model diagnostic only"
+        },
+        {
+          "feature": "upper_lobe",
+          "interpretation": "Local apparent curvature only; identity as actual contacting edge unverified.",
+          "radius_median_um": 5.910771572787328,
+          "image_processing_range_um": [
+            4.374068274477484,
+            6.772821877905119
+          ],
+          "with_scale_endpoint_range_um": [
+            4.205834879305273,
+            7.055022789484499
+          ],
+          "rms_range_px": [
+            0.0801993624176029,
+            0.3974044125317244
+          ],
+          "bound_active_count": 0,
+          "fit_count": 72,
+          "physical_prediction_qualified": false,
+          "single_circle_representation_rejected": false,
+          "image_equivalent_radius_um": 5.910771572787328,
+          "radius_median_semantics": "Median across processing choices, not specimen statistics"
+        },
+        {
+          "feature": "lower_lobe",
+          "interpretation": "Marginally resolved local apparent curvature, sensitive to threshold; some estimates approach one pixel.",
+          "radius_median_um": 4.257213052250407,
+          "image_processing_range_um": [
+            1.7283999650297066,
+            5.665421650327484
+          ],
+          "with_scale_endpoint_range_um": [
+            1.661923043297795,
+            5.901480885757796
+          ],
+          "rms_range_px": [
+            0.1361189541351001,
+            0.6575732211760219
+          ],
+          "bound_active_count": 0,
+          "fit_count": 72,
+          "physical_prediction_qualified": false,
+          "single_circle_representation_rejected": false,
+          "image_equivalent_radius_um": 4.257213052250407,
+          "radius_median_semantics": "Median across processing choices, not specimen statistics"
+        }
+      ]
+    }
+  ]
+}

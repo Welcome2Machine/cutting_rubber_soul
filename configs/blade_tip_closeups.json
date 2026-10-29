@@ -5,14 +5,28 @@
   "relation_to_overview": "Linked by A performance class; exact blade serial and sampled edge location were not supplied.",
   "experimental_force_used_for_identification": false,
   "numerical_geometry_update": false,
-  "extraction_status": "Scale identified; no qualified quantitative terminal contour or circle fit.",
-  "notes": "Do not rank actual contact curvature by visual envelope or performance label. Overview thresholds were not reliable across these textured close-ups; no fitted radius is committed.",
+  "extraction_status": "Local equivalent-circle image estimates available; single-circle representation rejected for image 2. Physical contact radius remains unqualified.",
+  "radius_estimates_config": "configs/blade_tip_radius_estimates.json",
+  "notes": "Do not rank actual contact curvature by visual envelope or performance label. Feature windows follow visible geometry, not force data. Near-tip features may be projection or edge irregularity, not identified burrs.",
+  "radius_method": {
+    "background_strips_y": [[39, 44], [78, 83]],
+    "background_shifts_px": [-2, 0, 2],
+    "contrast_levels_255": [15, 25, 35, 45],
+    "sampling": "Both raw marching-square vertices and uniform 0.5 pixel arclength; interpolated samples are not independent optical measurements.",
+    "fit": "Orthogonal-distance local circle, NumPy damped Gauss-Newton, multiple starts. Center must lie behind leftmost point; radius 0.1 to 200 pixels. Boundary hits are reported.",
+    "qualification": "Sensitivity ranges do not include optical blur, out-of-plane projection, edge-location variability or instrument calibration. Not statistical confidence intervals."
+  },
   "observations": [
     {
       "id": "a_tip_image_1",
       "image_number": 1,
       "profile_class_id": "a_low_profile",
       "performance": "low_performance",
+      "roi_xyxy": [12, 46, 60, 73],
+      "contour_seed_xy": [18.5, 56.5],
+      "features": [
+        {"id": "whole_tip", "y_range_px": [46, 73], "fit_depths_px": [2, 3, 4], "interpretation": "Local equivalent radius; slightly flattened terminal edge is not an ideal circular nose."}
+      ],
       "local_source": "researchtopic/blade_tip_closeups_20261029/a_low_tip.png",
       "source_sha256": "6574efa9953aa2b8165e4a6152a9fbdbae13277ed052cc98996ea0de1a58d77a",
       "source_filename": "codex-clipboard-c0b0cff2-78de-4d37-86ad-1af26c63a3ab.png",
@@ -44,6 +58,13 @@
       "image_number": 2,
       "profile_class_id": "a_high_profile",
       "performance": "high_performance",
+      "roi_xyxy": [26, 46, 70, 73],
+      "contour_seed_xy": [32.5, 61.5],
+      "features": [
+        {"id": "whole_tip", "y_range_px": [46, 73], "fit_depths_px": [2, 3, 4, 5, 6, 8], "diagnostic_only": true, "interpretation": "REJECTED as one physical radius: concave indentation between two protrusions and strong window sensitivity."},
+        {"id": "upper_lobe", "y_range_px": [49, 58], "fit_depths_px": [2, 3, 4], "interpretation": "Local apparent curvature only; identity as actual contacting edge unverified."},
+        {"id": "lower_lobe", "y_range_px": [59, 67], "fit_depths_px": [2, 3, 4], "interpretation": "Marginally resolved local apparent curvature, sensitive to threshold; some estimates approach one pixel."}
+      ],
       "local_source": "researchtopic/blade_tip_closeups_20261029/a_high_tip.png",
       "source_sha256": "373e2e32d3f357861d2686283983483e98addf39a7b6fa9e1b81c1ad11e4ee0e",
       "source_filename": "codex-clipboard-51d35e5d-5c1b-46f9-a2fe-70ed26de73d2.png",

@@ -37,7 +37,8 @@ git config core.hooksPath .githooks
 2. `projects/softmodeling/AGENTS.md`，以及其 `docs/research_status.md` 开头的最新章节、
    `docs/task_requirements.md`、`docs/current_model_spec.md`、`prototype/README.md`。
 3. 根目录 `docs/fracture_implementation.md` 第 18–22 节，尤其第 22 节的 CC/CZM 假设与未通过项。
-4. `docs/blade_profile_config.md`、`configs/blade_profiles.measured.json`。
+4. `docs/blade_profile_config.md`、`configs/blade_profiles.measured.json`、
+   `configs/blade_tip_closeups.json`、`configs/blade_tip_radius_estimates.json`。
 5. 涉及视频时再读 `projects/rec_inc_soft_cut/README.md`、`environment/README.md`、
    `environment/AGENT_CONTRACT.md`，以及共同观测接口。
 
@@ -106,7 +107,12 @@ Lobatto 接触求积、独立增量 PTC 和求解用摩擦延续。
 - 随后提供的两张 100 μm 标尺刀头近景，用户最终更正为 **图 1 低性能、图 2 高性能**。
   名义约 2 μm/像素；来源在 `configs/blade_tip_closeups.json`。图 2 有局部不规则端部，
   不能因图 1 外包络看起来更平顺就断定其实际接触点更锋利，也不能反过来把图 2 的
-  凸起直接解释为性能提高机制。当前没有合格的近景圆鼻半径拟合，未改变 FE 几何参数。
+  凸起直接解释为性能提高机制。后续已实际计算图像局部等效圆：图 1 约 7.6 μm
+  （处理/标尺敏感性 6.5–9.2）；图 2 上侧约 5.9 μm（4.2–7.1），下侧约 4.3 μm
+  （1.7–5.9，接近像素尺度，可信度低）。图 2 整段单圆模型已否决；这些范围不是统计
+  置信区间，不包括光学分辨率误差，也未认证实际接触位置。不得因高性能标签强行选择
+  较小半径。复现工具为 `python -m softcut_solution.blade_tip_radius --output runs/<新目录>`，
+  需另传两张原图。旧 FE 的 20 μm 是假设，尚未因本次图像拟合而改变。
 - 13.3° 与旧模型默认 23° 的差异需要作为几何依据核查；不要混淆宏观主刃与末端微刃。
   保留旧配置作为数值对照，新测量几何单独建候选，不借力曲线选择半径或楔角。
 - `softcut_solution.blade_config` 已能把轮廓配置转换为工作台 `softcut-config/1`，
@@ -143,7 +149,7 @@ IPC 必须为 1.6.0，不能遇到安装困难就静默升级或换接触模型�
 若平台缺少对应 wheel，按该版本官方构建说明处理并记录编译环境。
 测试含 Tk 导入：所选 Python 需有 Tk；无显示时 GUI 测试可能按既有规则跳过，
 如需完整 GUI 检查使用虚拟显示。导入失败不能记为测试通过，跳过数量要报告。
-本地最新整合检查为 128 项通过；FE 最近算法版本为 612 项、537 子检查通过。
+本地最新整合检查为 136 项通过（含 8 项新增半径提取验证）；FE 最近算法版本为 612 项、537 子检查通过。
 这些是 Windows 本地记录，不是远程已经验证的结果。
 
 视频保持独立 Python 3.11 环境及其 PyTorch/FFmpeg 依赖；只有需要视频任务时再准备。
@@ -223,7 +229,9 @@ python -m tools.report_finite_increment ../../runs/server_1029_round1/base --out
    Fz 原始峰值/回落、全局与事件窗口能量、动能、体耗散、断裂功、摩擦耗散、
    接触势和数值缺口。先看完整事件与最大点差，再看曲线整体误差。
 5. **几何与裂路扩展。** 测量刀形接入动态 schema 应独立实现并验证几何/接触，
-   鼻部半径必须保持未测或来自独立证据。再扩展偏心/斜切与自由裂路、网格方向、
+   鼻部半径须声明为历史假设、图像局部估计或独立实测，三者不可混同；数微米曲率不能
+   被当前 .05–.1 mm 裂路间距自动分辨，须单独验证刀面/材料局部离散及接触尺度。
+   再扩展偏心/斜切与自由裂路、网格方向、
    界面附加柔度及旧有限间隙网络的 gap 检查。当前 0°对称算例不能认证这些能力。
 6. **物理资格。** 独立强度/Gc、率效应和接触试验方案继续保留；刀具性能差异
    优先研究微刃几何/稳定表面状态，并区分刀内重复性和刀间差异。没有新证据时不宣称
