@@ -41,8 +41,11 @@ Maxwell 加载入口为 `python -m tools.run_material_candidate`，参数与串�
 
 第二轮可靠性内核：`../virtual_path_geometry.py`定义虚拟直线的几何分区；
 `../virtual_path_probe.py`只选择原生CCD查询安排，不能代替CCD证书；
-`../virtual_friction_work.py`将分区自适应积分的经验不确定性传播到三态能量判据。
-`tools.virtual_work_audit`使用独立复合Legendre规则。`tools.frozen_scene`仅允许核查后的
+`../virtual_friction_work.py`以完整分区误差之和控制自适应积分，将经验不确定性传播到
+三态能量判据。接触功先平移再仿射插值以避免近间隙全局坐标消减，原根/历史不变；
+`../virtual_constrained_root.py`为求根方向施加最近完整弦特征的线性间隙
+约束，最终仍用原方程、原力门与完整原生CCD验收，不引入物理反力或新虚拟路径。
+`tools.virtual_work_audit`使用扩展精度相对插值及独立复合Legendre规则。`tools.frozen_scene`仅允许核查后的
 旧方程诊断，不能用于物理续算。`../numerical_runtime.py`管理显式IPC/BLAS线程及记录。
 `../face_cohesive_quadrature.py`为尚未接入生产释放拓扑的面级P1独立验证核；不将它的
 规定开口场验证称为完整切割网格收敛。方法与限制见合并仓库断裂说明第24节。

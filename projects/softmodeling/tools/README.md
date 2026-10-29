@@ -200,15 +200,18 @@ python -m tools.audit_zero_gap_cut ../../runs/<已有目录> --output ../../runs
 以全部接受深度并集计算图示曲线差异，避免均匀采样漏掉窄脉冲；小L2不等于瞬态收敛。
 只有关闭损伤对照完成2 mm，不能计为裂后修复。参数仍是未测示例。
 
-第二轮诊断均支持显式`--ipc-threads`、`--blas-threads`及可选`--physical-core-affinity`，
+第二轮数值求根、积分和性能诊断支持显式`--ipc-threads`、`--blas-threads`及可选`--physical-core-affinity`，
 兼容默认2/2，服务器推荐按实测采用IPC 2/BLAS 1；先满足进程线程预算与亲和性。
 加载、两类独立审查、失败诊断、恢复与同源码续算均记录实际线程/分配。线程数不改变物性。
+精确有理数相交检查及只读绘图报告没有IPC求解循环，不作为多线程性能测量。
 
 - `tools.benchmark_frozen_scene`：核查归档后做固定工作量装配、CCD、摩擦积分、稀疏解及I/O测试，记录实际SuperLU分派。
 - `tools.diagnose_virtual_root`、`tools.audit_virtual_chord`：原力分量/方向/条件性及精确有理数相交见证；不把一次失败写作无根。
 - `tools.diagnose_virtual_work`、`tools.validate_virtual_reliability`：原直线的功率尖峰、全局点数和分区独立方法，以及面积控制。
 - `tools.diagnose_surface_competition`、`tools.report_surface_competition`：核查表面/内部候选的能量与开口；支撑并集面积不是替换Gc代价的规则。
 - `tools.audit_virtual_root_accuracy`：将已接受事件的原方程力残差进一步收紧到1e-8 N，检查判据对端点精度的敏感性；不推进真实历史。
+- `tools.trace_virtual_load_branch`：原种子上的辅助载荷求根跟踪，接受能量前必须撤去辅助载荷；保存失败阶段及原方程残差，不能作为物理续算。
+- `tools.diagnose_constrained_root`：比较完整弦搜索目标对根、CCD及积分的影响；搜索目标属于数值方向控制，原1e-4 N门不变。
 
 旧现场诊断明确标为`equation_compatible_diagnostic_only`，核对Git生产源、输入、
 原物理方程、种子增量和冻结历史；它不能绕过物理续算的精确源码门。生成结果留新目录。

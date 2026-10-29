@@ -14,6 +14,13 @@
 首轮已完成七条初态有界路径和独立前缀审查，最远1.210936632931 mm；含断裂2 mm、
 表面贯通、完整失稳能量及收敛验证仍未通过。全部计算作业已结束，未经新预算不自动续算。
 
+第二轮继续同一服务器分支，起点`612cf7f`；新的求根/摩擦积分、性能测量及实际路径
+证据见[方法第24节](fracture_implementation.md)、[当前研究状态](../projects/softmodeling/docs/research_status.md)
+和[`runs/server_1029_round2/index.html`](../runs/server_1029_round2/index.html)。第二轮允许独立
+任务并行，采用64物理核/64计算线程/128 GB总上限及运行区间并集预算；具体结束状态、
+已用预算和本地/发布提交映射以[环境记录](environment.md)及第二轮账本为准。后文首轮
+串行限制为历史说明，不能覆盖新授权，也不构成下一轮自动续算授权。
+
 ## 1. 正确仓库与位置
 
 - 仓库：<https://github.com/Welcome2Machine/cutting_rubber_soul>
