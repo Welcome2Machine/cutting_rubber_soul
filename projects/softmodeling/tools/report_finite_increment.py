@@ -251,13 +251,16 @@ def build(directories, output):
             ax.set_xlim(left-pad,right+pad);ax.grid(alpha=.2)
             ax.ticklabel_format(axis='x',style='sci',scilimits=(0,0),useOffset=True)
     fig.suptitle('Saved force components, kinetic energy and fracture state\n'
-                 'Independent absolute-depth windows; no event alignment or instantaneous-force reconstruction',fontsize=10)
+                 'Independent absolute-depth windows\n'
+                 'No event alignment; no instantaneous-force reconstruction',fontsize=9)
     fig.savefig(output/'fast_slip.png',dpi=160);plt.close(fig)
     comparisons=[]
     families=dict(time_control={'increment_mm','energy_tolerance','energy_absolute_tolerance_n_mm'},
         body_and_seam_mesh={'seam_spacing_mm','local_spacing_mm','surface_spacing_mm','coarse_spacing_mm'},
         contact_activation={'contact_activation_mm'},
-        friction_regularization={'friction_velocity_epsilon_mm_s'})
+        friction_regularization={'friction_velocity_epsilon_mm_s'},
+        virtual_solver_and_budget={'ffm_virtual_solver','ffm_ccd_tolerance',
+            'ffm_chord_max_queries','ffm_virtual_seconds','attempt_seconds'})
     for family,keys in families.items():
         groups={}
         for case in cases:
@@ -268,12 +271,15 @@ def build(directories, output):
             end=min(c[0]['last_depth_mm'] for c in group)
             for i,a in enumerate(group):
                 for b in group[i+1:]:
+                    pair_end=min(a[0]['last_depth_mm'],b[0]['last_depth_mm'])
                     comparisons.append(dict(family=family,first=a[0]['name'],second=b[0]['name'],common_window_mm=[0.,end],
-                        **curve_difference(a[1],a[2],b[1],b[2],end)))
+                        **curve_difference(a[1],a[2],b[1],b[2],end),
+                        pairwise_common_window_mm=[0.,pair_end],
+                        pairwise_curve_difference=curve_difference(a[1],a[2],b[1],b[2],pair_end)))
     bundle=dict(schema='softcut-finite-increment-comparison/1',loading_started=False,
         experimental_force_read=False,source=__file__,source_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         cases=[c[0] for c in cases],controlled_comparisons=comparisons,
-        comparison_method='Exact squared integral and pointwise maximum of the plotted piecewise-linear interpolants on their union of knots; one family-wide common window; no event alignment; interval-average Fz, not an instantaneous-force reconstruction; not a convergence-order estimate')
+        comparison_method='Exact squared integral and pointwise maximum of the plotted piecewise-linear interpolants on their union of knots; family-wide and additional pairwise common windows; no event alignment; interval-average Fz, not an instantaneous-force reconstruction; not a convergence-order estimate')
     write_json(output/'comparison.json',bundle)
     def link(path):return quote(os.path.relpath(path,output).replace('\\','/'),safe='/')
     table=''
@@ -292,7 +298,9 @@ def build(directories, output):
         table+='<tr>'+''.join('<td>'+html.escape(str(v))+'</td>' for v in values)+f'<td><a href="{link(Path(s["directory"])/"result.json")}">JSON</a></td></tr>'
     comparison_table=''.join('<tr>'+''.join('<td>'+html.escape(str(v))+'</td>' for v in
         [r['family'],r['first']+' / '+r['second'],f"0–{r['common_window_mm'][1]:.6f}",
-         f"{100*r['relative_l2']:.4g}%",f"{r['maximum_absolute_difference_n']:.4g}"] )+'</tr>' for r in comparisons)
+         f"{100*r['relative_l2']:.4g}%",f"{r['maximum_absolute_difference_n']:.4g}",
+         f"0–{r['pairwise_common_window_mm'][1]:.6f}",
+         f"{r['pairwise_curve_difference']['maximum_absolute_difference_n']:.4g}"] )+'</tr>' for r in comparisons)
     page=f'''<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>有限裂增量双条件：实际切割验证</title>
     <style>body{{font:16px system-ui;max-width:1400px;margin:32px auto;padding:24px;color:#172b36}}img{{max-width:100%}}td,th{{padding:9px;border-bottom:1px solid #ddd;text-align:left}}.note{{padding:18px;background:#fff0d5}}table{{font-size:13px;width:100%}}pre{{white-space:pre-wrap}}a{{color:#126477}}</style>
     <h1>强度—能量双条件：实际刀具验证</h1>
@@ -303,19 +311,23 @@ def build(directories, output):
     同一未测示例T=.2 MPa、Gc=.006 N/mm、ρ=1000 kg/m³、真实速度.2 mm/s；没有实验力反演、质量缩放或强制单调Fz。</p>
     <p>同一候选裂段须同时通过离散牵引强度与“冻结储能差−虚拟摩擦功≥Gc×参考面积”。
     虚拟场不覆盖真实历史，实际内聚功支付Gc一次。摩擦路径、节点面积、冻结历史与CC/CZM组合仍是待验证假设。</p>
-    <p><a href="comparison.json">完整统计、配置和独立审查</a> · <a href="{link(Path(__file__).resolve().parents[3]/'docs/fracture_implementation.md')}">方法与理论边界（第22节）</a></p>
+    <p><a href="comparison.json">完整统计、配置和独立审查</a> · <a href="{link(Path(__file__).resolve().parents[3]/'docs/fracture_implementation.md')}">方法与理论边界（第22–23节）</a></p>
     <div style="overflow-x:auto"><table><tr><th>算例</th><th>末行程mm / 态数</th><th>首次释放mm</th><th>释放 / 全失效节点</th><th>表面连通全失效长度mm</th><th>Σ|缺口|/Σ|外功|</th><th>最大回落N</th><th>状态</th><th>双条件审查</th><th>真实轨迹审查</th><th>原始结果</th></tr>{table}</table></div>
     <img src="force_energy_time.png" alt="实际Fz、累计能量缺口与接受时间步">
     <h2>原始掉力窗口的分量与断裂状态</h2>
     <img src="fast_slip.png" alt="最大原始Fz回落附近的法向及摩擦分量、动能、释放与全失效节点数">
     <p>各列使用自己的绝对行程坐标及原始接受点，不能据此声称跨算例事件同步。
     负的竖直摩擦分量不等于总摩擦功为负；JSON同时给出端点材料速度与最小单步摩擦功。</p>
-    <h2>时间与网格敏感性：完整行程尚未通过</h2>
-    <table><tr><th>控制族</th><th>配对</th><th>共同深度mm</th><th>曲线相对L2差</th><th>最大点差N</th></tr>{comparison_table}</table>
+    <h2>控制族比较：完整行程尚未通过</h2>
+    <div style="overflow-x:auto"><table><tr><th>控制族</th><th>配对</th><th>全族共同深度mm</th><th>曲线相对L2差</th><th>最大点差N</th><th>两两共同深度mm</th><th>两两最大点差N</th></tr>{comparison_table}</table></div>
     <p>使用全部接受点的并集分段精确积分，保留极窄脉冲。小L2差仍可能伴随很大峰值差；
-    未完整覆盖失稳事件和2 mm后缀时不能宣布时间收敛。逐释放/全失效事件±5 ms能量窗口与完整性另存JSON。</p>
+    全族共同范围受最短路径限制，另列两两共同范围以显示其后仍有数据的部分；两者都不补齐缺失后缀。
+    未完整覆盖失稳事件和2 mm后缀时不能宣布时间收敛。virtual_solver_and_budget只比较虚拟求解策略与计算上限，
+    不属于时间或网格细化；它也可能通过失败回退改变实际接受时间网格。
+    逐释放/全失效事件±5 ms能量窗口与完整性另存JSON。</p>
     <img src="deformed_seam.png" alt="保存末态真实变形网格与未释放连接"><img src="seam_opening.png" alt="真实裂口与开口历史">
     <p>Fz为算法区间平均，按接受深度绘出，不做平滑或事件对齐。图中的不同末态不能作同深度裂路比较。
+    审查栏关联原始结果SHA及审查执行时的生产源码身份；生成本报告不重新求解，也不把不同生产版本视为同一版本。
     表面连通全失效长度要求从原顶面起每条边的两个端点均完全失效；节点释放不等于整条裂面已经无牵引。
     峰动能±5 ms能量窗口以固定速度换算，窗口不完整时单独标false；它是诊断窗口，不是起裂定义。</p>
     <p>理论依据：<a href="https://doi.org/10.1016/S0997-7538(01)01184-6">Leguillon 2002</a>；

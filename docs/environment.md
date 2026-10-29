@@ -25,6 +25,25 @@ POSIX 虚拟环境的 Python 通常是指向系统解释器的符号链接。整
 用户本轮授权最多一个 FE 加载作业，单加载≤3600 s、单审查≤600 s、首轮累计计算
 墙钟≤4 h；到期保存证据，不自动续算或启动旧队列。每次作业的日志和预算账本留本地。
 
+服务器发布使用GitHub连接器上传文字Git对象，提交树逐个与本地Git tree SHA核对。
+连接器生成的提交元数据不同，因此远端提交SHA与数值运行记录中的本地SHA不同；
+数值源码/配置的SHA256及树内容保持一致。原本地生产提交保留在
+`codex/server-fracture-20261029-local`，发布完成后工作分支跟踪同名远端开发分支。
+完整映射留在本地`runs/server_1029_round1/publication/commit_map.json`；下表列出数值版本。
+
+| 本地生产提交 | 内容相同的发布提交 | 用途 |
+|---|---|---|
+| `f960fe7` | `59e8e984` | POSIX虚拟环境解释器修复 |
+| `fb3f68c` | `c9162173` | 虚拟失败归档、摩擦求解延续；continuation启动时HEAD为f960fe7且dirty，源码哈希对应此树 |
+| `56f2681` | `74db986a` | 固定摩擦预测与原耦合Newton校正 |
+| `4058354` | `107f7443` | 完整虚拟CCD计算精度 |
+| `60b58df` | `aefad3e3` | 原生CCD连续区间覆盖 |
+| `093e698` | `e6b67ece` | 共享扫描预算归因与60 s显式配置 |
+
+最后的budget60_time2启动时HEAD为`093e698`、Git dirty=true，未提交内容为报告、诊断
+输出字段、文档与时间对照配置；其全部生产源码SHA256与budget60逐项相同。
+运行中没有修改该生产源码。配置输入哈希及显式三项时间控制差异另存各结果JSON。
+
 ## 原 Windows 整合环境（历史记录）
 
 整合层使用 Python 3.10 + NumPy + Matplotlib + Tkinter。当前机器的 Python 3.10 已满足版本，未新增安装。仿真固定依赖见 `projects/softmodeling/requirements.txt`，`.runtime/ipc-python` 已复制；不自动下载运行库。

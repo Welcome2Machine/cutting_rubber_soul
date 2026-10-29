@@ -196,11 +196,14 @@ def inspect(directory, output, seconds, candidate=None, probe='production'):
                 status='unknown', stress_min_mpa=float(stress[ids].min()))
             begin = time.monotonic()
             try:
-                if probe == 'production':
-                    after, _, _ = post.equilibrium(before, depth,
-                        min(deadline, begin+p.ffm_virtual_seconds))
-                else:
-                    after, _, _ = probe_equilibrium(post, before, depth, deadline, probe)
+                try:
+                    if probe == 'production':
+                        after, _, _ = post.equilibrium(before, depth,
+                            min(deadline, begin+p.ffm_virtual_seconds))
+                    else:
+                        after, _, _ = probe_equilibrium(post, before, depth, deadline, probe)
+                finally:
+                    check['equilibrium_elapsed_s'] = time.monotonic()-begin
                 stored_equilibrium(post, after)
                 d5, d9, d17 = [post.friction_path_work(before, after, n) for n in (5, 9, 17)]
                 ok, margin = coupled_margin(stress[ids], p.strength,
@@ -216,7 +219,11 @@ def inspect(directory, output, seconds, candidate=None, probe='production'):
             np.savez_compressed(evidence, positions=after, removed=removed)
             check.update(elapsed_s=time.monotonic()-begin, evidence_file=evidence.name,
                 probe_phases=getattr(post, 'probe_phases', []),
+                virtual_solver=getattr(post, 'virtual_solver_method', None),
+                virtual_solver_phases=post.virtual_solver_phases,
+                virtual_chord_certificate=post.virtual_chord_certificate,
                 evidence_sha256=hashlib.sha256(evidence.read_bytes()).hexdigest())
+            check['verification_and_output_elapsed_s'] = check['elapsed_s']-check['equilibrium_elapsed_s']
             report['candidates'].append(check)
             write_json(output/'diagnostic.json', report)
         report['completed'] = True
