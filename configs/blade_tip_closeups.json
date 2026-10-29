@@ -1,0 +1,74 @@
+{
+  "schema": "softcut-blade-tip-observations/1",
+  "label_source": "Final user correction 2026-10-29: image 1 LOW performance, image 2 HIGH performance.",
+  "scale_note": "100 um red bar spans 50 pixel cells: nominal 2 um/pixel, not optical resolution.",
+  "relation_to_overview": "Linked by A performance class; exact blade serial and sampled edge location were not supplied.",
+  "experimental_force_used_for_identification": false,
+  "numerical_geometry_update": false,
+  "extraction_status": "Scale identified; no qualified quantitative terminal contour or circle fit.",
+  "notes": "Do not rank actual contact curvature by visual envelope or performance label. Overview thresholds were not reliable across these textured close-ups; no fitted radius is committed.",
+  "observations": [
+    {
+      "id": "a_tip_image_1",
+      "image_number": 1,
+      "profile_class_id": "a_low_profile",
+      "performance": "low_performance",
+      "local_source": "researchtopic/blade_tip_closeups_20261029/a_low_tip.png",
+      "source_sha256": "6574efa9953aa2b8165e4a6152a9fbdbae13277ed052cc98996ea0de1a58d77a",
+      "source_filename": "codex-clipboard-c0b0cff2-78de-4d37-86ad-1af26c63a3ab.png",
+      "image_size_px": [
+        265,
+        108
+      ],
+      "scale": {
+        "length_um": 100,
+        "span_pixels": 50,
+        "x_first": 214,
+        "x_last": 263,
+        "um_per_pixel": 2.0,
+        "endpoint_sensitivity_um_per_pixel": [
+          1.9230769230769231,
+          2.0833333333333335
+        ]
+      },
+      "view_plane": "normal_to_cutting_edge",
+      "use_state": "repeatedly_used",
+      "morphology_observation": "Relatively smooth converging envelope; local projections on the lower flank.",
+      "interpretation": "Qualitative image appearance; no causal classification as burr, wear or debris.",
+      "tip_radius_mm": null,
+      "roughness_measured": false,
+      "physical_prediction_qualified": false
+    },
+    {
+      "id": "a_tip_image_2",
+      "image_number": 2,
+      "profile_class_id": "a_high_profile",
+      "performance": "high_performance",
+      "local_source": "researchtopic/blade_tip_closeups_20261029/a_high_tip.png",
+      "source_sha256": "373e2e32d3f357861d2686283983483e98addf39a7b6fa9e1b81c1ad11e4ee0e",
+      "source_filename": "codex-clipboard-51d35e5d-5c1b-46f9-a2fe-70ed26de73d2.png",
+      "image_size_px": [
+        265,
+        108
+      ],
+      "scale": {
+        "length_um": 100,
+        "span_pixels": 50,
+        "x_first": 214,
+        "x_last": 263,
+        "um_per_pixel": 2.0,
+        "endpoint_sensitivity_um_per_pixel": [
+          1.9230769230769231,
+          2.0833333333333335
+        ]
+      },
+      "view_plane": "normal_to_cutting_edge",
+      "use_state": "repeatedly_used",
+      "morphology_observation": "Irregular rounded-looking terminal envelope with a local projection near the upper side.",
+      "interpretation": "Qualitative image appearance; no causal classification as burr, wear or debris.",
+      "tip_radius_mm": null,
+      "roughness_measured": false,
+      "physical_prediction_qualified": false
+    }
+  ]
+}

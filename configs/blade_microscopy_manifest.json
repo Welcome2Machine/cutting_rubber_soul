@@ -96,6 +96,11 @@
         "cycle_count": null,
         "evidence_kind": "qualitative user observation; no force data fitting",
         "as_new_state_provided": false
+      },
+      "additional_tip_observation": {
+        "catalog": "configs/blade_tip_closeups.json",
+        "id": "a_tip_image_1",
+        "association": "performance_class"
       }
     },
     {
@@ -127,6 +132,11 @@
         "cycle_count": null,
         "evidence_kind": "qualitative user observation; no force data fitting",
         "as_new_state_provided": false
+      },
+      "additional_tip_observation": {
+        "catalog": "configs/blade_tip_closeups.json",
+        "id": "a_tip_image_2",
+        "association": "performance_class"
       }
     }
   ]

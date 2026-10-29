@@ -300,6 +300,11 @@
           "cycle_count": null,
           "evidence_kind": "qualitative user observation; no force data fitting",
           "as_new_state_provided": false
+        },
+        "additional_tip_observation": {
+          "catalog": "configs/blade_tip_closeups.json",
+          "id": "a_tip_image_1",
+          "association": "performance_class"
         }
       },
       "embedded_image_sha256": "1e7d99faecc36583745be05f3e2b25a0f99daed0d48d1c5f61a968a2a7475189",
@@ -398,6 +403,11 @@
           "cycle_count": null,
           "evidence_kind": "qualitative user observation; no force data fitting",
           "as_new_state_provided": false
+        },
+        "additional_tip_observation": {
+          "catalog": "configs/blade_tip_closeups.json",
+          "id": "a_tip_image_2",
+          "association": "performance_class"
         }
       },
       "embedded_image_sha256": "732f1dd09cda4aea065d156eb994836128c95ca6d5ddd88d1fc5eb01c9775baf",

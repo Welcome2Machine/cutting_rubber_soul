@@ -103,6 +103,10 @@ Lobatto 接触求积、独立增量 PTC 和求解用摩擦延续。
 - A 两组截面宏观楔角均约 13.3°，厚度约 .246/.241 mm；图像约 10 μm/像素，
   厚度差约半个像素，不能据此认定已解释性能差距。高性能图尖端附近有局部凸起，
   其真实来源尚未确认。刃口半径、末端微刃和表面性质仍未分辨。
+- 随后提供的两张 100 μm 标尺刀头近景，用户最终更正为 **图 1 低性能、图 2 高性能**。
+  名义约 2 μm/像素；来源在 `configs/blade_tip_closeups.json`。图 2 有局部不规则端部，
+  不能因图 1 外包络看起来更平顺就断定其实际接触点更锋利，也不能反过来把图 2 的
+  凸起直接解释为性能提高机制。当前没有合格的近景圆鼻半径拟合，未改变 FE 几何参数。
 - 13.3° 与旧模型默认 23° 的差异需要作为几何依据核查；不要混淆宏观主刃与末端微刃。
   保留旧配置作为数值对照，新测量几何单独建候选，不借力曲线选择半径或楔角。
 - `softcut_solution.blade_config` 已能把轮廓配置转换为工作台 `softcut-config/1`，
@@ -161,6 +165,7 @@ Git 提供代码、配置、测试、方法文档，**不包含**原始视频、
 | 上述父目录的 `cont_*.config.json`、`cont_*.path_audit.json`、`cont_*.finite_audit.json`、`cont_*.finite_audit_strict.json`（存在者） | 输入与独立审查；保留原字节 |
 | `runs/finite_increment_20261029/index.html`、`delivery.json`、`delivery_provenance.json`、`assessment/`、`final_validation/` | 本地综合报告、失败边界和统计 |
 | `researchtopic/bladetype.pptx` | 重做显微提取时需要；仅使用已提交刀形配置时不需要 |
+| `researchtopic/blade_tip_closeups_20261029/a_low_tip.png`、`a_high_tip.png`（同目录） | 两张原始刀头近景，按最终更正命名；SHA256 见 `configs/blade_tip_closeups.json` |
 | `projects/softmodeling/outputs/baseline/angle0/`、`angle33/`、`angle57/` | 旧完整体曲线/场对照，需要时传输完整目录 |
 | `projects/softmodeling/docs/1008n0a2__Fz__curve_1.csv`、`1008n33a1__Fz__curve_2.csv`、`1014n57a1__Fz__curve_0.csv`（均在该 docs 下） | 实验参考验证，不用于推参 |
 
