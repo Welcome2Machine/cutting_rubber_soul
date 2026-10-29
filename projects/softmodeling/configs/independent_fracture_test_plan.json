@@ -157,6 +157,22 @@
     "notes_and_invalidity_flags": null
   },
   "measured_evidence": [],
+  "finite_increment_identification": {
+    "status": "planned_not_measured",
+    "strength_observable": "reference-plane nominal opening traction n dot P N, not maximum principal Cauchy stress",
+    "homogeneous_uniaxial_conversion": "P11=force/reference_area; Cauchy11=lambda1*P11/J when the measured deformation is homogeneous",
+    "numerical_mapping_check": "uniform first-Piola patch: seam reaction divided by nodal reference tributary area; verify separately from physical strength identification",
+    "strength_protocol": "uniaxial, planar and compressed-shear fields first; identify one common strength hypothesis from independent tests; validate measured notch-radius and size families without cutting-force adjustment",
+    "fracture_energy_protocol": "reference-area pure-shear/tear energy with independently measured recoverable bulk energy and rate dependence; count the projected crack plane once",
+    "dynamic_gate_checks": [
+      "independent high-frequency material losses spanning the actually computed event rates",
+      "frozen-history virtual pre-equilibration compared with energy available in the true dynamic seed",
+      "virtual friction path and smoothing convergence",
+      "nodal tributary crack area versus geometric P1 opening support under seam refinement"
+    ],
+    "new_specimens_added_by_this_mapping": 0,
+    "cutting_force_used_for_identification": false
+  },
   "qualified_parameters": null,
   "cutting_prediction_qualified": false,
   "execution_stages": [

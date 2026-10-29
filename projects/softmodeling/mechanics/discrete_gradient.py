@@ -26,6 +26,30 @@ def frozen_energy(f, a, ge, gv, bulk):
     return _invariants(f.transpose(0, 2, 1)@f, a, ge, gv, bulk)[0]
 
 
+def frozen_response(f, a, ge, gv, bulk, *, tangent=True):
+    """Instantaneous hyperelastic response with viscous metric held fixed.
+
+    Unlike discrete_response(F,F), this differentiates BOTH occurrences of F;
+    its tangent is the full endpoint elastic tangent, not half of it.
+    """
+    if np.any(np.linalg.det(f) <= 0):
+        raise FloatingPointError('Inverted frozen deformation')
+    energy, s, (j, inv, q, invariant, factor, b) = _invariants(f.transpose(0, 2, 1)@f, a, ge, gv, bulk)
+    out = dict(P=f@s, energy=energy, J=j)
+    if tangent:
+        derivatives = []
+        for direction in np.eye(4).reshape(4, 2, 2):
+            dc = direction.T@f+f.transpose(0, 2, 1)@direction
+            dj = .5*j*np.sum(inv*dc, axis=(1, 2))
+            dfactor = (-2/3)*factor*dj/j
+            di = np.sum(q*dc, axis=(1, 2))
+            db = bulk*(2*j-1)*dj-(dfactor*invariant+factor*di)/3
+            ds = dfactor[:, None, None]*q+db[:, None, None]*inv-b[:, None, None]*(inv@dc@inv)
+            derivatives.append(direction@s+f@ds)
+        out['tangent'] = np.stack(derivatives, axis=-1).reshape(-1, 4, 4)
+    return out
+
+
 def discrete_response(f0, f1, a, ge, gv, bulk, *, tangent=True):
     """Pbar:(F1-F0)=W(F1,A0)-W(F0,A0); Fbar^-1 Pbar is symmetric.
 

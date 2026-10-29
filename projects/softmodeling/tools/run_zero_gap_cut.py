@@ -22,7 +22,8 @@ def problem(config):
         'energy_tolerance', 'attempt_seconds', 'dynamic_cutback', 'friction_velocity_epsilon_mm_s',
         'energy_normalization', 'energy_absolute_tolerance_n_mm', 'iteration_target', 'cohesive_unloading',
         'time_integrator', 'barrier_quadrature', 'barrier_quadrature_rule', 'insertion_rule', 'nucleation_length_mm',
-        'kinematic_theta', 'contact_activation_mm', 'blade_surface_spacing_mm'}
+        'kinematic_theta', 'contact_activation_mm', 'blade_surface_spacing_mm',
+        'fracture_criterion', 'ffm_virtual_seconds', 'ffm_friction_epsilon_mm', 'ffm_max_candidates'}
     if set(config)-allowed or config['schema'] != 'softcut-zero-gap-dynamics/1':
         raise ValueError('Unknown zero-gap configuration')
     if not 0 < config['target_mm'] <= 2 or not 0 < config['minimum_increment_mm'] <= config['increment_mm']:
@@ -43,6 +44,15 @@ def problem(config):
         extra = {key:config[key] for key in ('barrier_quadrature', 'barrier_quadrature_rule', 'insertion_rule', 'nucleation_length_mm', 'kinematic_theta') if key in config}
     elif integrator != 'backward_euler' or any(key in config for key in ('barrier_quadrature', 'barrier_quadrature_rule', 'insertion_rule', 'nucleation_length_mm', 'kinematic_theta')):
         raise ValueError('Unknown integrator or options not supported by backward Euler')
+    criterion = config.get('fracture_criterion', 'local_or_neighbourhood')
+    if criterion == 'finite_increment':
+        if config.get('insertion_rule', 'local_strength') != 'local_strength':
+            raise ValueError('Finite-increment criterion cannot combine a second insertion gate')
+        from prototype.finite_increment_cut import FiniteIncrementEnergyCutProblem, FiniteIncrementBackwardCutProblem
+        cls = FiniteIncrementEnergyCutProblem if integrator == 'discrete_gradient' else FiniteIncrementBackwardCutProblem
+        extra.update({key:config[key] for key in ('ffm_virtual_seconds', 'ffm_friction_epsilon_mm', 'ffm_max_candidates') if key in config})
+    elif criterion != 'local_or_neighbourhood' or any(key.startswith('ffm_') for key in config):
+        raise ValueError('Unknown fracture criterion or unbound virtual options')
     return cls(**extra, density_kg_m3=config['density_kg_m3'],
         strength_mpa=config['strength_mpa'], toughness_n_mm=config['toughness_n_mm'],
         seam_spacing_mm=config['seam_spacing_mm'], damage_enabled=config['damage_enabled'],
@@ -204,7 +214,7 @@ def run(config, out, seconds):
             except (LoadStepFailure, TimeoutError) as exc:
                 result['attempts'].append(dict(from_mm=depth, target_mm=target,
                     status='rejected', error=str(exc), elapsed_s=time.monotonic()-attempt_start))
-                if target-depth <= config['minimum_increment_mm']*(1+1e-8):
+                if target-depth <= config['minimum_increment_mm']+4*np.spacing(max(1., abs(depth))):
                     raise
                 increment = max(config['minimum_increment_mm'], (target-depth)/2)
                 if config.get('dynamic_cutback', False) and not isinstance(exc, EnergyResolutionRequired):
@@ -214,6 +224,8 @@ def run(config, out, seconds):
                     increment = max(config['minimum_increment_mm'], min(increment, p.loading_rate*inertial_dt))
                 continue
             x, depth = value, target
+            if hasattr(p, 'write_step_evidence'):
+                p.write_step_evidence(out, len(result['steps']), rec)
             state = snapshot(p, x, old_released, depth)
             filename = f'state_{len(result["steps"]):05d}.npz'
             np.savez_compressed(out/filename, **state)

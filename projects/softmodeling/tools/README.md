@@ -183,3 +183,19 @@ python -m tools.audit_zero_gap_cut ../../runs/<已有目录> --output ../../runs
 研究配置，不能把小局部误差等同于失稳事件收敛。`zero_gap_dynamic_control.json`保留为
 最初的基础控制配置。运行结果须分别检查末行程、独立审查、接受态间CCD、能量和时间
 敏感性；30×5×20 mm居中0°镜像对称模型不代表原偏心/斜切或自由裂路已实现。
+
+### 有限裂增量双条件与证据审查
+
+`configs/zero_gap_finite_increment.json`为待验证研究输入，不是标定参数。运行入口仍是
+`python -m tools.run_zero_gap_cut --config <配置> --out <新目录> --seconds <预算>`。
+`fracture_criterion=finite_increment`要求同段强度与冻结历史能量减摩擦条件同时通过。
+
+- `python -m tools.audit_finite_increment <结果目录> --output <新JSON> --seconds 180`：重组已接受有限裂段的虚拟前后场，核对强度、能量、CCD、17点摩擦积分和真实种子路径能量支持；不加载。
+- `python -m tools.report_finite_increment <结果目录1> <结果目录2> ... --output <新报告目录>`：只读保存场，输出Fz/能量/时间步、裂口与表面连通性及统计。丢失后缀不插补，不自动给收敛资格。
+- `python -m tools.continue_zero_gap_cut <已审查父目录> --out <新目录> --seconds <预算>`：显式同配置、同源码续算；先全路径及双条件重算，原样复制接受前缀，恢复精确物理历史，并记录父结果哈希。源码/物性不匹配则拒绝；不是UI自动重启或队列恢复。
+- `python -m tools.recover_finite_increment <停止目录> --log <原日志> --seconds 240`：只恢复日志确认且完整写出的接受态；必须有停止原因、停止时源码哈希及原manifest。独立重算后状态仍为`interrupted_recovered_prefix`，丢失的拒绝候选/迭代次数保持未知，不冒充正常完成。
+
+本轮[真实刀具结果](../../../runs/finite_increment_20261029/index.html)中，五项最终
+断裂候选未完成2 mm，仍有末端摩擦瞬态和内部孤立开口。报告保留完整/不完整事件窗口，
+以全部接受深度并集计算图示曲线差异，避免均匀采样漏掉窄脉冲；小L2不等于瞬态收敛。
+只有关闭损伤对照完成2 mm，不能计为裂后修复。参数仍是未测示例。

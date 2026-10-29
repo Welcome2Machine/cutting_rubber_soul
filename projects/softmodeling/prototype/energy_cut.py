@@ -74,8 +74,8 @@ class EnergyCutProblem(ZeroGapCutProblem):
         super().__init__(**kwargs)
         if self.cohesive_unloading != 'secant':
             raise ValueError('Discrete cohesive work currently requires secant unloading')
-        if self.nonlinear_solver != 'newton_lm':
-            raise ValueError('Energy-work candidate requires fresh-residual Newton/LM')
+        if self.nonlinear_solver not in ('newton_lm', 'increment_ptc', 'friction_continuation'):
+            raise ValueError('Energy-work candidate requires a primary-increment force solver')
         if barrier_quadrature not in (2, 3, 5):
             raise ValueError('Choose 2, 3 or 5 barrier quadrature points')
         if insertion_rule not in ('local_strength', 'connected_patch', 'nonlocal_tensile', 'nonlocal_intact'):
@@ -217,6 +217,9 @@ class EnergyCutProblem(ZeroGapCutProblem):
         rec['insertion_rule'] = self.insertion_rule
         rec['barrier_quadrature_rule'] = self.barrier_quadrature_rule
         rec['kinematic_theta'] = self.kinematic_theta
+        rec['physical_force_solver'] = self.nonlinear_solver
+        if self.nonlinear_solver == 'friction_continuation' and hasattr(self, 'friction_continuation_summary'):
+            rec['force_continuation'] = self.friction_continuation_summary
         rec['numerical_inertia_dissipation'] = 'zero at theta=0.5; (2*theta-1)*sum(m*dv^2) for the reflected full body; not physical damping'
         return rec
 

@@ -36,3 +36,5 @@ Maxwell 加载入口为 `python -m tools.run_material_candidate`，参数与串�
 旧混合元、相位场、接触替代及一次性诊断脚本已从当前入口移除。历史结论见[研究历史](../docs/research_history.md)，文献导读见 [references](../references/README.md)，独立论文复现保留在 [reproductions](../reproductions/dammass2023/README.md)。
 
 专项研究内核（默认切割不切换）：`force_globalization.py`为可选真实残差Newton/LM，仍需全物理审查；`extrinsic_topology.py`为零间隙连接/释放算子，未接入零距离裂面接触；`cohesive_dynamics.py`为标量惯性内聚能量验证，非二维切割动力学。验证与限制见合并仓库断裂说明第18–19节。
+
+`finite_increment_cut.py`在零间隙实际刀具支路实现冻结A/κ的成对虚拟平衡、同一有限裂段的强度与能量减摩擦双条件，以及真实动态CZM插入。虚拟值不覆盖物理历史；PTC/后备载荷延续只用于求根。`mechanics/discrete_gradient.frozen_response`提供瞬时冻结历史能量/应力/完整切线，区别于两端点离散梯度。独立证据审查入口为`tools.audit_finite_increment`；适用边界、节点面积与摩擦路径假设见第22节。

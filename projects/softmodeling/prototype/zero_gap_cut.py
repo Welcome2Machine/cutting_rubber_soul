@@ -75,7 +75,7 @@ class ZeroGapCutProblem(ViscoelasticProblem):
                 strength_mpa, toughness_n_mm, seam_spacing_mm) <= 0:
             raise ValueError('Positive finite explicit physical inputs required')
         super().__init__(inclination=0., **kwargs)
-        if nonlinear_solver not in ('ptc', 'newton_lm'):
+        if nonlinear_solver not in ('ptc', 'newton_lm', 'increment_ptc', 'friction_continuation'):
             raise ValueError('Unknown dynamic force solver')
         self.nonlinear_solver = nonlinear_solver
         if energy_tolerance is not None and not 0 < energy_tolerance < 1:
@@ -201,6 +201,9 @@ class ZeroGapCutProblem(ViscoelasticProblem):
         return ((~self.released) & (traction > self.strength)
                 & (self.mesh.local_sn[self.seam, 1] > 0))
 
+    def propose_insertion(self, x, traction, depth, deadline):
+        return self.insertion_mask(traction)
+
     def set_primary_increment(self, x, increment):
         if not np.allclose(x, self.previous+increment, rtol=0, atol=1e-13):
             raise ValueError('Primary increment and positions differ beyond roundoff')
@@ -261,12 +264,18 @@ class ZeroGapCutProblem(ViscoelasticProblem):
             if self.nonlinear_solver == 'newton_lm':
                 from .force_globalization import solve
                 x, iterations = solve(self, x, depth, deadline)
+            elif self.nonlinear_solver == 'increment_ptc':
+                from .force_globalization import solve_increment_ptc
+                x, iterations = solve_increment_ptc(self, x, depth, deadline)
+            elif self.nonlinear_solver == 'friction_continuation':
+                from .force_globalization import solve_friction_continuation
+                x, iterations = solve_friction_continuation(self, x, depth, deadline)
             else:
                 x, iterations = self.solve_friction(x, depth, deadline)
             total_iterations += iterations+1
             g = self.evaluate(x, self.lag(x), tangent=False)[1].reshape(-1, 2)
             traction = -g[self.seam, 0]/self.seam_area
-            insert = self.insertion_mask(traction)
+            insert = self.propose_insertion(x, traction, depth, deadline) if self.damage_enabled else np.zeros_like(self.released)
             if self.damage_enabled and insert.any():
                 self.insertion_events.append(dict(nodes=self.seam[insert].tolist(),
                     reference_y_mm=self.rest[self.seam[insert], 1].tolist(),
