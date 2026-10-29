@@ -403,6 +403,7 @@ class FiniteIncrementMixin:
         self.ffm_chord_max_queries = ffm_chord_max_queries
         self.ffm_pending, self.ffm_checks = [], []
         self.ffm_failure = None
+        self.ffm_scan = None
 
     def step(self, x, old, depth, deadline):
         self.ffm_pending, self.ffm_checks = [], []
@@ -422,7 +423,10 @@ class FiniteIncrementMixin:
         # paired virtual pre-crack equilibrium before ANY release is accepted.
         if not np.any((~self.released) & (traction >= self.strength)):
             return empty
-        virtual_deadline = min(deadline, time.monotonic()+self.ffm_virtual_seconds)
+        scan_started = time.monotonic()
+        virtual_deadline = min(deadline, scan_started+self.ffm_virtual_seconds)
+        self.ffm_scan = dict(started=scan_started, deadline=virtual_deadline,
+            initial_check_count=len(self.ffm_checks), candidate_count=None)
         metric = self.material_response(x)['metric'].copy()
         history = self.cohesive_response(x)['history'].copy()
         base = FrozenVirtualCrack(self, x, metric, history, self.released, empty, self.ffm_epsilon)
@@ -437,16 +441,17 @@ class FiniteIncrementMixin:
         # cannot invent a strength crossing in the actual loading state.
         stress = np.minimum(traction, virtual_stress)
         patches = finite_patches(stress, self.released, self.rest[self.seam, 1], self.seam_area, self.strength)
+        self.ffm_scan['candidate_count'] = len(patches)
         if len(patches) > self.ffm_max_candidates:
             raise LoadStepFailure('Finite-crack candidate budget incomplete; no intact certification')
         u0 = base.stored(before)
         for ids in patches:
-            if time.monotonic() >= virtual_deadline:
-                raise TimeoutError('Finite-crack virtual candidate budget')
             removed = empty.copy()
             removed[ids] = True
             post = FrozenVirtualCrack(self, before, metric, history, self.released, removed, self.ffm_epsilon)
             try:
+                if time.monotonic() >= virtual_deadline:
+                    raise TimeoutError('Finite-crack shared scan budget before candidate solve')
                 after, _, postnorm = post.equilibrium(before, depth, virtual_deadline)
             except (LoadStepFailure, TimeoutError) as exc:
                 self.capture_virtual_failure(post, x, metric, history, removed, depth, 'after', exc)
@@ -492,11 +497,22 @@ class FiniteIncrementMixin:
     def capture_virtual_failure(self, virtual, seed, metric, history, removed, depth, stage, exc):
         # Capture before the host rolls back the attempted physical release set.
         # The trial is unaccepted; its original equation must be recomputed.
+        scan = self.ffm_scan
+        now = time.monotonic()
+        scan_context = None if scan is None else dict(
+            scope='pre_equilibrium_and_all_candidates',
+            configured_limit_s=self.ffm_virtual_seconds,
+            effective_limit_s=scan['deadline']-scan['started'],
+            elapsed_s=now-scan['started'], remaining_s=max(0., scan['deadline']-now),
+            candidate_count=scan['candidate_count'],
+            completed_candidates=[q['seam_indices'] for q in
+                self.ffm_checks[scan['initial_check_count']:]])
         self.ffm_failure = dict(metadata=dict(stage=stage, error=str(exc),
             seam_indices=np.flatnonzero(removed).tolist(), depth_mm=float(depth),
             solver=getattr(virtual, 'virtual_solver_method', 'fresh_force_ptc'),
             virtual_ccd_tolerance=self.ffm_ccd_tolerance,
-            solver_phases=virtual.virtual_solver_phases, candidate_status='unknown'),
+            solver_phases=virtual.virtual_solver_phases, candidate_status='unknown',
+            shared_scan_budget=scan_context),
             fields=dict(seed_positions=seed.copy(), seed_increment=self.step_increment(seed),
                 virtual_anchor=virtual.previous.copy(), virtual_trial=virtual.trial.copy(),
                 frozen_metric=metric.copy(), frozen_history=history.copy(),

@@ -107,6 +107,8 @@ def summarize(directory):
                      released=z['released'].tolist(),fully_failed=failed.tolist())
     start = next((r['depth_mm'] for r in rows if r['insertion_events']),None)
     accepted = [c for r in rows for c in r.get('finite_increment_checks',[]) if c['accepted']]
+    certificates = [c[key] for r in rows for c in r.get('finite_increment_checks',[])
+        for key in ('virtual_pre_chord_certificate','virtual_post_chord_certificate') if c.get(key)]
     physical = energy['physical_balance_defect_n_mm']
     work = float(np.abs(energy['external_work_n_mm']).sum())
     k = energy['kinetic_energy_n_mm']
@@ -159,6 +161,10 @@ def summarize(directory):
         maximum_material_endpoint_speed_mm_s=max(speeds),
         minimum_dt_s=min(dt),max_residual_n=max(r['residual_n'] for r in rows),
         accepted_finite_increments=len(accepted),
+        accepted_state_candidate_chord_covers=dict(recorded=len(certificates),
+            subdivided=sum(len(c['segments'])>1 for c in certificates),
+            maximum_native_queries=max((c['native_queries'] for c in certificates),default=None),
+            all_recorded_complete=all(c['complete'] for c in certificates) if certificates else None),
         minimum_accepted_energy_margin_n_mm=min((c['energy_margin_n_mm'] for c in accepted),default=None),
         accepted_prefix_audited=result.get('accepted_prefix_audited',False),
         accepted_chord_ccd_verified=result['summary']['accepted_chord_ccd_verified'],
@@ -195,7 +201,7 @@ def build(directories, output):
     fig,ax=plt.subplots(figsize=(10,5),layout='constrained')
     for s,d,f,*_ in cases:ax.plot(d,f,lw=1.2,label=s['name'])
     ax.set(xlabel='Vertical blade travel [mm]',ylabel='Fz [N] (interval average)',xlim=(0,2),
-           title='Finite-increment candidates: incomplete post-fracture paths')
+           title='Finite-increment candidates: saved loading paths')
     ax.grid(alpha=.2);ax.legend(fontsize=8,ncol=2)
     fig.savefig(output/'fz.png',dpi=180);plt.close(fig)
     fig,axes=plt.subplots(1,2,figsize=(11,5.5),layout='constrained')

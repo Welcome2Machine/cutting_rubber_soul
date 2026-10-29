@@ -141,11 +141,36 @@ def test_failed_virtual_context_survives_rollback_without_committing_histories(t
         p.propose_insertion(p.rest, np.ones(len(p.seam)), p.start, time.monotonic()+10)
     metadata = p.write_failure_evidence(tmp_path, 0)
     assert metadata['stage'] == 'before' and metadata['candidate_status'] == 'unknown'
+    assert metadata['shared_scan_budget']['scope'] == 'pre_equilibrium_and_all_candidates'
+    assert metadata['shared_scan_budget']['completed_candidates'] == []
     with np.load(tmp_path/metadata['evidence_file'], allow_pickle=False) as data:
         np.testing.assert_array_equal(data['previous_released'], old)
         np.testing.assert_array_equal(data['virtual_trial'], p.rest)
         np.testing.assert_array_equal(data['frozen_metric'], p.material_response(p.rest)['metric'])
     np.testing.assert_array_equal(p.released, old)
+
+
+def test_expired_shared_scan_archives_unattempted_candidate(tmp_path, monkeypatch):
+    import prototype.finite_increment_cut as module
+    p = problem(config())
+    p.material_dt = .025
+    old = p.history.copy(), p.released.copy()
+    monotonic = time.monotonic
+    def expired_candidates(*args):
+        monkeypatch.setattr(module.time, 'monotonic', lambda: monotonic()+100)
+        return [np.array([0])]
+    monkeypatch.setattr(module, 'finite_patches', expired_candidates)
+    with pytest.raises(TimeoutError, match='shared scan budget before candidate solve'):
+        p.propose_insertion(p.rest, np.ones(len(p.seam)), p.start, time.monotonic()+10)
+    evidence = p.write_failure_evidence(tmp_path, 0)
+    assert evidence['seam_indices'] == [0] and evidence['solver_phases'] == []
+    assert evidence['candidate_status'] == 'unknown'
+    assert evidence['shared_scan_budget']['remaining_s'] == 0
+    assert evidence['shared_scan_budget']['candidate_count'] == 1
+    with np.load(tmp_path/evidence['evidence_file'], allow_pickle=False) as data:
+        np.testing.assert_array_equal(data['virtual_trial'], p.rest)
+    np.testing.assert_array_equal(p.history, old[0])
+    np.testing.assert_array_equal(p.released, old[1])
 
 
 @pytest.mark.parametrize('mode', ['wide_smoothing', 'lagged_friction', 'lagged_newton'])
