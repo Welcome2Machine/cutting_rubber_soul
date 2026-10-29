@@ -14,12 +14,17 @@ from .run_zero_gap_cut import hashes
 
 
 def main():
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('case',type=Path);parser.add_argument('--output',type=Path,required=True);add_thread_arguments(parser);args=parser.parse_args()
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('case',type=Path);parser.add_argument('--output',type=Path,required=True)
+    parser.add_argument('--gap-factor',type=float,default=10.);parser.add_argument('--ccd-tolerance',type=float)
+    add_thread_arguments(parser);args=parser.parse_args()
     args.output.mkdir(parents=True,exist_ok=False);source=hashes()
     with numerical_runtime(**thread_arguments(args)) as runtime:
         p,base,v,before,after,scene=load_scene(args.case,'production')
         original_tolerance=v.ffm_ccd_tolerance
-        v.ffm_ccd_tolerance=1e-10;v.virtual_narrow_phase_ccd=v.ipc.TightInclusionCCD(tolerance=1e-10,
+        tolerance=original_tolerance if args.ccd_tolerance is None else args.ccd_tolerance
+        if not 0<tolerance<=original_tolerance or not 1<=args.gap_factor<=100:
+            raise ValueError('CCD may only tighten; numerical gap factor must be 1..100')
+        v.ffm_ccd_tolerance=tolerance;v.virtual_narrow_phase_ccd=v.ipc.TightInclusionCCD(tolerance=tolerance,
             max_iterations=v.ipc.TightInclusionCCD.DEFAULT_MAX_ITERATIONS,
             conservative_rescaling=v.ipc.TightInclusionCCD.DEFAULT_CONSERVATIVE_RESCALING)
         v.ffm_chord_partition='geometry';v.ffm_chord_max_queries=256
@@ -28,12 +33,12 @@ def main():
         eps=1e-6;fd=(signed_chord_gap(before,after+eps*direction,(49,50),48)[0]-signed_chord_gap(before,after-eps*direction,(49,50),48)[0])/(2*eps)
         derivative=float(np.sum(gradient*direction));helper=Path(__file__).resolve().parents[1]/'virtual_constrained_root.py'
         report=dict(scene=scene,runtime=runtime,status='unknown',original_ccd_tolerance=original_tolerance,
-            diagnostic_ccd_tolerance=1e-10,source_hashes=source,solver_sha256=hashlib.sha256(helper.read_bytes()).hexdigest(),
+            diagnostic_ccd_tolerance=tolerance,search_gap_factor=args.gap_factor,source_hashes=source,solver_sha256=hashlib.sha256(helper.read_bytes()).hexdigest(),
             diagnostic_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
             gap_derivative=dict(analytic=derivative,central_difference=fd,absolute_error=abs(fd-derivative)),
             physical_history_committed=False,loading_started=False)
         try:
-            x,trace=solve_constrained(v,after,scene['physical_seed']['depth_mm'],time.monotonic()+120)
+            x,trace=solve_constrained(v,after,scene['physical_seed']['depth_mm'],time.monotonic()+120,gap_floor=args.gap_factor*tolerance)
             report.update(status='equilibrated',endpoint=virtual_state(v,x))
             work=virtual_work(v,before,x,time.monotonic()+60);audit=audit_work(v,before,x,time.monotonic()+60)
             report.update(work=work,independent_work=audit,

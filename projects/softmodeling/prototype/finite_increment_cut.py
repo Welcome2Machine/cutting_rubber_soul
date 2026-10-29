@@ -18,6 +18,7 @@ from .zero_gap_cut import ZeroGapCutProblem
 from .energy_cut import EnergyCutProblem
 from .force_globalization import solve
 from virtual_path_probe import efficient_chord
+from virtual_constrained_root import solve_constrained
 from virtual_friction_work import virtual_work, interval_decision
 
 
@@ -224,7 +225,7 @@ class FrozenVirtualCrack(ZeroGapCutProblem):
             value, _ = self.solve_friction(seed.copy(), depth, min(deadline, time.monotonic()+4.))
             self.virtual_solver_method = 'fresh_force_ptc'
         except (LoadStepFailure, TimeoutError):
-            if getattr(self, 'ffm_virtual_solver', 'legacy') == 'lagged_newton':
+            if getattr(self, 'ffm_virtual_solver', 'legacy') in ('lagged_newton', 'chord_constrained'):
                 value = self.lagged_newton_equilibrium(seed, depth, deadline)
             elif getattr(self, 'ffm_virtual_solver', 'legacy') == 'friction_continuation':
                 value = self.friction_continued_equilibrium(seed, depth, deadline)
@@ -285,6 +286,16 @@ class FrozenVirtualCrack(ZeroGapCutProblem):
                 except (LoadStepFailure, TimeoutError) as exc:
                     phase['corrector_error'] = str(exc)
                     value = self.trial.copy()
+                if getattr(self, 'ffm_virtual_solver', 'legacy') == 'chord_constrained':
+                    try:
+                        value, trace = solve_constrained(self, value, depth,
+                            min(deadline, time.monotonic()+6.))
+                        phase['constrained_recovery'] = dict(solved=True, trace=trace)
+                        return value
+                    except (LoadStepFailure, TimeoutError, ValueError) as exc:
+                        phase['constrained_recovery'] = dict(solved=False, error=str(exc),
+                            trace=getattr(self, 'constrained_root_trace', []))
+                        value = self.trial.copy()
             raise LoadStepFailure('Virtual lagged-Newton iteration limit')
         finally:
             self.lag, self.coupled_friction_tangent = lag, tangent
@@ -394,7 +405,7 @@ class FiniteIncrementMixin:
         self.ffm_virtual_seconds = ffm_virtual_seconds
         self.ffm_epsilon = ffm_friction_epsilon_mm
         self.ffm_max_candidates = ffm_max_candidates
-        if ffm_virtual_solver not in ('legacy', 'friction_continuation', 'lagged_newton'):
+        if ffm_virtual_solver not in ('legacy', 'friction_continuation', 'lagged_newton', 'chord_constrained'):
             raise ValueError('Unknown finite virtual solver')
         self.ffm_virtual_solver = ffm_virtual_solver
         if ffm_ccd_tolerance is not None and (
@@ -410,6 +421,9 @@ class FiniteIncrementMixin:
                 ffm_chord_partition == 'geometry' and not ffm_chord_max_queries):
             raise ValueError('Geometry partition needs an explicit positive native query budget')
         self.ffm_chord_partition = ffm_chord_partition
+        if ffm_virtual_solver == 'chord_constrained' and (
+                ffm_ccd_tolerance is None or ffm_chord_partition != 'geometry'):
+            raise ValueError('Chord-constrained recovery requires explicit CCD resolution and geometry coverage')
         self.ffm_pending, self.ffm_checks = [], []
         self.ffm_failure = None
         self.ffm_scan = None

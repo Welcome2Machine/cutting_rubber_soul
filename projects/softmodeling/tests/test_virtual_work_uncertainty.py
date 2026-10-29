@@ -59,3 +59,18 @@ def test_unresolved_production_candidate_does_not_commit_or_skip(monkeypatch):
     assert not p.ffm_pending and not p.ffm_checks
     assert p.ffm_failure['metadata']['stage']=='quadrature'
     assert p.ffm_failure['metadata']['candidate_status']=='unknown'
+
+
+def test_global_error_budget_preserves_all_panels_and_known_integral():
+    # Widely different panel contributions must share a global tolerance,
+    # without silently skipping the small panels or enlarging the total budget.
+    power=lambda s:1e6*np.exp(-120*(s-.73)**2)+1e-5*np.sqrt(s)
+    cuts=[0.,1e-6,.1,.4,.6,.7,.72,.74,.8,1.]
+    q=integrate_power(power,cuts,deadline=time.monotonic()+5,relative_tolerance=1e-8)
+    from scipy.special import erf
+    exact=1e6*np.sqrt(np.pi/120)/2*(erf(np.sqrt(120)*.73)+erf(np.sqrt(120)*.27))+2e-5/3
+    assert q['converged'] and q['complete_path_partition']
+    assert q['empirical_uncertainty_n_mm']<=2*(1e-7+1e-8*q['work_n_mm'])
+    assert abs(q['work_n_mm']-exact)<=q['empirical_uncertainty_n_mm']+1e-7
+    panels=q['panels'];assert panels[0]['a']==0 and panels[-1]['b']==1
+    assert all(a['b']==b['a'] for a,b in zip(panels[:-1],panels[1:]))

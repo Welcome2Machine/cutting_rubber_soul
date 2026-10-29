@@ -41,7 +41,8 @@ def check_archived_equations(raw, root):
         raise ValueError('An explicit producer Git commit is required')
     differences = {}
     execution = {'tools/run_zero_gap_cut.py', 'numerical_runtime.py',
-                 'virtual_path_geometry.py', 'virtual_path_probe.py', 'virtual_friction_work.py'}
+                 'virtual_path_geometry.py', 'virtual_path_probe.py', 'virtual_friction_work.py',
+                 'virtual_constrained_root.py'}
     for name in sorted(original.keys() | current.keys()):
         if original.get(name) == current.get(name):
             continue

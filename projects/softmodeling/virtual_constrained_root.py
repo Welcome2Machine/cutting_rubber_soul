@@ -39,28 +39,66 @@ def signed_chord_gap(anchor, endpoint, edge, vertex):
     return gap,gradient,dict(s=s,beta=beta,gap_mm=gap,edge=list(edge),vertex=vertex)
 
 
-def solve_constrained(v,seed,depth,deadline,*,edge=(49,50),vertex=48,gap_floor=2e-10):
-    """Constrained linear least-residual step without forming normal equations."""
+def closest_chord_constraint(v, endpoint):
+    from virtual_path_geometry import geometry_partitions
+    _,geometry=geometry_partitions(v,v.previous,endpoint)
+    if not geometry['features']:
+        raise ValueError('No close virtual-chord feature to constrain')
+    feature=min(geometry['features'],key=lambda q:q['gap_mm'])
+    s=feature['s'];points=v.previous+s*(endpoint-v.previous)
+    ids=v.surface[np.asarray(feature['vertices'],int)];gradient=np.zeros_like(endpoint)
+    if feature['kind']=='EV':
+        i,j,k=ids;e=points[j]-points[i];w=points[k]-points[i];length=np.linalg.norm(e)
+        if not length:raise ValueError('Degenerate chord edge')
+        beta=float(e@w/length**2);normal=np.array([-e[1],e[0]])/length
+        if normal@w<0:normal=-normal
+        gap=float(normal@w)
+        gradient[k]+=s*normal;gradient[i]-=s*(1-beta)*normal;gradient[j]-=s*beta*normal
+    else:
+        i,j=ids;w=points[i]-points[j];gap=float(np.linalg.norm(w))
+        if not gap:raise ValueError('Unresolved coincident chord vertices')
+        normal=w/gap;gradient[i]+=s*normal;gradient[j]-=s*normal
+    return gap,gradient,dict(feature,vertices_global=ids.tolist(),recomputed_gap_mm=gap)
+
+
+def constrained_direction(jacobian,residual,normal,target):
+    """Least linear force residual with n.p >= target; no squared matrix formed."""
+    factor=splu(jacobian.tocsc());newton=factor.solve(-residual)
+    direction=newton.copy();active=float(normal@newton)<target
+    if active:
+        z=factor.solve(normal,trans='T');w=factor.solve(z);den=float(normal@w)
+        if den<=0 or not np.isfinite(den):raise LoadStepFailure('Invalid constrained solve compliance')
+        direction+=w*((target-float(normal@newton))/den)
+    return direction,newton,active
+
+
+def solve_constrained(v,seed,depth,deadline,*,gap_floor=None):
+    """Original-equation recovery using the closest full-chord feature.
+
+    The search target is ten CCD resolution units by default, not a physical
+    clearance condition. Every accepted root retains the original force gate.
+    """
+    if np.any(v.virtual_solver_load):raise ValueError('Original zero-load equation required')
+    tolerance=getattr(v,'ffm_ccd_tolerance',None)
+    if gap_floor is None:
+        if tolerance is None:raise ValueError('Explicit CCD resolution required for constrained recovery')
+        gap_floor=10*tolerance
+    if not 0<gap_floor<v.dhat:raise ValueError('Invalid numerical search clearance')
     x=seed.copy();trace=[]
     for iteration in range(20):
         if time.monotonic()>=deadline:raise TimeoutError('Constrained root budget')
         v.set_primary_increment(x,x-v.previous);v.trial=x.copy()
         lag=v.lag(x);_,g,h,j=v.evaluate(x,lag,projected=False);v.update_constraint_free(x,g)
         residual=g[v.free];norm=float(np.sqrt(2)*np.linalg.norm(residual))
-        gap,n,feature=signed_chord_gap(v.previous,x,edge,vertex)
-        row=dict(iteration=iteration,original_residual_n=norm,min_j=float(j),feature=feature)
+        gap,n,feature=closest_chord_constraint(v,x)
+        row=dict(iteration=iteration,original_residual_n=norm,min_j=float(j),feature=feature,
+            search_clearance_mm=gap_floor,clearance_is_not_physical_parameter=True)
         trace.append(row);v.constrained_root_trace=trace
-        if norm<=1e-4:
-            if j>0 and v.accepted_chord_is_safe(x):return x,trace
-            raise LoadStepFailure('Original root failed full chord/positive J')
-        jac=v.coupled_friction_tangent(x,lag,h)[v.free][:,v.free].tocsc()
-        factor=splu(jac);newton=factor.solve(-residual);nf=n.ravel()[v.free]
+        if not np.isfinite(norm) or j<=0:raise LoadStepFailure('Invalid constrained Newton state')
+        if norm<=1e-4 and v.accepted_chord_is_safe(x):return x,trace
+        jac=v.coupled_friction_tangent(x,lag,h)[v.free][:,v.free].tocsc();nf=n.ravel()[v.free]
         target=max(-.5*gap,gap_floor-gap)
-        direction=newton.copy();active=float(nf@newton)<target
-        if active:
-            z=factor.solve(nf,trans='T');w=factor.solve(z);den=float(nf@w)
-            if den<=0 or not np.isfinite(den):raise LoadStepFailure('Invalid constrained solve compliance')
-            direction+=w*((target-float(nf@newton))/den)
+        direction,newton,active=constrained_direction(jac,residual,nf,target)
         row.update(constraint_active=active,target_linear_gap_change_mm=target,
             newton_linear_gap_change_mm=float(nf@newton),constrained_linear_gap_change_mm=float(nf@direction),
             original_linear_solve_residual_n=float(np.linalg.norm(jac@newton+residual)),

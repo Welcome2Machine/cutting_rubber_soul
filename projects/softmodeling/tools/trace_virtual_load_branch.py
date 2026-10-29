@@ -79,7 +79,13 @@ def main():
                     np.savez_compressed(args.output/f'stage_{len(report["stages"]):03d}.npz',positions=x,fraction=fraction)
                 except (LoadStepFailure,TimeoutError) as exc:
                     row.update(error=str(exc),certificate=v.virtual_chord_certificate)
-                    step*=.5
+                    path=args.output/f'failed_stage_{len(report["stages"]):03d}.npz'
+                    np.savez_compressed(path,positions=v.trial,accepted_positions=x,
+                        virtual_anchor=v.previous,auxiliary_load=v.virtual_solver_load,
+                        frozen_metric=v.previous_material_metric,frozen_history=v.previous_history,
+                        removed=v.virtual_removed,target_fraction=target)
+                    row.update(failure_file=path.name,failure_sha256=hashlib.sha256(path.read_bytes()).hexdigest())
+                    step=.5*(fraction-target)
                     if step<1e-6:raise LoadStepFailure('Load branch step below 1e-6; no absence-of-root claim')
                 row['elapsed_s']=time.monotonic()-start
                 report['remaining_fraction']=fraction
