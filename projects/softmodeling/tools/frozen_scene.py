@@ -41,7 +41,7 @@ def check_archived_equations(raw, root):
         raise ValueError('An explicit producer Git commit is required')
     differences = {}
     execution = {'tools/run_zero_gap_cut.py', 'numerical_runtime.py',
-                 'virtual_path_geometry.py', 'virtual_friction_work.py'}
+                 'virtual_path_geometry.py', 'virtual_path_probe.py', 'virtual_friction_work.py'}
     for name in sorted(original.keys() | current.keys()):
         if original.get(name) == current.get(name):
             continue
@@ -61,18 +61,21 @@ def check_archived_equations(raw, root):
     source = subprocess.check_output(['git', 'show', f'{ref}:projects/softmodeling/{name}'], cwd=root)
     if hashlib.sha256(source).hexdigest() != original[name]:
         raise ValueError('Archived problem factory hash differs from producer Git')
-    def factory(text):
+    def factory(text, normalize=False):
         node = next(n for n in ast.parse(text).body
             if isinstance(n, ast.FunctionDef) and n.name == 'problem')
         # Only an additional optional solver partition selector; archived config
         # must not contain it, so the original constructor receives no new value.
-        if 'ffm_chord_partition' in raw['config']:
-            raise ValueError('Archived compatibility requires original partition configuration')
-        for child in ast.walk(node):
-            if isinstance(child, (ast.Set, ast.Tuple)):
-                child.elts = [e for e in child.elts if not (isinstance(e, ast.Constant) and e.value == 'ffm_chord_partition')]
+        if normalize:
+            if 'ffm_chord_partition' in raw['config']:
+                raise ValueError('Changed factory requires original partition configuration')
+            for child in ast.walk(node):
+                if isinstance(child, (ast.Set, ast.Tuple)):
+                    child.elts = [e for e in child.elts if not (isinstance(e, ast.Constant) and e.value == 'ffm_chord_partition')]
         return ast.dump(node, include_attributes=False)
-    if factory(source.decode()) != factory((root/name).read_text()):
+    old_factory, new_factory = source.decode(), (root/name).read_text()
+    if (factory(old_factory) != factory(new_factory) and
+            factory(old_factory, True) != factory(new_factory, True)):
         raise ValueError('Archived physical problem factory changed')
     return dict(mode='equation_compatible_diagnostic_only', exact_producer_source=current == original,
         producer_commit=ref, producer_source_hashes=original, current_source_hashes=current,

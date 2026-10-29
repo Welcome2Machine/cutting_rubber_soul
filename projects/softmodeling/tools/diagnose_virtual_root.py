@@ -11,7 +11,7 @@ from scipy.sparse.linalg import splu, onenormest, LinearOperator
 from numerical_runtime import numerical_runtime, add_thread_arguments, thread_arguments
 from run_support import write_json
 from .frozen_scene import load_scene
-from .diagnose_chord_partition import partitioned_chord
+from virtual_path_geometry import native_partitioned_chord
 
 
 def contact_signature(v, x):
@@ -20,12 +20,12 @@ def contact_signature(v, x):
             for kind in ('vv_collisions', 'ev_collisions')}
 
 
-def inspect(case, output, endpoint):
+def inspect(case, output, endpoint, polish_iterations=0):
     output.mkdir(parents=True, exist_ok=False)
     p, base, v, before, x, info = load_scene(case, endpoint)
     v.solver_diagnostics = True
     def covered(value):
-        v.virtual_chord_certificate=partitioned_chord(v,value)
+        v.virtual_chord_certificate=native_partitioned_chord(v,value,256)
         return v.virtual_chord_certificate['complete']
     v.accepted_chord_is_safe=covered
     v.phase_seconds = {}
@@ -53,7 +53,7 @@ def inspect(case, output, endpoint):
         q = directions['equilibrated_newton']; q += columns*slu.solve(rows*(-r-a@q))
     for shift in (1e-6, 1e-3, .1, 1.):
         directions[f'ptc_{shift:g}'] = splu(a+shift*m).solve(-r)
-    report = dict(schema='softcut-root-mechanism/1', scene=info, min_j=float(j),
+    report = dict(diagnostic_chord_policy='geometry partition with conservative unresolved-resolution exit', schema='softcut-root-mechanism/1', scene=info, min_j=float(j),
         full_residual_n=float(np.sqrt(2)*np.linalg.norm(r)), half_force_tolerance_n=v.force_tolerance_n,
         maximum_residual=dict(dof=int(k),node=int(k//2),component='xy'[k%2],position_mm=x[k//2].tolist(),
             total_n=float(g[k]),bulk_n=float(bulk[k]),normal_n=float(normal[k]),friction_n=float(friction[k]),
@@ -102,7 +102,7 @@ def inspect(case, output, endpoint):
     write_json(output/'partial.json',report)
     # Fixed 20 original Newton steps from the saved endpoint, no continuation/history changes.
     value=x.copy();report['polish']=[]
-    for iteration in range(20):
+    for iteration in range(polish_iterations):
         v.set_primary_increment(value,value-v.previous)
         lag=v.lag(value);_,g,h,j=v.evaluate(value,lag,projected=False);v.update_constraint_free(value,g)
         residual=g[v.free];norm=float(np.sqrt(2)*np.linalg.norm(residual))
@@ -112,6 +112,8 @@ def inspect(case, output, endpoint):
         jac=v.coupled_friction_tangent(value,lag,h)[v.free][:,v.free].tocsc()
         q=splu(jac).solve(-residual);d=np.zeros(v.total);d[v.free]=q;d=d.reshape(value.shape)
         _,alpha,_=v._ptc_trial(value,d,float(np.max(np.abs(q))))
+        if alpha==0:
+            rec['failure']='no_certified_chord_step';break
         for cut in range(24):
             trial=value+alpha*d;v.set_primary_increment(trial,trial-v.previous)
             _,gt,_,jt=v.evaluate(trial,v.lag(trial),tangent=False)
@@ -135,9 +137,11 @@ def inspect(case, output, endpoint):
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('case',type=Path)
     parser.add_argument('--output',type=Path,required=True);parser.add_argument('--endpoint',choices=['production','diagnostic'],default='production')
+    parser.add_argument('--polish-iterations',type=int,default=0)
     add_thread_arguments(parser);args=parser.parse_args()
+    if not 0<=args.polish_iterations<=20:raise ValueError('Bounded 0..20 polish iterations required')
     with numerical_runtime(**thread_arguments(args)) as runtime:
-        report=inspect(args.case,args.output,args.endpoint);report['thread_runtime']=runtime
+        report=inspect(args.case,args.output,args.endpoint,args.polish_iterations);report['thread_runtime']=runtime
     write_json(args.output/'diagnostic.json',report)
     print(json.dumps(report['polished_endpoint']))
 

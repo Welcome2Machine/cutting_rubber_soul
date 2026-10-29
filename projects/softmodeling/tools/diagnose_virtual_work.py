@@ -13,59 +13,7 @@ from run_support import write_json
 from .frozen_scene import load_scene
 
 
-def real_roots(poly):
-    if np.max(np.abs(poly.coef), initial=0)==0:return []
-    return sorted(float(z.real) for z in poly.roots() if abs(z.imag)<1e-9 and 0<z.real<1)
-
-
-def geometry_partitions(v, start, end):
-    """All swept EV/VV broad-phase pairs; polynomial feature/activation/extremum roots.
-
-    Rounded polynomial roots and adaptive estimates are NOT rigorous error bounds.
-    Dyadic neighborhoods resolve close approaches, including endpoint layers.
-    """
-    a=start[v.surface];d=(end-start)[v.surface]
-    candidates=v.ipc.Candidates();candidates.build(v.cmesh,a,end[v.surface],v.dhat)
-    cuts={0.,1.};features=[]
-    def dot(u,w):return sum((ui*wi for ui,wi in zip(u,w)),P([0.]))
-    def point(k):return [P([a[k,j],d[k,j]]) for j in (0,1)]
-    def neighborhoods(s,gap,speed):
-        width=max(1e-14,min(.25,gap/max(speed,1e-30)))
-        for _ in range(50):
-            cuts.add(max(0.,s-width));cuts.add(min(1.,s+width))
-            if width>=1:break
-            width*=2
-    for c in candidates.ev_candidates:
-        i,j=map(int,v.cmesh.edges[c.edge_id]);k=c.vertex_id
-        e=[q-r for q,r in zip(point(j),point(i))];w=[q-r for q,r in zip(point(k),point(i))]
-        cross=e[0]*w[1]-e[1]*w[0];rr=dot(e,e);projection=dot(e,w)
-        stationary=real_roots(2*cross.deriv()*rr-cross*rr.deriv())+real_roots(cross)
-        for q in (projection,projection-rr,cross*cross-v.dhat**2*rr):
-            for s in real_roots(q):cuts.add(s)
-        for s in [0.,1.,*stationary]:
-            if rr(s)<=0:continue
-            beta=projection(s)/rr(s)
-            if not 0<=beta<=1:continue
-            gap=abs(cross(s))/np.sqrt(rr(s))
-            if gap>=v.dhat:continue
-            cuts.add(s);speed=max(np.linalg.norm(d[k]-d[i]),np.linalg.norm(d[k]-d[j]))
-            neighborhoods(s,gap,speed)
-            features.append(dict(kind='EV',vertices=[i,j,k],s=s,gap_mm=float(gap),beta=float(beta)))
-    # Include endpoint distances for every swept EV, even when VV broad phase is empty.
-    pairs={tuple(sorted((c.vertex0_id,c.vertex1_id))) for c in candidates.vv_candidates}
-    for c in candidates.ev_candidates:
-        pairs.update(tuple(sorted((int(k),c.vertex_id))) for k in v.cmesh.edges[c.edge_id])
-    for i,j in sorted(pairs):
-        w=[q-r for q,r in zip(point(i),point(j))];rr=dot(w,w)
-        for s in real_roots(rr-v.dhat**2):cuts.add(s)
-        for s in [0.,1.,*real_roots(rr.deriv())]:
-            gap=np.sqrt(max(0.,rr(s)))
-            if gap>=v.dhat:continue
-            cuts.add(s);neighborhoods(s,gap,np.linalg.norm(d[i]-d[j]))
-            features.append(dict(kind='VV',vertices=[i,j],s=s,gap_mm=float(gap)))
-    return sorted(cuts),dict(ev_candidates=len(candidates.ev_candidates),vv_candidates=len(candidates.vv_candidates),
-        features=features,partition_method='swept geometry polynomial events plus dyadic gap neighborhoods',
-        rigorous_bound=False)
+from virtual_path_geometry import geometry_partitions
 
 
 def inspect(case,output,seconds):
@@ -140,7 +88,7 @@ def main():
     if not 1<=args.seconds<=540:raise ValueError('Independent work diagnosis <=540 s')
     with numerical_runtime(**thread_arguments(args)) as runtime:
         result=inspect(args.case,args.output,args.seconds);result['thread_runtime']=runtime
-    write_json(args.output/'diagnostic.json',result);print(json.dumps(dict(completed=result['completed'],methods=result['methods'])))
+    write_json(args.output/'diagnostic.json',result);print(json.dumps(dict(completed=result['completed'],methods={k:{a:b for a,b in v.items() if a!='panels'} for k,v in result['methods'].items()})))
 
 
 if __name__=='__main__':main()

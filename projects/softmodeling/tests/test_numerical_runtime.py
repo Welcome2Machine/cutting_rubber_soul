@@ -37,3 +37,14 @@ def test_entry_records_overrides_without_changing_positional_arguments():
     result=call(17,ipc_threads=1,blas_threads=1)
     assert result['value']==17 and result['observed']==1
     assert result['thread_runtime']['requested']==dict(ipc_threads=1,blas_threads=1)
+
+
+def test_continuation_thread_options_cannot_bypass_source_identity(tmp_path):
+    import json
+    from tools.continue_zero_gap_cut import continue_run
+    from prototype.ipc_reference import toolkit
+    (tmp_path/'result.json').write_text(json.dumps(dict(source_hashes={})))
+    old=toolkit().get_num_threads()
+    with pytest.raises(ValueError,match='identical-source'):
+        continue_run(tmp_path,tmp_path/'new',30,ipc_threads=1,blas_threads=1)
+    assert toolkit().get_num_threads()==old and not (tmp_path/'new').exists()

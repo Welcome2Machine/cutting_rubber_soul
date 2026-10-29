@@ -14,7 +14,7 @@ import sys
 import time
 from datetime import datetime, timezone
 import numpy as np
-from threadpoolctl import threadpool_limits
+from numerical_runtime import runtime_entry, add_thread_arguments, thread_arguments
 from run_support import write_json
 from . import run_zero_gap_cut as driver
 from .audit_zero_gap_cut import inspect as inspect_path
@@ -41,7 +41,8 @@ def restore(p, state, records):
     return state['positions'].copy(),float(state['depth_mm'])
 
 
-def continue_run(parent, output, seconds):
+@runtime_entry
+def continue_run(parent, output, seconds, *, runtime=None):
     if not np.isfinite(seconds) or not 30<=seconds<=3600:
         raise ValueError('Explicit continuation budget must be 30..3600 s')
     parent=parent.resolve();source=driver.hashes();begin=time.monotonic()
@@ -53,12 +54,13 @@ def continue_run(parent, output, seconds):
     signature=hashlib.sha256(json.dumps(original['config'],sort_keys=True).encode()).hexdigest()
     if signature!=original['config_sha256']:
         raise ValueError('Configuration signature differs')
-    parent_audit=inspect_path(parent,min(180.,seconds*.2))
+    threads=dict(ipc_threads=runtime['requested']['ipc_threads'],blas_threads=runtime['requested']['blas_threads'])
+    parent_audit=inspect_path(parent,min(180.,seconds*.2),**threads)
     if not parent_audit['passed'] or not parent_audit['producer_source_matches_current']:
         raise ValueError('Parent path must pass fresh independent audit')
     finite_audit=None
     if original['config'].get('fracture_criterion')=='finite_increment':
-        finite_audit=inspect_finite(parent,min(180.,seconds*.2))
+        finite_audit=inspect_finite(parent,min(180.,seconds*.2),**threads)
         if not (finite_audit['passed'] and finite_audit['primary_seed_increment_complete']
                 and finite_audit['producer_source_matches_current']):
             raise ValueError('Parent finite-crack decisions must pass fresh audit')
@@ -72,7 +74,8 @@ def continue_run(parent, output, seconds):
             path=(parent/name).resolve()
             if path.parent!=parent or path.suffix!='.npz':raise ValueError('Invalid checkpoint path')
             shutil.copyfile(path,output/name)
-    result.update(status='running',audits=[],budget_s=seconds,interpreter=sys.executable,
+    result.update(status='running',audits=[],budget_s=seconds,interpreter=sys.executable,thread_runtime=runtime,
+        native_ipc_threads=threads['ipc_threads'],blas_threads=threads['blas_threads'],
         started_utc=datetime.now(timezone.utc).isoformat(),source_hashes=source,
         continuation=dict(parent_directory=str(parent),parent_result_sha256=hashlib.sha256(original_path.read_bytes()).hexdigest(),
             parent_status=original['status'],parent_elapsed_s=original['elapsed_s'],
@@ -80,7 +83,7 @@ def continue_run(parent, output, seconds):
             inherited_history_verified=True,configuration_changed=False))
     for name in ('error','audit_error','summary','accepted_prefix_audited'):result.pop(name,None)
     write_json(output/'manifest.json',result)
-    p=driver.problem(result['config']);p.ipc.set_num_threads(2)
+    p=driver.problem(result['config']);p.ipc.set_num_threads(threads['ipc_threads'])
     with np.load(output/result['steps'][-1]['state_file']) as data:state={k:data[k].copy() for k in data.files}
     history=[]
     for rec in result['steps'][-2:]:
@@ -96,7 +99,8 @@ def continue_run(parent, output, seconds):
             try:
                 value,rec=p.step(x,depth,target,min(solve_deadline,attempt+config.get('attempt_seconds',seconds)))
             except (LoadStepFailure,TimeoutError) as exc:
-                result['attempts'].append(dict(from_mm=depth,target_mm=target,status='rejected',error=str(exc),elapsed_s=time.monotonic()-attempt))
+                failure=p.write_failure_evidence(output,len(result['attempts'])) if hasattr(p,'write_failure_evidence') else None
+                result['attempts'].append(dict(from_mm=depth,target_mm=target,status='rejected',error=str(exc),elapsed_s=time.monotonic()-attempt,virtual_failure=failure))
                 if target-depth<=config['minimum_increment_mm']+4*np.spacing(max(1.,abs(depth))):raise
                 increment=max(config['minimum_increment_mm'],(target-depth)/2)
                 if config.get('dynamic_cutback',False) and not isinstance(exc,EnergyResolutionRequired):
@@ -125,7 +129,7 @@ def continue_run(parent, output, seconds):
         elapsed_s=time.monotonic()-begin,accepted_prefix_audited=False)
     driver.report(output,result)
     remaining=max(1.,deadline-time.monotonic())
-    audit=inspect_path(output,min(3600.,remaining))
+    audit=inspect_path(output,min(600.,remaining),**threads)
     write_json(output/'continuation_path_audit.json',audit)
     result['audits']=audit['audits'];result['accepted_prefix_audited']=audit['passed']
     result['elapsed_s']=time.monotonic()-begin
@@ -142,8 +146,10 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('parent',type=Path);parser.add_argument('--out',type=Path,required=True)
     parser.add_argument('--seconds',type=float,required=True)
+    add_thread_arguments(parser)
     args=parser.parse_args()
-    with threadpool_limits(limits=2):result=continue_run(args.parent,args.out,args.seconds)
+    result=continue_run(args.parent,args.out,args.seconds,**thread_arguments(args))
+    write_json(args.out/'result.json',result)
     print(json.dumps(result['summary']))
 
 

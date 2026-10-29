@@ -135,9 +135,12 @@ def inspect(directory, seconds, *, runtime=None):
     path=directory/'result.json'
     result=json.loads(path.read_text(encoding='utf-8'))
     source=hashes();start=time.monotonic()
+    helper=Path(__file__).with_name('virtual_work_audit.py')
+    helper_hash=hashlib.sha256(helper.read_bytes()).hexdigest()
     report=dict(schema='softcut-finite-increment-audit/1',loading_started=False,
         result_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),source_hashes=source,
         auditor_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        auditor_dependency_sha256={'tools/virtual_work_audit.py':helper_hash},
         producer_source_matches_current=source==result['source_hashes'],
         interpreter=sys.executable,budget_s=seconds,thread_runtime=runtime,passed=False,checks=[])
     p=problem(result['config']);p.ipc.set_num_threads(runtime['requested']['ipc_threads'])
@@ -164,7 +167,8 @@ def inspect(directory, seconds, *, runtime=None):
         except (AssertionError,RuntimeError,ValueError,TimeoutError,KeyError) as exc:
             report['error']=str(exc)
     report['auditor_source_unchanged']=report['auditor_sha256']==hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
-    report['source_unchanged']=source==hashes() and report['auditor_source_unchanged']
+    report['auditor_dependencies_unchanged']=helper_hash==hashlib.sha256(helper.read_bytes()).hexdigest()
+    report['source_unchanged']=source==hashes() and report['auditor_source_unchanged'] and report['auditor_dependencies_unchanged']
     report['elapsed_s']=time.monotonic()-start
     report['passed'] &= report['source_unchanged']
     report['primary_seed_increment_complete']=all(c['primary_seed_increment_saved'] for c in report['checks'])

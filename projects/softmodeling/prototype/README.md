@@ -38,3 +38,11 @@ Maxwell 加载入口为 `python -m tools.run_material_candidate`，参数与串�
 专项研究内核（默认切割不切换）：`force_globalization.py`为可选真实残差Newton/LM，仍需全物理审查；`extrinsic_topology.py`为零间隙连接/释放算子，未接入零距离裂面接触；`cohesive_dynamics.py`为标量惯性内聚能量验证，非二维切割动力学。验证与限制见合并仓库断裂说明第18–19节。
 
 `finite_increment_cut.py`在零间隙实际刀具支路实现冻结A/κ的成对虚拟平衡、同一有限裂段的强度与能量减摩擦双条件，以及真实动态CZM插入。虚拟值不覆盖物理历史；PTC/后备载荷延续只用于求根。`mechanics/discrete_gradient.frozen_response`提供瞬时冻结历史能量/应力/完整切线，区别于两端点离散梯度。独立证据审查入口为`tools.audit_finite_increment`；适用边界、节点面积与摩擦路径假设见第22节。
+
+第二轮可靠性内核：`../virtual_path_geometry.py`定义虚拟直线的几何分区；
+`../virtual_path_probe.py`只选择原生CCD查询安排，不能代替CCD证书；
+`../virtual_friction_work.py`将分区自适应积分的经验不确定性传播到三态能量判据。
+`tools.virtual_work_audit`使用独立复合Legendre规则。`tools.frozen_scene`仅允许核查后的
+旧方程诊断，不能用于物理续算。`../numerical_runtime.py`管理显式IPC/BLAS线程及记录。
+`../face_cohesive_quadrature.py`为尚未接入生产释放拓扑的面级P1独立验证核；不将它的
+规定开口场验证称为完整切割网格收敛。方法与限制见合并仓库断裂说明第24节。

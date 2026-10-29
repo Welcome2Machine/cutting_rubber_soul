@@ -78,7 +78,8 @@ def problem(config):
 
 def hashes():
     value = source_hashes()
-    for name in ('numerical_runtime.py', 'virtual_path_geometry.py', 'virtual_friction_work.py'):
+    for name in ('numerical_runtime.py', 'virtual_path_geometry.py', 'virtual_path_probe.py',
+                 'virtual_friction_work.py'):
         value[name] = hashlib.sha256((Path(__file__).parents[1]/name).read_bytes()).hexdigest()
     value['tools/run_zero_gap_cut.py'] = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     baseline = Path(__file__).parents[1]/'prototype/ipc_baseline.json'

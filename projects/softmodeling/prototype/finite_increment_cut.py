@@ -17,7 +17,7 @@ from .ipc_reference import IPCProblem, LoadStepFailure, determinant_step
 from .zero_gap_cut import ZeroGapCutProblem
 from .energy_cut import EnergyCutProblem
 from .force_globalization import solve
-from virtual_path_geometry import native_partitioned_chord
+from virtual_path_probe import efficient_chord
 from virtual_friction_work import virtual_work, interval_decision
 
 
@@ -176,7 +176,7 @@ class FrozenVirtualCrack(ZeroGapCutProblem):
         """
         maximum = getattr(self, 'ffm_chord_max_queries', 0)
         if getattr(self, 'ffm_chord_partition', 'dyadic') == 'geometry':
-            self.virtual_chord_certificate = native_partitioned_chord(self, x, maximum)
+            self.virtual_chord_certificate = efficient_chord(self, x, maximum)
             return self.virtual_chord_certificate['complete']
         if not maximum:
             return super().accepted_chord_is_safe(x)

@@ -10,36 +10,10 @@ from virtual_path_geometry import geometry_partitions, ev_crossing_witnesses
 from prototype.ipc_reference import determinant_step
 
 
-def partitioned_chord(v, x, max_queries=256):
-    start=time.perf_counter();delta=x-v.previous
-    report=dict(complete=False,native_queries=0,segments=[],unchanged_straight_path=True,geometry_seeded=True)
-    if not np.isfinite(x).all() or np.any(x[:v.n,0]<v.config.drop_s_mm):return report
-    f=np.eye(2)+np.einsum('eai,eaJ->eiJ',(v.previous[:v.n]-v.mesh.reference_xy)[v.mesh.triangles],v.grad)
-    d=np.einsum('eai,eaJ->eiJ',delta[:v.n][v.mesh.triangles],v.grad)
-    if determinant_step(f,d)<1-1e-10:return report
-    witnesses=ev_crossing_witnesses(v,v.previous,x)
-    if witnesses:
-        report.update(crossing_witnesses=witnesses,elapsed_s=time.perf_counter()-start);return report
-    cuts,geometry=geometry_partitions(v,v.previous,x)
-    report['geometry_s']=time.perf_counter()-start
-    report['minimum_feature']=min(geometry['features'],key=lambda q:q['gap_mm']) if geometry['features'] else None
-    # Visit the closest-approach panels first. All panels remain mandatory.
-    pending=list(zip(cuts[:-1],cuts[1:]));closest=report['minimum_feature']
-    if closest:pending.sort(key=lambda ab:abs((ab[0]+ab[1])/2-closest['s']),reverse=True)
-    kwargs={} if v.virtual_narrow_phase_ccd is None else dict(narrow_phase_ccd=v.virtual_narrow_phase_ccd)
-    while pending:
-        if report['native_queries']>=max_queries:break
-        a,b=pending.pop();first=v.previous+a*delta;last=x if b==1 else v.previous+b*delta
-        fraction=v.ipc.compute_collision_free_stepsize(v.cmesh,first[v.surface],last[v.surface],**kwargs)
-        report['native_queries']+=1
-        if fraction>=1-1e-10:report['segments'].append([a,b]);continue
-        mid=(a+b)/2
-        if mid==a or mid==b:
-            report['failure']='unresolved_native_interval';return report
-        pending.extend([(a,mid),(mid,b)])
-    report.update(complete=not pending,elapsed_s=time.perf_counter()-start)
-    report['segments'].sort()
-    return report
+from virtual_path_geometry import native_partitioned_chord
+
+def partitioned_chord(v,x,max_queries=256):
+    return native_partitioned_chord(v,x,max_queries)
 
 
 def main():
