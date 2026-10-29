@@ -24,8 +24,9 @@
           0.32,
           0.4
         ],
-        "view_plane": "unconfirmed",
-        "use_state": "unknown"
+        "view_plane": "normal_to_cutting_edge",
+        "use_state": "unknown",
+        "view_plane_source": "User confirmation 2026-10-29: same side-view section as the simulation."
       },
       "embedded_image_sha256": "a3c42b96954e0282e5dea8e003a8db2465f55813d80106cf11ff0dea29a0e77e",
       "apparent_profile": {
@@ -74,7 +75,7 @@
       },
       "envelope_kind": "threshold + scale endpoints +/-1px + contour localization +/-1px; NOT statistical CI",
       "qualification": {
-        "side_view_confirmed": false,
+        "side_view_confirmed": true,
         "isotropic_pixel_assumption": true,
         "microscopic_edge_qualified": false,
         "physical_prediction_qualified": false
@@ -111,8 +112,9 @@
           0.32,
           0.4
         ],
-        "view_plane": "unconfirmed",
-        "use_state": "unknown"
+        "view_plane": "normal_to_cutting_edge",
+        "use_state": "unknown",
+        "view_plane_source": "User confirmation 2026-10-29: same side-view section as the simulation."
       },
       "embedded_image_sha256": "6a2da131b03e17c268b7c887c59fe88523d432a08bd5994cc58a994d87f4080b",
       "apparent_profile": {
@@ -161,7 +163,7 @@
       },
       "envelope_kind": "threshold + scale endpoints +/-1px + contour localization +/-1px; NOT statistical CI",
       "qualification": {
-        "side_view_confirmed": false,
+        "side_view_confirmed": true,
         "isotropic_pixel_assumption": true,
         "microscopic_edge_qualified": false,
         "physical_prediction_qualified": false
@@ -198,8 +200,9 @@
           0.32,
           0.4
         ],
-        "view_plane": "unconfirmed",
-        "use_state": "unknown"
+        "view_plane": "normal_to_cutting_edge",
+        "use_state": "unknown",
+        "view_plane_source": "User confirmation 2026-10-29: same side-view section as the simulation."
       },
       "embedded_image_sha256": "6b60e51f26eff7cec96c1f8796924cf8b13add236ed751acf000740dfd16768d",
       "apparent_profile": {
@@ -248,7 +251,7 @@
       },
       "envelope_kind": "threshold + scale endpoints +/-1px + contour localization +/-1px; NOT statistical CI",
       "qualification": {
-        "side_view_confirmed": false,
+        "side_view_confirmed": true,
         "isotropic_pixel_assumption": true,
         "microscopic_edge_qualified": false,
         "physical_prediction_qualified": false
@@ -287,8 +290,17 @@
           0.32,
           0.4
         ],
-        "view_plane": "unconfirmed",
-        "use_state": "unknown"
+        "view_plane": "normal_to_cutting_edge",
+        "use_state": "repeatedly_used",
+        "view_plane_source": "User confirmation 2026-10-29: same side-view section as the simulation.",
+        "use_observation": {
+          "source": "User clarification 2026-10-29",
+          "within_blade_performance_change": "not_obvious",
+          "between_blade_performance_difference": "large",
+          "cycle_count": null,
+          "evidence_kind": "qualitative user observation; no force data fitting",
+          "as_new_state_provided": false
+        }
       },
       "embedded_image_sha256": "1e7d99faecc36583745be05f3e2b25a0f99daed0d48d1c5f61a968a2a7475189",
       "apparent_profile": {
@@ -337,7 +349,7 @@
       },
       "envelope_kind": "threshold + scale endpoints +/-1px + contour localization +/-1px; NOT statistical CI",
       "qualification": {
-        "side_view_confirmed": false,
+        "side_view_confirmed": true,
         "isotropic_pixel_assumption": true,
         "microscopic_edge_qualified": false,
         "physical_prediction_qualified": false
@@ -376,8 +388,17 @@
           0.32,
           0.4
         ],
-        "view_plane": "unconfirmed",
-        "use_state": "unknown"
+        "view_plane": "normal_to_cutting_edge",
+        "use_state": "repeatedly_used",
+        "view_plane_source": "User confirmation 2026-10-29: same side-view section as the simulation.",
+        "use_observation": {
+          "source": "User clarification 2026-10-29",
+          "within_blade_performance_change": "not_obvious",
+          "between_blade_performance_difference": "large",
+          "cycle_count": null,
+          "evidence_kind": "qualitative user observation; no force data fitting",
+          "as_new_state_provided": false
+        }
       },
       "embedded_image_sha256": "732f1dd09cda4aea065d156eb994836128c95ca6d5ddd88d1fc5eb01c9775baf",
       "apparent_profile": {
@@ -426,7 +447,7 @@
       },
       "envelope_kind": "threshold + scale endpoints +/-1px + contour localization +/-1px; NOT statistical CI",
       "qualification": {
-        "side_view_confirmed": false,
+        "side_view_confirmed": true,
         "isotropic_pixel_assumption": true,
         "microscopic_edge_qualified": false,
         "physical_prediction_qualified": false

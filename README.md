@@ -24,7 +24,8 @@ python -X utf8 -m softcut_solution gui
 
 新增显微刀形参数见 [测量配置](configs/blade_profiles.measured.json) 和
 [提取及工作台转换说明](docs/blade_profile_config.md)。包括 C、E 两件、A 高/低性能两件；
-宏观轮廓为有条件测量，未分辨的刃口半径保留未知，不自动替换旧仿真基线。
+用户已确认这些图为仿真所用侧视截面；A 两组均反复使用，同刀性能变化不明显而刀间
+差异显著。截面尺寸保留像素测量范围，未分辨的刃口半径仍未知，不自动替换旧仿真基线。
 
 | 路径 | 职责 |
 |---|---|

@@ -59,11 +59,15 @@ def inputs():
 
 def test_export_requires_view_approximation_and_independent_radius(inputs):
     catalog, base = inputs
+    unconfirmed = deepcopy(catalog)
+    for profile in unconfirmed['profiles']:
+        profile['qualification']['side_view_confirmed'] = False
+        profile['identity']['view_plane'] = 'unconfirmed'
     kwargs = dict(tip_radius_mm=.02, radius_source='test assumption, not a measurement')
     with pytest.raises(ValueError, match='normal to'):
-        build_config(catalog, 'a_low_profile', base, **kwargs)
+        build_config(unconfirmed, 'a_low_profile', base, **kwargs)
     with pytest.raises(ValueError, match='symmetric approximation'):
-        build_config(catalog, 'a_low_profile', base, confirm_view_plane=True, **kwargs)
+        build_config(catalog, 'a_low_profile', base, **kwargs)
     with pytest.raises(ValueError, match='do not resolve'):
         build_config(catalog, 'a_low_profile', base, confirm_view_plane=True,
                      accept_symmetric_approximation=True, tip_radius_mm=None, radius_source='unknown')
@@ -74,7 +78,7 @@ def test_export_validates_against_real_workbench_without_loading_fe(inputs):
     original = deepcopy(base)
     before = set(sys.modules)
     c = build_config(catalog, 'a_low_profile', base, tip_radius_mm=.02,
-        radius_source='test-only independent assumption', confirm_view_plane=True,
+        radius_source='test-only independent assumption',
         accept_symmetric_approximation=True)
     assert c['blade']['thickness_mm'] == pytest.approx(.24577, abs=1e-5)
     assert c['blade']['included_angle_deg'] == pytest.approx(13.31685, abs=1e-5)
@@ -96,5 +100,12 @@ def test_all_profiles_preserve_unresolved_microscopic_geometry(inputs):
         assert p['tip_radius_mm'] is None
         assert not p['roughness_resolved']
         assert not p['qualification']['physical_prediction_qualified']
-        assert p['identity']['use_state'] == 'unknown'
+        assert p['qualification']['side_view_confirmed']
+        assert p['identity']['view_plane'] == 'normal_to_cutting_edge'
+        if p['identity'].get('same_model_group') == 'A':
+            assert p['identity']['use_state'] == 'repeatedly_used'
+            assert p['identity']['use_observation']['within_blade_performance_change'] == 'not_obvious'
+            assert p['identity']['use_observation']['between_blade_performance_difference'] == 'large'
+        else:
+            assert p['identity']['use_state'] == 'unknown'
         assert p['sensitivity_envelope']['flank_angle_asymmetry_deg'][0] >= 0
