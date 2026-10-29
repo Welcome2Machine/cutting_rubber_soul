@@ -129,8 +129,8 @@ def audit_evidence(p, state, check, fields, deadline=float('inf')):
 
 @runtime_entry
 def inspect(directory, seconds, *, runtime=None):
-    if not np.isfinite(seconds) or not 1 <= seconds <= 3600:
-        raise ValueError('Explicit audit budget 1..3600 s required')
+    if not np.isfinite(seconds) or not 1 <= seconds <= 600:
+        raise ValueError('Explicit audit budget 1..600 s required')
     directory=Path(directory).resolve()
     path=directory/'result.json'
     result=json.loads(path.read_text(encoding='utf-8'))

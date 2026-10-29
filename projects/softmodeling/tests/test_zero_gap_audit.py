@@ -46,3 +46,22 @@ def test_saved_endpoint_audit_does_not_promote_unsafe_temporal_motion(saved,monk
     assert report['endpoint_history_passed']
     assert not report['accepted_chord_ccd_verified']
     assert not report['passed']
+
+
+@pytest.mark.parametrize('seconds',[0,601,float('nan')])
+@pytest.mark.parametrize('entry',['path','finite'])
+def test_independent_audit_enforces_six_hundred_second_ceiling(tmp_path,seconds,entry):
+    from tools.audit_finite_increment import inspect as finite
+    with pytest.raises(ValueError,match='1..600'):
+        (inspect if entry=='path' else finite)(tmp_path,seconds)
+
+
+def test_contact_object_trace_distinguishes_original_surface_from_seam():
+    from tools.audit_zero_gap_cut import blade_contacts
+    cfg=json.loads((Path(__file__).parents[1]/'configs/zero_gap_dynamic_control.json').read_text())
+    p=problem(cfg);x=p.rest.copy()
+    assert blade_contacts(p,x)==[]
+    x[p.n:]=p.prescribed_blade_positions(.003)
+    records=blade_contacts(p,x)
+    assert records and all(q['body_reference_group']=='original_top_surface' for q in records)
+    assert all(all(i<p.n for i in q['body_nodes']) and all(i>=p.n for i in q['blade_nodes']) for q in records)
