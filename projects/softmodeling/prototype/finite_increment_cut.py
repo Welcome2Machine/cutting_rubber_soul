@@ -136,7 +136,9 @@ class FrozenVirtualCrack(ZeroGapCutProblem):
             value, _ = self.solve_friction(seed.copy(), depth, min(deadline, time.monotonic()+4.))
             self.virtual_solver_method = 'fresh_force_ptc'
         except (LoadStepFailure, TimeoutError):
-            if getattr(self, 'ffm_virtual_solver', 'legacy') == 'friction_continuation':
+            if getattr(self, 'ffm_virtual_solver', 'legacy') == 'lagged_newton':
+                value = self.lagged_newton_equilibrium(seed, depth, deadline)
+            elif getattr(self, 'ffm_virtual_solver', 'legacy') == 'friction_continuation':
                 value = self.friction_continued_equilibrium(seed, depth, deadline)
             else:
                 value = self.continued_equilibrium(seed, depth, deadline)
@@ -149,6 +151,55 @@ class FrozenVirtualCrack(ZeroGapCutProblem):
         if np.any(value[self.seam[~self.released], 0] != self.config.drop_s_mm):
             raise LoadStepFailure('Virtual intact tie lost')
         return value, g, norm
+
+    def lagged_newton_equilibrium(self, seed, depth, deadline):
+        """Frozen-contact predictor followed by an original-force corrector.
+
+        Neither freezing the predictor's tangential basis/normal load nor its
+        inner residual certifies equilibrium. Restore the fresh contact force
+        and its full Jacobian before Newton correction and final acceptance.
+        All numerical segments and the anchor chord keep full CCD/positive J.
+        """
+        lag, tangent = self.lag, self.coupled_friction_tangent
+        value = seed.copy()
+        self.virtual_solver_method = 'lagged_newton'
+        self.virtual_solver_phases = []
+        try:
+            for outer in range(100):
+                if time.monotonic() >= deadline:
+                    raise TimeoutError('Virtual lagged-Newton budget')
+                frozen = lag(value)
+                self.lag = lambda x: frozen
+                self.coupled_friction_tangent = lambda x, l, h: h
+                self.set_primary_increment(value, value-self.previous)
+                phase = dict(outer=outer, predictor_solved=False, corrector_solved=False)
+                self.virtual_solver_phases.append(phase)
+                try:
+                    value, n = self.solve_friction(value.copy(), depth,
+                        min(deadline, time.monotonic()+5.))
+                    phase.update(predictor_solved=True, predictor_iterations=n)
+                except (LoadStepFailure, TimeoutError) as exc:
+                    value = self.trial.copy()
+                    phase['predictor_error'] = str(exc)
+                finally:
+                    self.lag, self.coupled_friction_tangent = lag, tangent
+                self.set_primary_increment(value, value-self.previous)
+                _, g, _, _ = self.evaluate(value, self.lag(value), tangent=False)
+                self.update_constraint_free(value, g)
+                phase['original_residual_after_predictor_n'] = float(np.sqrt(2)*np.linalg.norm(g[self.free]))
+                if phase['original_residual_after_predictor_n'] <= 1e-4:
+                    return value
+                try:
+                    value, n = solve(self, value.copy(), depth,
+                        min(deadline, time.monotonic()+5.))
+                    phase.update(corrector_solved=True, corrector_iterations=n)
+                    return value  # equilibrium() still checks the full-domain gate.
+                except (LoadStepFailure, TimeoutError) as exc:
+                    phase['corrector_error'] = str(exc)
+                    value = self.trial.copy()
+            raise LoadStepFailure('Virtual lagged-Newton iteration limit')
+        finally:
+            self.lag, self.coupled_friction_tangent = lag, tangent
 
     def friction_continued_equilibrium(self, seed, depth, deadline):
         """Zero-time solver homotopy, ending at the original virtual equation.
@@ -254,7 +305,7 @@ class FiniteIncrementMixin:
         self.ffm_virtual_seconds = ffm_virtual_seconds
         self.ffm_epsilon = ffm_friction_epsilon_mm
         self.ffm_max_candidates = ffm_max_candidates
-        if ffm_virtual_solver not in ('legacy', 'friction_continuation'):
+        if ffm_virtual_solver not in ('legacy', 'friction_continuation', 'lagged_newton'):
             raise ValueError('Unknown finite virtual solver')
         self.ffm_virtual_solver = ffm_virtual_solver
         self.ffm_pending, self.ffm_checks = [], []

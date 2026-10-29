@@ -18,6 +18,7 @@ from .run_zero_gap_cut import problem, hashes
 from .audit_finite_increment import stored_equilibrium
 from prototype.finite_increment_cut import FrozenVirtualCrack, finite_patches, coupled_margin
 from prototype.ipc_reference import LoadStepFailure
+from prototype.force_globalization import solve
 
 
 def restore_failed_seed(p, fields):
@@ -57,9 +58,85 @@ def virtual_state(v, x):
                 opening_max_mm=float(np.max(2*(x[v.seam, 0]-v.config.drop_s_mm))))
 
 
-def inspect(directory, output, seconds, candidate=None):
+def probe_equilibrium(v, seed, depth, deadline, mode):
+    """Diagnostic directions only; certify the original virtual equation last.
+
+    The production operator/source and the physical seed/history are unchanged.
+    These probes do not authorize loading or insertion, even when a root exists.
+    """
+    friction, lag, tangent, maximum = v.friction, v.lag, v.coupled_friction_tangent, v.max_iterations
+    value, phases = seed.copy(), []
+    v.probe_phases = phases
+    try:
+        if mode == 'wide_smoothing':
+            factors = (1e6, 1e5, 1e4, 1e3, 100., 10., 1.)
+            for index, factor in enumerate(factors):
+                now = time.monotonic()
+                if now >= deadline:
+                    raise TimeoutError('Virtual smoothing probe budget')
+                stage_deadline = now+(deadline-now)/(len(factors)-index)
+                v.friction = friction if factor == 1 else v.ipc.FrictionPotential(v.virtual_friction_epsilon*factor)
+                v.set_primary_increment(value, value-v.previous)
+                start = value.copy()
+                phase = dict(factor=factor, accepted=False)
+                phases.append(phase)
+                try:
+                    value, iterations = solve(v, start.copy(), depth, min(stage_deadline, now+5.))
+                except (LoadStepFailure, TimeoutError):
+                    v.set_primary_increment(start, start-v.previous)
+                    value, iterations = v.solve_friction(start.copy(), depth, stage_deadline)
+                phase.update(accepted=True, iterations=iterations)
+        elif mode in ('lagged_friction', 'lagged_newton'):
+            for outer in range(100):
+                if time.monotonic() >= deadline:
+                    raise TimeoutError('Lagged virtual probe budget')
+                # The inner solve uses a fixed tangential basis/normal load.
+                # Its Hessian must not include a derivative of the frozen lag.
+                frozen = lag(value)
+                v.lag = lambda x: frozen
+                v.coupled_friction_tangent = lambda x, l, h: h
+                v.set_primary_increment(value, value-v.previous)
+                phase = dict(outer=outer, inner_solved=False)
+                phases.append(phase)
+                try:
+                    value, iterations = v.solve_friction(value.copy(), depth, min(deadline, time.monotonic()+10.))
+                except (LoadStepFailure, TimeoutError):
+                    if mode != 'lagged_newton':
+                        raise
+                    value, iterations = v.trial.copy(), None
+                v.lag, v.coupled_friction_tangent = lag, tangent
+                q = virtual_state(v, value)
+                phase.update(inner_solved=iterations is not None, iterations=iterations, **q)
+                if q['residual_n'] <= 1e-4:
+                    break
+                if mode == 'lagged_newton':
+                    # Correct the predictor with the ORIGINAL coupled force.
+                    # Keep every local segment and the full anchor chord safe.
+                    v.set_primary_increment(value, value-v.previous)
+                    try:
+                        value, iterations = solve(v, value.copy(), depth, min(deadline, time.monotonic()+10.))
+                        phase['corrector_solved'] = True
+                        phase['corrector_state'] = virtual_state(v, value)
+                        if phase['corrector_state']['residual_n'] <= 1e-4:
+                            break
+                    except (LoadStepFailure, TimeoutError) as exc:
+                        phase.update(corrector_solved=False, corrector_error=str(exc))
+                        value = v.trial.copy()
+            else:
+                raise LoadStepFailure('Lagged virtual probe iteration limit')
+        else:
+            raise ValueError('Unknown diagnostic equilibrium probe')
+    finally:
+        v.friction, v.lag, v.coupled_friction_tangent, v.max_iterations = friction, lag, tangent, maximum
+    g, residual = stored_equilibrium(v, value)
+    return value, g, residual
+
+
+def inspect(directory, output, seconds, candidate=None, probe='production'):
     if not np.isfinite(seconds) or not 1 <= seconds <= 600:
         raise ValueError('Explicit diagnostic budget must be 1..600 seconds')
+    if probe not in ('production', 'wide_smoothing', 'lagged_friction', 'lagged_newton') or (probe != 'production' and candidate is None):
+        raise ValueError('A diagnostic solver probe requires one explicit candidate')
     directory, output = Path(directory).resolve(), Path(output).resolve()
     result_path = directory/'result.json'
     raw = json.loads(result_path.read_text(encoding='utf-8'))
@@ -77,7 +154,7 @@ def inspect(directory, output, seconds, candidate=None):
         result_sha256=hashlib.sha256(result_path.read_bytes()).hexdigest(),
         failed_sha256=hashlib.sha256(failed.read_bytes()).hexdigest(),
         source_hashes=source, diagnostic_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-        budget_s=seconds, candidates=[], completed=False, intact_certified=False)
+        budget_s=seconds, equilibrium_probe=probe, candidates=[], completed=False, intact_certified=False)
     try:
         p = problem(raw['config'])
         p.ipc.set_num_threads(2)
@@ -119,8 +196,11 @@ def inspect(directory, output, seconds, candidate=None):
                 status='unknown', stress_min_mpa=float(stress[ids].min()))
             begin = time.monotonic()
             try:
-                after, _, _ = post.equilibrium(before, depth,
-                    min(deadline, begin+p.ffm_virtual_seconds))
+                if probe == 'production':
+                    after, _, _ = post.equilibrium(before, depth,
+                        min(deadline, begin+p.ffm_virtual_seconds))
+                else:
+                    after, _, _ = probe_equilibrium(post, before, depth, deadline, probe)
                 stored_equilibrium(post, after)
                 d5, d9, d17 = [post.friction_path_work(before, after, n) for n in (5, 9, 17)]
                 ok, margin = coupled_margin(stress[ids], p.strength,
@@ -129,16 +209,18 @@ def inspect(directory, output, seconds, candidate=None):
                 check.update(status='equilibrated', **virtual_state(post, after),
                     coupled_condition_passed=ok, refined_energy_margin_n_mm=margin,
                     friction_work_orders_5_9_17_n_mm=[d5, d9, d17])
-            except (LoadStepFailure, TimeoutError) as exc:
+            except (LoadStepFailure, TimeoutError, ValueError) as exc:
                 after = getattr(post, 'trial', before).copy()
                 check.update(error=str(exc), **virtual_state(post, after))
             evidence = output/f'candidate_{index:03d}.npz'
             np.savez_compressed(evidence, positions=after, removed=removed)
             check.update(elapsed_s=time.monotonic()-begin, evidence_file=evidence.name,
+                probe_phases=getattr(post, 'probe_phases', []),
                 evidence_sha256=hashlib.sha256(evidence.read_bytes()).hexdigest())
             report['candidates'].append(check)
             write_json(output/'diagnostic.json', report)
         report['completed'] = True
+        report['all_candidates_equilibrated'] = all(c['status'] == 'equilibrated' for c in report['candidates'])
     except (ValueError, RuntimeError, AssertionError, TimeoutError) as exc:
         report['error'] = str(exc)
     report.update(source_unchanged=source == hashes(), elapsed_s=time.monotonic()-started)
@@ -157,9 +239,11 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--seconds', type=float, required=True)
     parser.add_argument('--candidate', type=int, nargs='+', help='Only this exact contiguous seam patch')
+    parser.add_argument('--probe', choices=['production', 'wide_smoothing', 'lagged_friction', 'lagged_newton'], default='production',
+                        help='Diagnostic root directions only; requires --candidate for a non-production probe')
     args = parser.parse_args()
     with threadpool_limits(limits=2):
-        result = inspect(args.directory, args.output, args.seconds, args.candidate)
+        result = inspect(args.directory, args.output, args.seconds, args.candidate, args.probe)
     print(json.dumps({k: v for k, v in result.items() if k != 'source_hashes'}, indent=2))
 
 

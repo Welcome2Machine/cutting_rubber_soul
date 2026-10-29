@@ -4,9 +4,10 @@
 
 有限裂增量研究分支`prototype/finite_increment_cut.py`采用同一候选段上的离散参考牵引及冻结历史虚拟能量差减摩擦功，随后由真实内聚开口支付Gc一次；见[第22节](../../../docs/fracture_implementation.md)。这不是最大主应力判据、纯脆断FFM或已认证自由裂路；其几何/材料与零间隙居中控制相同。默认完整体与旧判据保持独立。
 
-服务器研究增加显式 `ffm_virtual_solver=friction_continuation`（缺省 `legacy`）：
-只在虚拟求根中暂时加宽摩擦平滑，最终恢复原尺度、原残差/J/CCD门后才评估原能量
-判据。物性、真实时间、质量、历史和虚拟直线路径定义不变；不引入物理阻尼。
+服务器研究增加显式 `ffm_virtual_solver=friction_continuation|lagged_newton`（缺省 `legacy`）：
+前者只在虚拟求根中暂时加宽摩擦平滑，最终恢复原尺度；后者用固定摩擦接触量
+预测，再以原耦合方程校正。二者均通过原残差/J/CCD门后才评估原能量判据。
+物性、真实时间、质量、历史和虚拟直线路径定义不变；不引入物理阻尼。
 失败候选保存独立上下文并保持未知，见[第23节](../../../docs/fracture_implementation.md)。
 这是待实际路径检验的求解选项，不代表含断裂2 mm、快速滑移或表面连通已经合格。
 

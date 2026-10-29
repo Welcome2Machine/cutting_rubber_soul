@@ -223,7 +223,7 @@ def build(directories, output):
         ax.set(xlim=(-1.2,1.2),ylim=(2.5,5.4),aspect='equal',xlabel='x - centre [mm]',
                title=f"{s['name']}\n{s['last_depth_mm']:.3f} mm")
     axes[0,0].set_ylabel('Deformed height [mm]')
-    fig.suptitle('Saved deformed meshes; orange nodes remain tied. Different terminal depths.')
+    fig.suptitle('Saved deformed meshes\nOrange: tied nodes\nTerminal depths differ between cases', fontsize=10)
     fig.savefig(output/'deformed_seam.png',dpi=150);plt.close(fig)
     comparisons=[]
     families=dict(time_control={'increment_mm','energy_tolerance','energy_absolute_tolerance_n_mm'},

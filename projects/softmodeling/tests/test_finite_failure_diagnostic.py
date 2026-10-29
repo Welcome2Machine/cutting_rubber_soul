@@ -143,3 +143,59 @@ def test_failed_virtual_context_survives_rollback_without_committing_histories(t
         np.testing.assert_array_equal(data['virtual_trial'], p.rest)
         np.testing.assert_array_equal(data['frozen_metric'], p.material_response(p.rest)['metric'])
     np.testing.assert_array_equal(p.released, old)
+
+
+@pytest.mark.parametrize('mode', ['wide_smoothing', 'lagged_friction', 'lagged_newton'])
+def test_probe_restores_original_force_functions_and_checks_the_original_root(mode):
+    from tools.diagnose_finite_increment import probe_equilibrium
+    p = problem(config()); p.material_dt = .025
+    v = FrozenVirtualCrack(p, p.rest, p.material_metric, p.history, p.released,
+                          np.zeros_like(p.released), p.ffm_epsilon)
+    old = v.friction, v.lag, v.coupled_friction_tangent
+    x, _, residual = probe_equilibrium(v, p.rest, p.start, time.monotonic()+10, mode)
+    assert residual < 1e-10
+    assert (v.friction, v.lag, v.coupled_friction_tangent) == old
+    np.testing.assert_array_equal(x, p.rest)
+    np.testing.assert_array_equal(p.material_metric, v.previous_material_metric)
+
+
+@pytest.mark.parametrize('mode', ['wide_smoothing', 'lagged_friction'])
+def test_probe_restores_force_functions_on_failure(mode, monkeypatch):
+    import tools.diagnose_finite_increment as diagnostic
+    p = problem(config()); p.material_dt = .025
+    v = FrozenVirtualCrack(p, p.rest, p.material_metric, p.history, p.released,
+                          np.zeros_like(p.released), p.ffm_epsilon)
+    old = v.friction, v.lag, v.coupled_friction_tangent
+    def fail(*args):
+        raise TimeoutError('probe stage')
+    monkeypatch.setattr(diagnostic, 'solve', fail)
+    monkeypatch.setattr(v, 'solve_friction', fail)
+    with pytest.raises(TimeoutError):
+        diagnostic.probe_equilibrium(v, p.rest, p.start, time.monotonic()+10, mode)
+    assert (v.friction, v.lag, v.coupled_friction_tangent) == old
+
+
+def test_lagged_newton_production_restores_force_and_preserves_host_history():
+    p = problem(dict(config(), ffm_virtual_solver='lagged_newton'))
+    p.material_dt = .025
+    v = FrozenVirtualCrack(p, p.rest, p.material_metric, p.history, p.released,
+                          np.zeros_like(p.released), p.ffm_epsilon)
+    old = v.friction, v.lag, v.coupled_friction_tangent
+    history = p.history.copy()
+    x = v.lagged_newton_equilibrium(p.rest, p.start, time.monotonic()+10)
+    assert (v.friction, v.lag, v.coupled_friction_tangent) == old
+    assert virtual_state(v, x)['residual_n'] < 1e-10
+    np.testing.assert_array_equal(p.history, history)
+
+
+def test_lagged_newton_restores_functions_after_inner_exception(monkeypatch):
+    p = problem(dict(config(), ffm_virtual_solver='lagged_newton'))
+    v = FrozenVirtualCrack(p, p.rest, p.material_metric, p.history, p.released,
+                          np.zeros_like(p.released), p.ffm_epsilon)
+    old = v.friction, v.lag, v.coupled_friction_tangent
+    def fail(*args):
+        raise ValueError('invalid predictor')
+    monkeypatch.setattr(v, 'solve_friction', fail)
+    with pytest.raises(ValueError, match='invalid predictor'):
+        v.lagged_newton_equilibrium(p.rest, p.start, time.monotonic()+10)
+    assert (v.friction, v.lag, v.coupled_friction_tangent) == old
