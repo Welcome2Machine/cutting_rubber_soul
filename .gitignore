@@ -25,6 +25,8 @@ __pycache__/
 *.pth
 *.onnx
 *.pdf
+*.pptx
+*.ppt
 *.mp4
 *.mkv
 *.avi

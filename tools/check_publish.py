@@ -7,6 +7,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 BLOCKED_SUFFIXES = {".npz", ".npy", ".pt", ".pth", ".onnx", ".pdf", ".mp4", ".mkv", ".avi", ".mov", ".png", ".jpg", ".jpeg", ".gif", ".csv", ".tsv", ".xlsx", ".xls", ".zip", ".7z", ".bundle", ".patch", ".exe", ".dll", ".pyd", ".pem", ".key", ".pyc"}
 BLOCKED_PARTS = {".venv", ".runtime", "__pycache__", ".pytest_cache", ".codex", "node_modules"}
+BLOCKED_SUFFIXES.update({".pptx", ".ppt"})
 BLOCKED_PREFIXES = ("runs/", "logs/", "projects/softmodeling/outputs/", "projects/rec_inc_soft_cut/results/", "projects/rec_inc_soft_cut/data/", "projects/rec_inc_soft_cut/models/", "projects/rec_inc_soft_cut/environment/local_maintenance/")
 
 

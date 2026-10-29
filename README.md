@@ -22,6 +22,10 @@ python -X utf8 -m softcut_solution gui
 
 ## 工程结构
 
+新增显微刀形参数见 [测量配置](configs/blade_profiles.measured.json) 和
+[提取及工作台转换说明](docs/blade_profile_config.md)。包括 C、E 两件、A 高/低性能两件；
+宏观轮廓为有条件测量，未分辨的刃口半径保留未知，不自动替换旧仿真基线。
+
 | 路径 | 职责 |
 |---|---|
 | `projects/softmodeling/` | 真实 FE 工程完整工作区副本，包括原数据、保存状态、本地运行库 |

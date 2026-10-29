@@ -10,6 +10,7 @@ import pytest
     "projects/softmodeling/docs/experiment.csv",
     "settings.local.json", ".env.secret", "provenance/video-original.bundle",
     "misc/parameters.key", "another/.runtime/module.py",
+    "researchtopic/bladetype.pptx", "researchtopic/microscope.ppt",
 ])
 def test_local_assets_rejected(path):
     assert reason(path, 100)

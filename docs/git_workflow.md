@@ -45,6 +45,20 @@ pre-commit 检查暂存文件；pre-push 根据 Git 传入的实际待推送分�
 
 验收后创建语义版本标签，如 `v0.1.0`；研究参数版本另用 `study/<主题>-YYYYMMDD`。标签注释写清功能、验证和物理范围。用 `git revert <commit>` 撤销已共享改动；不以 reset 改写共享历史。
 
-当前仅建立本地仓库，尚未配置远端或上传。确定 GitHub/GitLab 地址后再 `git remote add origin <URL>`，通过发布检查后首次 push；远端启用 main 保护和 PR 检查。不得将旧子项目 origin 误设为新总仓库 origin。
+远端使用用户指定的 `https://github.com/Welcome2Machine/cutting_rubber_soul`。
+该仓库的远端 `main` 目前仍是旧独立 FE 项目，与本地整合工程历史不同。
+本次整合发布分支为 `codex/integrated-solution-blade-profile`，包含两个复制子工程与整合层；
+不强推或覆盖远端 `main`、`feature/czm-cutting`，也不自动合并无关历史。
+新协作者应显式 clone 这个分支，默认 clone main 不会获得整合工作台：
+
+```powershell
+git clone --branch codex/integrated-solution-blade-profile https://github.com/Welcome2Machine/cutting_rubber_soul.git
+```
+
+后续整合开发从此分支建立 `codex/<主题>` 分支；完成检查后通过审阅合入整合分支。
+未来若迁移远端默认分支，应作为单独的明确仓库管理操作。源码 ZIP 可从 GitHub
+该分支下载；原视频、权重、原始显微 PPT、运行结果与本地环境不在 ZIP 中。
+所需环境与本地数据布局见 `docs/environment.md`。尚未配置服务器端分支保护，
+本地钩子不能替代它。公开仓库不得提交机器设置和凭据。
 
 原工程有新改动时，在独立 `chore/import-<日期>` 分支按文件 diff 审阅同步代码，并更新导入来源；不要再次整目录覆盖当前副本，也不要把旧 `.git` 复制进来。数据更新单独同步并记录来源哈希。原始历史可在另一个空目录 `git clone <bundle> <directory>` 恢复查看。

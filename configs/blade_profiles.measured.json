@@ -1,0 +1,449 @@
+{
+  "schema": "softcut-blade-shape-catalog/1",
+  "source_name": "bladetype.pptx",
+  "source_sha256": "1b44cde22b7008c09ded49a107c02e8f4628f9527388f7902480064c32e189b7",
+  "tool_sha256": "93ce938fffe7ca6588e456fdfc0461eb3c1abb8620845ceccee4b65d4ebc2067",
+  "experimental_force_read": false,
+  "loading_started": false,
+  "profiles": [
+    {
+      "identity": {
+        "id": "c_profile",
+        "label": "C blade",
+        "slide": 1,
+        "image_part": "ppt/media/image1.png",
+        "scale_bar_um": 500,
+        "roi_xyxy": [
+          20,
+          10,
+          263,
+          67
+        ],
+        "gray_thresholds": [
+          0.24,
+          0.32,
+          0.4
+        ],
+        "view_plane": "unconfirmed",
+        "use_state": "unknown"
+      },
+      "embedded_image_sha256": "a3c42b96954e0282e5dea8e003a8db2465f55813d80106cf11ff0dea29a0e77e",
+      "apparent_profile": {
+        "thickness_mm": 0.2369412781944244,
+        "included_angle_deg": 14.66812552463449,
+        "face_angles_deg": [
+          1.7624360237695442,
+          12.905689500864947
+        ],
+        "flank_angle_asymmetry_deg": 11.143253477095403,
+        "bevel_lengths_mm": [
+          0.35762644852235637,
+          0.9876276775393635
+        ],
+        "widths_at_distance_from_virtual_apex_mm": {
+          "0.1": 0.024146648715037446,
+          "0.25": 0.06703475228988863,
+          "0.5": 0.12507658605846259,
+          "0.75": 0.18235334125195898
+        }
+      },
+      "scale": {
+        "length_um": 500,
+        "span_pixels": 50,
+        "x_first": 214,
+        "x_last": 263,
+        "um_per_pixel": 10.0,
+        "endpoint_sensitivity_um_per_pixel": [
+          9.615384615384615,
+          10.416666666666666
+        ]
+      },
+      "sensitivity_envelope": {
+        "thickness_mm": [
+          0.20297862255779314,
+          0.27142393407598797
+        ],
+        "included_angle_deg": [
+          8.12073407893992,
+          21.074706170243154
+        ],
+        "flank_angle_asymmetry_deg": [
+          4.721414244954021,
+          17.674102857916992
+        ]
+      },
+      "envelope_kind": "threshold + scale endpoints +/-1px + contour localization +/-1px; NOT statistical CI",
+      "qualification": {
+        "side_view_confirmed": false,
+        "isotropic_pixel_assumption": true,
+        "microscopic_edge_qualified": false,
+        "physical_prediction_qualified": false
+      },
+      "tip_radius_mm": null,
+      "tip_radius_resolved": false,
+      "roughness_resolved": false,
+      "fe_mapping": {
+        "shape": "symmetric_wedge",
+        "status": "conditional approximation; not a resolved microscope edge",
+        "thickness_mm": 0.2369412781944244,
+        "included_angle_deg": 14.66812552463449,
+        "tip_radius_mm": null,
+        "requires_explicit_tip_radius": true,
+        "requires_confirmed_view_plane": true,
+        "requires_explicit_symmetric_approximation": true
+      }
+    },
+    {
+      "identity": {
+        "id": "e_no1_profile",
+        "label": "E blade No.1",
+        "slide": 2,
+        "image_part": "ppt/media/image4.png",
+        "scale_bar_um": 500,
+        "roi_xyxy": [
+          20,
+          10,
+          263,
+          67
+        ],
+        "gray_thresholds": [
+          0.24,
+          0.32,
+          0.4
+        ],
+        "view_plane": "unconfirmed",
+        "use_state": "unknown"
+      },
+      "embedded_image_sha256": "6a2da131b03e17c268b7c887c59fe88523d432a08bd5994cc58a994d87f4080b",
+      "apparent_profile": {
+        "thickness_mm": 0.22946472656379224,
+        "included_angle_deg": 13.527011718274148,
+        "face_angles_deg": [
+          6.450085911688589,
+          7.0769258065855585
+        ],
+        "flank_angle_asymmetry_deg": 0.6268398948969693,
+        "bevel_lengths_mm": [
+          1.0144142762196844,
+          0.9444128340258874
+        ],
+        "widths_at_distance_from_virtual_apex_mm": {
+          "0.1": 0.020839380641719564,
+          "0.25": 0.0561412991617118,
+          "0.5": 0.11568067357975563,
+          "0.75": 0.1767520599193756
+        }
+      },
+      "scale": {
+        "length_um": 500,
+        "span_pixels": 50,
+        "x_first": 214,
+        "x_last": 263,
+        "um_per_pixel": 10.0,
+        "endpoint_sensitivity_um_per_pixel": [
+          9.615384615384615,
+          10.416666666666666
+        ]
+      },
+      "sensitivity_envelope": {
+        "thickness_mm": [
+          0.19673208190319347,
+          0.263165671693811
+        ],
+        "included_angle_deg": [
+          11.060858503319574,
+          15.961638651101216
+        ],
+        "flank_angle_asymmetry_deg": [
+          0.0,
+          3.0820059505739144
+        ]
+      },
+      "envelope_kind": "threshold + scale endpoints +/-1px + contour localization +/-1px; NOT statistical CI",
+      "qualification": {
+        "side_view_confirmed": false,
+        "isotropic_pixel_assumption": true,
+        "microscopic_edge_qualified": false,
+        "physical_prediction_qualified": false
+      },
+      "tip_radius_mm": null,
+      "tip_radius_resolved": false,
+      "roughness_resolved": false,
+      "fe_mapping": {
+        "shape": "symmetric_wedge",
+        "status": "conditional approximation; not a resolved microscope edge",
+        "thickness_mm": 0.22946472656379224,
+        "included_angle_deg": 13.527011718274148,
+        "tip_radius_mm": null,
+        "requires_explicit_tip_radius": true,
+        "requires_confirmed_view_plane": true,
+        "requires_explicit_symmetric_approximation": true
+      }
+    },
+    {
+      "identity": {
+        "id": "e_no2_profile",
+        "label": "E blade No.2",
+        "slide": 3,
+        "image_part": "ppt/media/image7.png",
+        "scale_bar_um": 500,
+        "roi_xyxy": [
+          20,
+          10,
+          263,
+          67
+        ],
+        "gray_thresholds": [
+          0.24,
+          0.32,
+          0.4
+        ],
+        "view_plane": "unconfirmed",
+        "use_state": "unknown"
+      },
+      "embedded_image_sha256": "6b60e51f26eff7cec96c1f8796924cf8b13add236ed751acf000740dfd16768d",
+      "apparent_profile": {
+        "thickness_mm": 0.2307131760603538,
+        "included_angle_deg": 13.533261201261407,
+        "face_angles_deg": [
+          7.213958318591562,
+          6.319302882669845
+        ],
+        "flank_angle_asymmetry_deg": 0.8946554359217167,
+        "bevel_lengths_mm": [
+          0.9724121866254156,
+          0.992412490775725
+        ],
+        "widths_at_distance_from_virtual_apex_mm": {
+          "0.1": 0.02042331730623535,
+          "0.25": 0.061124416944345214,
+          "0.5": 0.11864094651652718,
+          "0.75": 0.17711198801072134
+        }
+      },
+      "scale": {
+        "length_um": 500,
+        "span_pixels": 50,
+        "x_first": 214,
+        "x_last": 263,
+        "um_per_pixel": 10.0,
+        "endpoint_sensitivity_um_per_pixel": [
+          9.615384615384615,
+          10.416666666666666
+        ]
+      },
+      "sensitivity_envelope": {
+        "thickness_mm": [
+          0.19741981447813664,
+          0.26497102150148527
+        ],
+        "included_angle_deg": [
+          11.166334778734436,
+          15.889816343356017
+        ],
+        "flank_angle_asymmetry_deg": [
+          0.0,
+          3.2822647151407716
+        ]
+      },
+      "envelope_kind": "threshold + scale endpoints +/-1px + contour localization +/-1px; NOT statistical CI",
+      "qualification": {
+        "side_view_confirmed": false,
+        "isotropic_pixel_assumption": true,
+        "microscopic_edge_qualified": false,
+        "physical_prediction_qualified": false
+      },
+      "tip_radius_mm": null,
+      "tip_radius_resolved": false,
+      "roughness_resolved": false,
+      "fe_mapping": {
+        "shape": "symmetric_wedge",
+        "status": "conditional approximation; not a resolved microscope edge",
+        "thickness_mm": 0.2307131760603538,
+        "included_angle_deg": 13.533261201261407,
+        "tip_radius_mm": null,
+        "requires_explicit_tip_radius": true,
+        "requires_confirmed_view_plane": true,
+        "requires_explicit_symmetric_approximation": true
+      }
+    },
+    {
+      "identity": {
+        "id": "a_low_profile",
+        "label": "A blade (low performance)",
+        "same_model_group": "A",
+        "experiment_role": "user_reported_experimental_blade_class",
+        "slide": 4,
+        "image_part": "ppt/media/image10.png",
+        "scale_bar_um": 500,
+        "roi_xyxy": [
+          20,
+          10,
+          263,
+          67
+        ],
+        "gray_thresholds": [
+          0.24,
+          0.32,
+          0.4
+        ],
+        "view_plane": "unconfirmed",
+        "use_state": "unknown"
+      },
+      "embedded_image_sha256": "1e7d99faecc36583745be05f3e2b25a0f99daed0d48d1c5f61a968a2a7475189",
+      "apparent_profile": {
+        "thickness_mm": 0.24577088241513723,
+        "included_angle_deg": 13.31684633759535,
+        "face_angles_deg": [
+          6.869187053038023,
+          6.447659284557328
+        ],
+        "flank_angle_asymmetry_deg": 0.4215277684806953,
+        "bevel_lengths_mm": [
+          1.0677720476844712,
+          1.0227704319057491
+        ],
+        "widths_at_distance_from_virtual_apex_mm": {
+          "0.1": 0.012272621087551139,
+          "0.25": 0.059176316049497864,
+          "0.5": 0.11648369431334529,
+          "0.75": 0.17464371215420205
+        }
+      },
+      "scale": {
+        "length_um": 500,
+        "span_pixels": 50,
+        "x_first": 214,
+        "x_last": 263,
+        "um_per_pixel": 10.0,
+        "endpoint_sensitivity_um_per_pixel": [
+          9.615384615384615,
+          10.416666666666666
+        ]
+      },
+      "sensitivity_envelope": {
+        "thickness_mm": [
+          0.21102610177503422,
+          0.2816770698729571
+        ],
+        "included_angle_deg": [
+          11.015013832272897,
+          15.585811675814064
+        ],
+        "flank_angle_asymmetry_deg": [
+          0.0,
+          2.6621296797230207
+        ]
+      },
+      "envelope_kind": "threshold + scale endpoints +/-1px + contour localization +/-1px; NOT statistical CI",
+      "qualification": {
+        "side_view_confirmed": false,
+        "isotropic_pixel_assumption": true,
+        "microscopic_edge_qualified": false,
+        "physical_prediction_qualified": false
+      },
+      "tip_radius_mm": null,
+      "tip_radius_resolved": false,
+      "roughness_resolved": false,
+      "fe_mapping": {
+        "shape": "symmetric_wedge",
+        "status": "conditional approximation; not a resolved microscope edge",
+        "thickness_mm": 0.24577088241513723,
+        "included_angle_deg": 13.31684633759535,
+        "tip_radius_mm": null,
+        "requires_explicit_tip_radius": true,
+        "requires_confirmed_view_plane": true,
+        "requires_explicit_symmetric_approximation": true
+      }
+    },
+    {
+      "identity": {
+        "id": "a_high_profile",
+        "label": "A blade (high performance)",
+        "same_model_group": "A",
+        "experiment_role": "comparison",
+        "slide": 5,
+        "image_part": "ppt/media/image13.png",
+        "scale_bar_um": 500,
+        "roi_xyxy": [
+          20,
+          10,
+          263,
+          67
+        ],
+        "gray_thresholds": [
+          0.24,
+          0.32,
+          0.4
+        ],
+        "view_plane": "unconfirmed",
+        "use_state": "unknown"
+      },
+      "embedded_image_sha256": "732f1dd09cda4aea065d156eb994836128c95ca6d5ddd88d1fc5eb01c9775baf",
+      "apparent_profile": {
+        "thickness_mm": 0.24087983085953632,
+        "included_angle_deg": 13.317378601065737,
+        "face_angles_deg": [
+          6.8060775880461275,
+          6.511301013019611
+        ],
+        "flank_angle_asymmetry_deg": 0.2947765750265168,
+        "bevel_lengths_mm": [
+          1.0468440884998345,
+          1.01684205866365
+        ],
+        "widths_at_distance_from_virtual_apex_mm": {
+          "0.1": 0.02325430132064681,
+          "0.25": 0.058982958721646724,
+          "0.5": 0.11939161338874402,
+          "0.75": 0.17279658511184823
+        }
+      },
+      "scale": {
+        "length_um": 500,
+        "span_pixels": 50,
+        "x_first": 214,
+        "x_last": 263,
+        "um_per_pixel": 10.0,
+        "endpoint_sensitivity_um_per_pixel": [
+          9.615384615384615,
+          10.416666666666666
+        ]
+      },
+      "sensitivity_envelope": {
+        "thickness_mm": [
+          0.20696344098223657,
+          0.2758888366981397
+        ],
+        "included_angle_deg": [
+          11.055571671963621,
+          15.571111812600419
+        ],
+        "flank_angle_asymmetry_deg": [
+          0.0,
+          2.5597841722362813
+        ]
+      },
+      "envelope_kind": "threshold + scale endpoints +/-1px + contour localization +/-1px; NOT statistical CI",
+      "qualification": {
+        "side_view_confirmed": false,
+        "isotropic_pixel_assumption": true,
+        "microscopic_edge_qualified": false,
+        "physical_prediction_qualified": false
+      },
+      "tip_radius_mm": null,
+      "tip_radius_resolved": false,
+      "roughness_resolved": false,
+      "fe_mapping": {
+        "shape": "symmetric_wedge",
+        "status": "conditional approximation; not a resolved microscope edge",
+        "thickness_mm": 0.24087983085953632,
+        "included_angle_deg": 13.317378601065737,
+        "tip_radius_mm": null,
+        "requires_explicit_tip_radius": true,
+        "requires_confirmed_view_plane": true,
+        "requires_explicit_symmetric_approximation": true
+      }
+    }
+  ]
+}

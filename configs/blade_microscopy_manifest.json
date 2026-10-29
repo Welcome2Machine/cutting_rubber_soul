@@ -1,0 +1,13 @@
+{
+  "schema": "softcut-blade-microscopy-manifest/1",
+  "source_sha256": "1b44cde22b7008c09ded49a107c02e8f4628f9527388f7902480064c32e189b7",
+  "source_name": "bladetype.pptx",
+  "notes": "Gray silhouette only. False-color and rendered 3D views lack original height data/calibration metadata. No radius or roughness inferred. A high/low performance labels are supplied observations, not fit targets.",
+  "blades": [
+    {"id":"c_profile","label":"C blade","slide":1,"image_part":"ppt/media/image1.png","scale_bar_um":500,"roi_xyxy":[20,10,263,67],"gray_thresholds":[0.24,0.32,0.40],"view_plane":"unconfirmed","use_state":"unknown"},
+    {"id":"e_no1_profile","label":"E blade No.1","slide":2,"image_part":"ppt/media/image4.png","scale_bar_um":500,"roi_xyxy":[20,10,263,67],"gray_thresholds":[0.24,0.32,0.40],"view_plane":"unconfirmed","use_state":"unknown"},
+    {"id":"e_no2_profile","label":"E blade No.2","slide":3,"image_part":"ppt/media/image7.png","scale_bar_um":500,"roi_xyxy":[20,10,263,67],"gray_thresholds":[0.24,0.32,0.40],"view_plane":"unconfirmed","use_state":"unknown"},
+    {"id":"a_low_profile","label":"A blade (low performance)","same_model_group":"A","experiment_role":"user_reported_experimental_blade_class","slide":4,"image_part":"ppt/media/image10.png","scale_bar_um":500,"roi_xyxy":[20,10,263,67],"gray_thresholds":[0.24,0.32,0.40],"view_plane":"unconfirmed","use_state":"unknown"},
+    {"id":"a_high_profile","label":"A blade (high performance)","same_model_group":"A","experiment_role":"comparison","slide":5,"image_part":"ppt/media/image13.png","scale_bar_um":500,"roi_xyxy":[20,10,263,67],"gray_thresholds":[0.24,0.32,0.40],"view_plane":"unconfirmed","use_state":"unknown"}
+  ]
+}
