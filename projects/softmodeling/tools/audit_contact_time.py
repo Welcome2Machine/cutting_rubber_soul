@@ -93,11 +93,15 @@ def integrate(p, state, deadline):
 
 
 @runtime_entry
-def inspect(directory, seconds, *, runtime=None):
+def inspect(directory, seconds, *, state_start=0, state_stop=None, runtime=None):
     if not np.isfinite(seconds) or not 0 < seconds <= 600: raise ValueError('Audit requires 0 < seconds <= 600')
     directory = Path(directory).resolve(); started = time.monotonic()
     raw = json.loads((directory/'result.json').read_text())
-    report = dict(schema='softcut-independent-contact-time/1', passed=False, audits=[],
+    stop = len(raw['steps']) if state_stop is None else state_stop
+    if not 0 <= state_start < stop <= len(raw['steps']): raise ValueError('Invalid audit state range')
+    report = dict(schema='softcut-independent-contact-time/1', passed=False, chunk_passed=False, audits=[],
+        state_start=state_start, state_stop=stop, total_states=len(raw['steps']),
+        full_path_coverage=(state_start == 0 and stop == len(raw['steps'])),
         result_sha256=digest(directory/'result.json'), source_hashes=sources(),
         audit_source_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         method='geometry_partitioned_GL4_8_16_32_64_then_GK21_on_primary_temporal_chords',
@@ -105,21 +109,23 @@ def inspect(directory, seconds, *, runtime=None):
     try:
         if sources() != raw['source_hashes']: raise ValueError('Numerical producer source differs')
         p = install(driver.problem(raw['config']), raw['settings'].get('integrator', 'midpoint'))
-        for rec in raw['steps']:
+        for index in range(state_start, stop):
+            rec = raw['steps'][index]
             path = directory/rec['state_file']
             if digest(path) != rec['state_sha256']: raise ValueError('State hash differs')
             state = arrays(path); audit = driver.audit(p, state, rec)
             if not audit['accepted_chord_ccd_safe']: raise ValueError('Temporal CCD failed')
             row = integrate(p, state, started+seconds)
-            row.update(local_time_s=rec['local_time_s'], dt_s=p.material_dt,
+            row.update(state_index=index, state_sha256=rec['state_sha256'], local_time_s=rec['local_time_s'], dt_s=p.material_dt,
                 producer_friction_n_mm=rec['energy']['friction_work_n_mm'],
                 producer_blade_work_n_mm=rec['energy']['external_work_n_mm'])
             report['audits'].append(row)
-        report['passed'] = bool(raw['steps']) and all(q['converged'] for q in report['audits'])
+        report['chunk_passed'] = len(report['audits']) == stop-state_start and all(q['converged'] for q in report['audits'])
     except (Exception, TimeoutError) as exc:
         report['error'] = str(exc)
     report['source_unchanged'] = sources() == report['source_hashes']
-    report['passed'] &= report['source_unchanged']
+    report['chunk_passed'] &= report['source_unchanged']
+    report['passed'] = report['chunk_passed'] and report['full_path_coverage']
     report.update(elapsed_s=time.monotonic()-started)
     if report['audits']:
         report['sum_integral'] = {k:sum(q['integral'][k] for q in report['audits']) for k in report['audits'][0]['integral']}
@@ -127,12 +133,50 @@ def inspect(directory, seconds, *, runtime=None):
     return report
 
 
+def combine(directory, paths):
+    """Certify exact full coverage from bounded, independently computed chunks."""
+    directory = Path(directory).resolve()
+    raw = json.loads((directory/'result.json').read_text())
+    result_sha = digest(directory/'result.json'); own_sha = digest(Path(__file__))
+    if raw['source_hashes'] != sources(): raise ValueError('Numerical producer source differs')
+    rows=[]; inputs={}; indices=[]
+    for path in paths:
+        path=Path(path).resolve(); report=json.loads(path.read_text())
+        if (not report.get('chunk_passed') or not report.get('source_unchanged') or
+                report['result_sha256'] != result_sha or report['source_hashes'] != sources() or
+                report['audit_source_sha256'] != own_sha):
+            raise ValueError('Unqualified or differently bound audit chunk')
+        chunk=report['audits']
+        expected=list(range(report['state_start'],report['state_stop']))
+        if [r['state_index'] for r in chunk] != expected or not all(r['converged'] for r in chunk):
+            raise ValueError('Incomplete audit chunk')
+        rows.extend(chunk); indices.extend(expected); inputs[str(path)]=digest(path)
+    if sorted(indices) != list(range(len(raw['steps']))):
+        raise ValueError('Audit coverage has a gap or duplicate state')
+    rows.sort(key=lambda r:r['state_index'])
+    for rec,row in zip(raw['steps'],rows):
+        path=(directory/rec['state_file']).resolve()
+        if path.parent != directory or digest(path) != rec['state_sha256'] or row['state_sha256'] != rec['state_sha256']:
+            raise ValueError('Covered state hash differs')
+    return dict(schema='softcut-independent-contact-time/1',passed=True,chunk_passed=True,
+        full_path_coverage=True,state_start=0,state_stop=len(rows),total_states=len(rows),
+        result_sha256=result_sha,source_hashes=sources(),source_unchanged=True,audit_source_sha256=own_sha,
+        method='exact_coverage_union_of_bounded_independent_contact_audits',chunk_inputs_sha256=inputs,
+        physical_time_convergence_certified=False,uncertainty_is_rigorous_bound=False,audits=rows,
+        sum_integral={k:sum(q['integral'][k] for q in rows) for k in rows[0]['integral']},
+        sum_empirical_error={k:sum(q['empirical_error'][k] for q in rows) for k in rows[0]['empirical_error']})
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__); p.add_argument('directory',type=Path)
     p.add_argument('--out',type=Path,required=True); p.add_argument('--seconds',type=float,default=540.)
+    p.add_argument('--state-start',type=int,default=0);p.add_argument('--state-stop',type=int)
+    p.add_argument('--combine',nargs='+',type=Path,help='Combine fully qualified bounded chunks with exact coverage')
     add_thread_arguments(p); args=p.parse_args()
     if args.out.exists(): raise FileExistsError('Preserve existing audit')
-    result=inspect(args.directory,args.seconds,**thread_arguments(args));write_json(args.out,result)
+    result=(combine(args.directory,args.combine) if args.combine else inspect(args.directory,args.seconds,
+        state_start=args.state_start,state_stop=args.state_stop,**thread_arguments(args)))
+    write_json(args.out,result)
     print(json.dumps({k:v for k,v in result.items() if k not in ('audits','source_hashes','thread_runtime')}),flush=True)
 
 
