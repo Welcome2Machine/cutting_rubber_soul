@@ -73,3 +73,19 @@ def test_endpoint_complete_step_impulse_audit_and_timeout_rolls_back(monkeypatch
     with pytest.raises(TimeoutError): p.step(x, -.015, -.014, time.monotonic()+1)
     for old, new in zip(saved, (p.velocity, p.material_metric, p.history, p.released)):
         np.testing.assert_array_equal(old, new)
+
+
+def test_conditional_parent_cannot_bypass_source_or_completed_window(tmp_path):
+    from tools.dynamic_release import conditional_seed, sources
+    with pytest.raises(ValueError, match='identical numerical source'):
+        conditional_seed(tmp_path, dict(source_hashes={}, source_unchanged=True))
+    with pytest.raises(ValueError, match='incomplete'):
+        conditional_seed(tmp_path, dict(source_hashes=sources(), source_unchanged=True,
+            status='stopped', steps=[]))
+
+
+def test_contact_work_audit_budget_is_bounded_before_reading(tmp_path):
+    from tools.audit_contact_time import inspect
+    for seconds in (0, 601, float('nan')):
+        with pytest.raises(ValueError, match='600'):
+            inspect(tmp_path, seconds, ipc_threads=2, blas_threads=1)

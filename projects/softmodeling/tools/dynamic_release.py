@@ -19,7 +19,7 @@ from prototype.ipc_reference import LoadStepFailure
 from step_control import execute_step, failure_kind, physical_cutback
 from stiff_contact import install as install_integrator, impulse_ledger
 from release_dynamics import (activate, check_energy_gate, instantaneous_friction,
-    contact_velocity, independent_friction_work)
+    contact_velocity, independent_friction_work, DEFECT_KEYS)
 
 
 def sources():
@@ -36,11 +36,46 @@ def arrays(path):
         return {k: z[k].copy() for k in z.files}
 
 
+def conditional_seed(directory, raw):
+    """An explicitly audited same-source conditional parent, never production."""
+    if raw['source_hashes'] != sources() or not raw.get('source_unchanged'):
+        raise ValueError('Conditional parent requires identical numerical source')
+    if raw['status'] != 'completed_conditional_window' or not raw['steps']:
+        raise ValueError('Conditional parent window is incomplete')
+    inputs = {str(directory/'result.json'): digest(directory/'result.json')}
+    for suffix in ('audit', 'contact_work'):
+        path = directory.with_name(directory.name+'.'+suffix+'.json')
+        report = json.loads(path.read_text())
+        if not report['passed'] or report['result_sha256'] != inputs[str(directory/'result.json')]:
+            raise ValueError('Conditional parent needs bound force/history and independent contact-work audits')
+        inputs[str(path)] = digest(path)
+    rec = raw['steps'][-1]; path = directory/rec['state_file']
+    if digest(path) != rec['state_sha256']: raise ValueError('Conditional parent state changed')
+    inputs[str(path)] = digest(path); state = arrays(path)
+    method = raw['settings'].get('integrator', 'midpoint')
+    p = install_integrator(driver.problem(raw['config']), method)
+    checked = driver.audit(p, state, rec)
+    if not checked['accepted_chord_ccd_safe']: raise ValueError('Conditional parent CCD failed')
+    gate = check_energy_gate(p, rec['energy'])
+    for attr in ('velocity', 'history', 'material_metric'):
+        setattr(p, attr, state[attr].copy())
+    info = dict(inputs_sha256=inputs, real_trial_record=rec, physical_energy_gate=gate,
+        seed_kind='audited_conditional_parent', seed_integrator=method,
+        real_trial_depth_mm=float(state['depth_mm']),
+        qualification='same-source conditional branch only; not certified initiation or production continuation',
+        production_history_committed=False)
+    return p, state['positions'].copy(), float(state['depth_mm']), state, info, raw['config']
+
+
 def real_seed(directory, seed_kind='trial', accepted_index=-1):
     if seed_kind not in ('trial', 'accepted'):
         raise ValueError('Choose the undecided real trial or the last accepted state')
     directory = Path(directory).resolve()
     raw = json.loads((directory/'result.json').read_text())
+    if raw.get('schema') == 'softcut-conditional-dynamic-release/1':
+        if seed_kind != 'accepted' or accepted_index != -1:
+            raise ValueError('Conditional parent must explicitly use its last accepted state')
+        return conditional_seed(directory, raw)
     provenance = check_archived_equations(raw, Path(__file__).resolve().parents[1])
     inputs = {str(directory/'result.json'): digest(directory/'result.json')}
     # The parent accepted prefix must already have both independent audits.
@@ -121,14 +156,19 @@ def summarize(result):
         max_candidate_opening_mm=max((r['candidate_opening_mm'] for r in rows), default=0.),
         maximum_speed_mm_s=max((r['maximum_speed_mm_s'] for r in rows), default=0.),
         actual_dt_range_s=[min((r['dt_s'] for r in rows), default=0.), max((r['dt_s'] for r in rows), default=0.)],
+        numerical_ledger_n_mm={k: sum(e[k] for e in energies) for k in DEFECT_KEYS},
+        absolute_numerical_defect_n_mm=sum(sum(abs(e[k]) for k in DEFECT_KEYS) for e in energies),
         initiation_qualified=False, complete_cutting_qualified=False, event_energy_converged=False)
 
 
 @runtime_entry
-def run(directory, out, dt, duration, seconds, *, release=True, attempt_seconds=30., seed_kind='trial', accepted_index=-1, integrator='midpoint', runtime=None):
+def run(directory, out, dt, duration, seconds, *, release=True, attempt_seconds=30., seed_kind='trial', accepted_index=-1, integrator='midpoint', minimum_dt=None, runtime=None):
     if not (np.isfinite([dt, duration, seconds, attempt_seconds]).all() and
             0 < dt <= duration <= .025 and 1 <= seconds <= 3600 and 1 <= attempt_seconds <= 90):
         raise ValueError('Require 0 < dt <= duration <= .025 s and bounded compute budgets')
+    minimum_dt = dt/128 if minimum_dt is None else minimum_dt
+    if not np.isfinite(minimum_dt) or not 0 < minimum_dt <= dt:
+        raise ValueError('Require 0 < minimum_dt <= dt; it is a stopping bound, not an acceptance gate')
     out = Path(out).resolve(); out.mkdir(parents=True, exist_ok=False)
     started = time.monotonic(); deadline = started+seconds
     source = sources()
@@ -142,6 +182,7 @@ def run(directory, out, dt, duration, seconds, *, release=True, attempt_seconds=
         thread_runtime=runtime, config=config, seed=info, seed_sha256=digest(seed_path),
         activation=event, settings=dict(dt_max_s=dt, duration_s=duration, attempt_seconds=attempt_seconds,
             seconds=seconds, release_candidate=release, candidate_seam_index=48, seed_kind=seed_kind, accepted_index=accepted_index, integrator=integrator,
+            minimum_dt_s=minimum_dt,
             blade_policy='continue original speed', physical_mass_unchanged=True),
         steps=[], attempts=[])
     write_json(out/'manifest.json', result)
@@ -164,8 +205,8 @@ def run(directory, out, dt, duration, seconds, *, release=True, attempt_seconds=
                 result['attempts'].append(dict(local_time_s=local_time, target_time_s=target_time,
                     dt_s=(target_depth-depth)/p.loading_rate, failure_kind=kind, error=str(exc),
                     rollback_verified=True, elapsed_s=time.monotonic()-before))
-                if physical_cutback(kind) and next_dt > dt/128:
-                    next_dt /= 2; continue
+                if physical_cutback(kind) and next_dt > minimum_dt:
+                    next_dt = max(minimum_dt, next_dt/2); continue
                 raise
             x, depth, local_time = value, target_depth, target_time
             q = p.cohesive_response(x, p.history)
@@ -221,6 +262,8 @@ def inspect(directory, seconds, *, runtime=None):
             if digest(name) != value: raise ValueError('Original scene input changed')
         previous = arrays(directory/'seed.npz')
         p = driver.problem(raw['config'])
+        if raw['seed'].get('seed_integrator', 'midpoint') != 'midpoint':
+            install_integrator(p, raw['seed']['seed_integrator'])
         driver.audit(p, previous, raw['seed']['real_trial_record'])
         p.velocity = previous['velocity'].copy(); p.history = previous['history'].copy()
         p.material_metric = previous['material_metric'].copy()
@@ -280,13 +323,15 @@ def main():
         help='Explicit conditional real trial or bitwise inherited last committed state')
     parser.add_argument('--accepted-index', type=int, default=-1, help='Explicit earlier audited parent state; no history interpolation')
     parser.add_argument('--integrator', choices=['midpoint', 'endpoint_be'], default='midpoint')
+    parser.add_argument('--minimum-dt', type=float, help='Explicit physical cutback stopping bound; default dt/128')
     parser.add_argument('--attempt-seconds', type=float, default=30.)
     add_thread_arguments(parser); args = parser.parse_args()
     if args.out.exists(): raise FileExistsError('Preserve old evidence; choose a new output')
     if args.mode == 'run':
         report = run(args.directory, args.out, args.dt, args.duration, args.seconds,
             release=not args.no_release_control, attempt_seconds=args.attempt_seconds,
-            seed_kind=args.seed, accepted_index=args.accepted_index, integrator=args.integrator, **thread_arguments(args))
+            seed_kind=args.seed, accepted_index=args.accepted_index, integrator=args.integrator,
+            minimum_dt=args.minimum_dt, **thread_arguments(args))
         # runtime_entry finalizes counters after return.
         write_json(args.out/'result.json', report)
     else:
