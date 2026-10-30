@@ -17,6 +17,7 @@ from .frozen_scene import check_archived_equations, digest
 from .diagnose_finite_increment import restore_failed_seed
 from prototype.ipc_reference import LoadStepFailure
 from step_control import execute_step, failure_kind, physical_cutback
+from stiff_contact import install as install_integrator, impulse_ledger
 from release_dynamics import (activate, check_energy_gate, instantaneous_friction,
     contact_velocity, independent_friction_work)
 
@@ -25,7 +26,7 @@ def sources():
     root = Path(__file__).resolve().parents[1]
     result = driver.hashes()
     for name in ('release_dynamics.py', 'tools/dynamic_release.py', 'tools/frozen_scene.py',
-                 'tools/diagnose_finite_increment.py'):
+                 'tools/diagnose_finite_increment.py', 'stiff_contact.py'):
         result[name] = digest(root/name)
     return result
 
@@ -35,7 +36,7 @@ def arrays(path):
         return {k: z[k].copy() for k in z.files}
 
 
-def real_seed(directory, seed_kind='trial'):
+def real_seed(directory, seed_kind='trial', accepted_index=-1):
     if seed_kind not in ('trial', 'accepted'):
         raise ValueError('Choose the undecided real trial or the last accepted state')
     directory = Path(directory).resolve()
@@ -49,22 +50,28 @@ def real_seed(directory, seed_kind='trial'):
         if not audit['passed'] or audit['result_sha256'] != digest(directory/'result.json'):
             raise ValueError('Parent audit is missing, failed or bound to another result')
         inputs[str(path)] = digest(path)
-    previous_path = directory/raw['steps'][-1]['state_file']
-    if digest(previous_path) != raw['steps'][-1]['state_sha256']:
+    if seed_kind == 'trial' and accepted_index != -1:
+        raise ValueError('Trial seed must use the last accepted anchor')
+    if not -len(raw['steps']) <= accepted_index < len(raw['steps']):
+        raise ValueError('Accepted seed index outside parent path')
+    seed_record = raw['steps'][accepted_index]
+    previous_path = directory/seed_record['state_file']
+    if digest(previous_path) != seed_record['state_sha256']:
         raise ValueError('Parent last accepted state hash differs')
     old = arrays(previous_path)
-    trial = arrays(directory/'failed_trial.npz')
-    for a, b in (('previous_positions', 'positions'), ('previous_velocity', 'velocity'),
-                 ('previous_material_metric', 'material_metric'), ('previous_history', 'history')):
-        np.testing.assert_array_equal(trial[a], old[b])
-    np.testing.assert_array_equal(trial['released'], old['released'])
-    for path in (previous_path, directory/'failed_trial.npz'):
-        inputs[str(path)] = digest(path)
+    inputs[str(previous_path)] = digest(previous_path)
+    if accepted_index == -1:
+        trial = arrays(directory/'failed_trial.npz')
+        for a, b in (('previous_positions', 'positions'), ('previous_velocity', 'velocity'),
+                     ('previous_material_metric', 'material_metric'), ('previous_history', 'history')):
+            np.testing.assert_array_equal(trial[a], old[b])
+        np.testing.assert_array_equal(trial['released'], old['released'])
+        inputs[str(directory/'failed_trial.npz')] = digest(directory/'failed_trial.npz')
     p = driver.problem(raw['config'])
     if seed_kind == 'trial':
         x, depth = restore_failed_seed(p, trial)
     else:
-        driver.audit(p, old, raw['steps'][-1])
+        driver.audit(p, old, seed_record)
         x, depth = old['positions'].copy(), float(old['depth_mm'])
     _, g, _, _ = p.evaluate(x, p.lag(x), tangent=False)
     p.update_constraint_free(x, g)
@@ -93,7 +100,7 @@ def real_seed(directory, seed_kind='trial'):
         incoming_average_friction_norm_n=float(np.sqrt(2)*np.linalg.norm(incoming)),
         endpoint_instantaneous_friction_norm_n=float(np.sqrt(2)*np.linalg.norm(instant)),
         interval_average_to_instantaneous_difference_n=float(np.sqrt(2)*np.linalg.norm(incoming-instant)),
-        seed_kind=seed_kind,
+        seed_kind=seed_kind, accepted_index=accepted_index, seed_integrator='midpoint',
         qualification=('conditional real trial; finite-increment decision still unknown' if seed_kind == 'trial'
             else 'committed real state; subsequent candidate activation is conditional, not certified initiation'),
         production_history_committed=False)
@@ -118,22 +125,23 @@ def summarize(result):
 
 
 @runtime_entry
-def run(directory, out, dt, duration, seconds, *, release=True, attempt_seconds=30., seed_kind='trial', runtime=None):
+def run(directory, out, dt, duration, seconds, *, release=True, attempt_seconds=30., seed_kind='trial', accepted_index=-1, integrator='midpoint', runtime=None):
     if not (np.isfinite([dt, duration, seconds, attempt_seconds]).all() and
             0 < dt <= duration <= .025 and 1 <= seconds <= 3600 and 1 <= attempt_seconds <= 90):
         raise ValueError('Require 0 < dt <= duration <= .025 s and bounded compute budgets')
     out = Path(out).resolve(); out.mkdir(parents=True, exist_ok=False)
     started = time.monotonic(); deadline = started+seconds
     source = sources()
-    p, x, depth, seed, info, config = real_seed(directory, seed_kind)
+    p, x, depth, seed, info, config = real_seed(directory, seed_kind, accepted_index)
     seed_path = out/'seed.npz'; np.savez_compressed(seed_path, **seed)
     original_released = p.released.copy()
     event = activate(p, x, [48] if release else [])
+    install_integrator(p, integrator)
     result = dict(schema='softcut-conditional-dynamic-release/1', status='running',
         source_hashes=source, execution_identity=driver.execution_identity(), interpreter=sys.executable,
         thread_runtime=runtime, config=config, seed=info, seed_sha256=digest(seed_path),
         activation=event, settings=dict(dt_max_s=dt, duration_s=duration, attempt_seconds=attempt_seconds,
-            seconds=seconds, release_candidate=release, candidate_seam_index=48, seed_kind=seed_kind,
+            seconds=seconds, release_candidate=release, candidate_seam_index=48, seed_kind=seed_kind, accepted_index=accepted_index, integrator=integrator,
             blade_policy='continue original speed', physical_mass_unchanged=True),
         steps=[], attempts=[])
     write_json(out/'manifest.json', result)
@@ -165,7 +173,9 @@ def run(directory, out, dt, duration, seconds, *, release=True, attempt_seconds=
                 candidate_opening_mm=float(2*(x[p.seam[48], 0]-p.config.drop_s_mm)),
                 candidate_dissipation_n_mm=float(p.seam_area[48]*q['dissipated'][48]*p.released[48]),
                 maximum_speed_mm_s=float(np.linalg.norm(p.velocity[:p.n], axis=1).max()))
+            impulse_fields, rec['impulse'] = impulse_ledger(p, x)
             state = driver.snapshot(p, x, old_released, depth)
+            state.update(impulse_fields)
             name = f'state_{len(result["steps"]):05d}.npz'
             np.savez_compressed(out/name, **state)
             rec.update(state_file=name, state_sha256=digest(out/name))
@@ -217,6 +227,7 @@ def inspect(directory, seconds, *, runtime=None):
         event = activate(p, previous['positions'], [48] if raw['settings']['release_candidate'] else [])
         np.testing.assert_allclose(event['friction_topology_force_jump_n'],
             raw['activation']['friction_topology_force_jump_n'], atol=1e-10)
+        install_integrator(p, raw['settings'].get('integrator', 'midpoint'))
         previous['released'] = p.released.copy()
         for rec in raw['steps']:
             if time.monotonic() >= deadline: raise TimeoutError('Independent audit budget')
@@ -235,6 +246,11 @@ def inspect(directory, seconds, *, runtime=None):
             audit = driver.audit(p, state, rec)
             if not audit['accepted_chord_ccd_safe']: raise ValueError('Temporal chord CCD failed')
             check_energy_gate(p, rec['energy'])
+            impulse_fields, impulse = impulse_ledger(p, state['positions'])
+            if 'impulse' in rec:
+                for key, value in impulse_fields.items():
+                    np.testing.assert_allclose(value, state[key], rtol=1e-10, atol=1e-14)
+            audit['impulse'] = impulse
             quadrature = independent_friction_work(p, state['previous_positions'], state['positions'],
                 state['increment'], deadline)
             audit.update(local_time_s=rec['local_time_s'], friction=quadrature,
@@ -262,13 +278,15 @@ def main():
     parser.add_argument('--no-release-control', action='store_true')
     parser.add_argument('--seed', choices=['trial', 'accepted'], default='trial',
         help='Explicit conditional real trial or bitwise inherited last committed state')
+    parser.add_argument('--accepted-index', type=int, default=-1, help='Explicit earlier audited parent state; no history interpolation')
+    parser.add_argument('--integrator', choices=['midpoint', 'endpoint_be'], default='midpoint')
     parser.add_argument('--attempt-seconds', type=float, default=30.)
     add_thread_arguments(parser); args = parser.parse_args()
     if args.out.exists(): raise FileExistsError('Preserve old evidence; choose a new output')
     if args.mode == 'run':
         report = run(args.directory, args.out, args.dt, args.duration, args.seconds,
             release=not args.no_release_control, attempt_seconds=args.attempt_seconds,
-            seed_kind=args.seed, **thread_arguments(args))
+            seed_kind=args.seed, accepted_index=args.accepted_index, integrator=args.integrator, **thread_arguments(args))
         # runtime_entry finalizes counters after return.
         write_json(args.out/'result.json', report)
     else:
