@@ -23,7 +23,11 @@ class ReusedLUSolverTests(unittest.TestCase):
         self.assertAlmostEqual(stats['true_residual'], actual, delta=1e-15)
         self.assertLessEqual(actual, max(1e-10*np.linalg.norm(b), 1e-12))
 
-    def test_changed_matrix_and_shift_use_current_system(self):
+    @patch('prototype.linear_solve.time.perf_counter', return_value=0.)
+    def test_changed_matrix_and_shift_use_current_system(self, _clock):
+        # This is a current-matrix accuracy/reuse test, not a scheduler timing
+        # test. CPU preemption may legitimately trigger the 50 ms fallback;
+        # the separate controlled-clock test covers that budget behavior.
         x, initial = self.solver.solve(self.A, self.b)
         self.assertEqual(initial['method'], 'direct_lu')
         self.assertEqual(initial['iterations'], 0)
