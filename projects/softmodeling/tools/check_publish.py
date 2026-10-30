@@ -4,13 +4,17 @@ This is a file/type and history check, not a scientific validation or a general
 secret scanner. Review Markdown and source changes before publication as well.
 """
 import argparse
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 import subprocess
 
 
 CONFIGS={'prototype/intact_2mm_baseline.json','prototype/initiation_config.json','prototype/ipc_baseline.json',
          'reproductions/dammass2023/acceptance.json','configs/materials.json','configs/blades.json'}
 ROOT_FILES={'.gitignore','.gitattributes','requirements.txt','run_support.py'}
+# Explicit reviewed research assets; arbitrary JSON/data remains forbidden.
+CONFIGS.update({'configs/zero_gap_finite_increment.json', 'configs/fracture_mixed.json', 'configs/fracture_network_regularized.json', 'configs/zero_gap_virtual_cover_budget60_time2.json', 'configs/zero_gap_virtual_chord_cover.json', 'configs/fracture_network.json', 'configs/zero_gap_virtual_geometry.json', 'configs/zero_gap_dynamic_energy.json', 'configs/fracture_labels.example.json', 'configs/zero_gap_virtual_cover_budget60.json', 'configs/independent_fracture_test_plan.json', 'configs/zero_gap_discrete_work.json', 'configs/zero_gap_dynamic_control.json', 'configs/zero_gap_virtual_lagged_newton.json', 'configs/fracture_network_finite_faces.json', 'configs/zero_gap_virtual_constrained.json', 'configs/fracture_demo.json', 'configs/blades.json', 'configs/zero_gap_virtual_precise_ccd.json', 'configs/zero_gap_virtual_continuation.json', 'configs/finite_increment_constrained_control.json', 'configs/materials.json'})
+ROOT_FILES.update({'virtual_path_geometry.py', 'numerical_runtime.py', 'virtual_friction_work.py', 'release_dynamics.py', 'virtual_path_probe.py', 'stiff_contact.py', 'virtual_constrained_root.py', 'step_control.py', 'face_cohesive_quadrature.py', 'endpoint_friction.py'})
+ROOT=Path(__file__).resolve().parents[1]
 CODE_ROOTS={'prototype','mechanics','reproductions','tests','tools','workbench'}
 DOC_ROOTS=CODE_ROOTS|{'docs','references','configs'}
 WEB_ASSETS={'workbench/static/index.html','workbench/static/app.js','workbench/static/app.css'}
@@ -27,7 +31,7 @@ def allowed(path):
 
 
 def git(*args):
-    return subprocess.check_output(['git',*args])
+    return subprocess.check_output(['git',*args],cwd=ROOT)
 
 
 def main():
@@ -36,9 +40,12 @@ def main():
     parser.add_argument('--staged',action='store_true',help='Check the exact proposed index before committing')
     args=parser.parse_args()
     commits=[] if args.staged else git('rev-list',args.ref).decode('ascii').splitlines()
+    prefix=git('rev-parse','--show-prefix').decode().strip().rstrip('/')
     checked=set();violations=[];total=0
     for commit in (['INDEX'] if args.staged else commits):
-        entries=git('ls-files','--stage','-z') if args.staged else git('ls-tree','-rz','--full-tree',commit)
+        # Inspect this subproject's historical tree in an integration monorepo.
+        tree=commit+':'+prefix if prefix else commit
+        entries=git('ls-files','--stage','-z') if args.staged else git('ls-tree','-rz','--full-tree',tree)
         for entry in entries.split(b'\0'):
             if not entry:continue
             metadata,rawpath=entry.split(b'\t',1)

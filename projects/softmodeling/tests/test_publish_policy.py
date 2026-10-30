@@ -10,6 +10,8 @@ class PublicationPolicyTests(unittest.TestCase):
                      'workbench/config.py', 'workbench/static/index.html',
                      'workbench/static/app.js', 'workbench/static/app.css',
                      'configs/materials.json', 'configs/blades.json',
+                     'configs/finite_increment_constrained_control.json',
+                     'stiff_contact.py', 'endpoint_friction.py', 'release_dynamics.py',
                      'docs/workbench.md', 'references/README.md',
                      'reproductions/dammass2023/acceptance.json'):
             with self.subTest(path=path):
