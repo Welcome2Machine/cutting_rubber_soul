@@ -60,3 +60,18 @@ Maxwell 加载入口为 `python -m tools.run_material_candidate`，参数与串�
 不改变本目录默认生产算法。约束冲量、端点BE数值损失及端点摩擦时间功差单列；
 `tools.dynamic_release`保存实际dt、状态/源码哈希并以原动力学/CCD/历史门验收。
 实际局部算例尚未给出2 mm、起裂选择或网格资格，见方法第27节。
+
+### 第六轮实际几何连续内聚控制
+
+`face_cut.py`定义零间隙P1面约束、固定面求积/历史、暴露接触边及一致面力/切线；
+`tools.face_events`区分算法平均牵引与松弛后瞬时端点牵引。
+`python -m tools.run_endpoint_face_route run configs/face_intact_control.json --out NEW_DIRECTORY --seconds 3000 --ipc-threads 2 --blas-threads 1 --physical-core-affinity`
+仅在已获授权的计算节点作业中执行，脚本内用srun。将配置换为
+`configs/face_precrack_control.json`为独立0.5 mm预裂控制；不是完整材料起裂预测。
+`audit DIRECTORY --out NEW_AUDIT.json --seconds 540`采用相同入口，独立重建动量、
+历史/几何身份、CCD和接触路径功。所有输出目录必须新建，禁止覆盖或移植历史。
+
+旧`tools.run_fracture_route`仍是平均连接力事件的数值对照；它在实际状态中会漏过
+瞬时强度越界，不能作为默认连续起裂方案。原FFM继续由`tools.run_zero_gap_cut`
+维护，两条物理假设不等价。共同物性、质量、摩擦和速度保持；进度、真实裂口、
+刀具进入、完整事件及能量/时间/网格资格分别列示，见当前研究状态与方法第28节。

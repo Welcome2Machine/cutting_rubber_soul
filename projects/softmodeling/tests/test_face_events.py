@@ -63,3 +63,13 @@ def test_numpy_depth_cutback_report_is_serializable_without_summing_state_energy
     assert saved['summary']['terminal_kinetic_energy_n_mm']==.2
     assert 'kinetic_energy_n_mm' not in saved['summary']['ledger_n_mm']
     assert saved['summary']['ledger_n_mm']['external_work_n_mm']==2.
+
+
+def test_precrack_tip_strength_uses_only_the_remaining_intact_face():
+    p=problem(config(.5));tip=int(np.flatnonzero(p.rest[p.seam,1]==4.5)[0])
+    # Uniform traction on the remaining 0.1 mm x 20 mm P1 face supplies
+    # half its resultant to the tip. The precracked neighbour supplies zero.
+    assert outgoing_force(p)[tip]==pytest.approx(.2*.1*20/2)
+    assert outgoing_force(p)[tip-1]==pytest.approx(.2*.1*20)
+    assert p.seam_area[tip]*p.strength==pytest.approx(.2*.1*20)
+    assert p.rule['face_area_mm2'][tip-1]==pytest.approx(2.)
