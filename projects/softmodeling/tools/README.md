@@ -245,3 +245,8 @@ python -m tools.dynamic_release audit <条件结果目录> --out <新审查.json
 `tools.audit_contact_time <目录> --out <新报告> --seconds 540`逐态核查完整CCD与
 几何分区接触功、法向/摩擦冲量。GL4/8/16/32/64未解析时使用向量GK21；经验
 误差不作严格上界。输出同时保留算法功与弦积分的差，不能用求积通过代替时间收敛。
+
+较长条件路径可用`--state-start I --state-stop J`分段审查，每次仍限600秒。
+分段仅标`chunk_passed`，`passed`保持false；`--combine <分段JSON> ...`核对结果/
+源码/审查代码/逐态SHA256、精确完整覆盖和每段收敛后，才生成完整接触审查。
+遗漏、重复、状态变化或不合格片段一律拒绝。完整积分审查仍不授予物理时间资格。
