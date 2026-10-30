@@ -49,3 +49,8 @@ Maxwell 加载入口为 `python -m tools.run_material_candidate`，参数与串�
 旧方程诊断，不能用于物理续算。`../numerical_runtime.py`管理显式IPC/BLAS线程及记录。
 `../face_cohesive_quadrature.py`为尚未接入生产释放拓扑的面级P1独立验证核；不将它的
 规定开口场验证称为完整切割网格收敛。方法与限制见合并仓库断裂说明第24节。
+
+第四轮`../release_dynamics.py`是独立过程组织与核查层：真实状态/速度的摩擦交接、
+零开口条件激活及不同时间求积；所有物理方程复用本表中的`energy_cut.py`。
+`tools.dynamic_release run|audit`显式选择已接受或未决真实初值；候选条件激活不构成
+新的起裂判据，也不更新生产路径。定义与限定见合并方法第26节。

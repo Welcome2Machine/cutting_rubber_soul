@@ -69,3 +69,35 @@ def test_conditional_control_keeps_real_inertia_and_failed_step_history(monkeypa
     for a,b in zip(saved,(p.velocity,p.history,p.material_metric,p.released)):
         np.testing.assert_array_equal(a,b)
     assert p.material_dt == pytest.approx(1e-6/p.loading_rate)
+
+
+def test_native_midpoint_friction_energy_identity_can_hide_spurious_reversal():
+    """Known failure mechanism, not a claim that the production method is fixed.
+
+    A frozen native contact reduced to one dissipative velocity coordinate has
+    m*v_dot=-F(v), with v*F(v)>0. Its continuous solution cannot cross zero.
+    The original theta=.5 rule can reverse v while closing its energy identity.
+    """
+    from scipy.optimize import brentq
+    from prototype.ipc_reference import IPCProblem
+    p=problem(candidate());x=p.rest.copy()
+    x[p.n:]=p.prescribed_blade_positions(-.0014);x[p.n:,0]+=.003
+    lag=IPCProblem.lag(p,x)
+    potential=p.ipc.FrictionPotential(p.friction_velocity_epsilon)
+    direction=np.zeros_like(x);direction[:p.n,0]=1.
+    direction[p.mesh.bottom_nodes]=0.
+    d=direction[p.surface]
+    mass=float(p.mass_dof@(direction.ravel()**2))
+    def drag(v):return float(potential.gradient(lag,p.cmesh,v*d)@d.ravel())
+    v0=1.;assert drag(.5)>0
+    h=10*mass*v0/drag(.5)
+    residual=lambda v1:mass*(v1-v0)/h+drag((v0+v1)/2)
+    v1=brentq(residual,-v0,0.,xtol=1e-15,rtol=1e-14)
+    assert v1<-.9*v0
+    assert abs(residual(v1))<1e-8  # stricter than the unchanged physical force gate
+    average=(v0+v1)/2
+    kinetic=.5*mass*(v1*v1-v0*v0)
+    work=h*drag(average)*average
+    assert work>=0 and abs(kinetic+work)<1e-12
+    # The contradiction is temporal accuracy, not a force root or an energy gap.
+    for speed in (.01,.1,1.): assert speed*drag(speed)>0

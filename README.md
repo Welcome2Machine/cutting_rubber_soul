@@ -7,6 +7,8 @@
 远程服务器在 `1029` 目录继续开发时，先读[远程 agent 接管说明](docs/remote_agent_handoff_20261029.md)。
 其中包含正确分支、环境与数据边界、当前失败现场、运行命令及验证顺序。
 
+最新服务器研究为[真实状态动态释放过程](docs/fracture_implementation.md#26-第四轮从真实状态出发的条件动态释放定义在实现之前)。摩擦交接、真实惯性及单次Gc记账已实现并完成局部审查，但刚性中点摩擦和原始力的时间收敛仍未通过；生产路径仍止于约1.211 mm。详见[研究状态](projects/softmodeling/docs/research_status.md)和本地[第四轮证据](runs/server_1030_round4/index.html)，不把条件局部开口视为2 mm切割完成。
+
 双击 `Launch.cmd`，或在当前目录执行：
 
 ```powershell

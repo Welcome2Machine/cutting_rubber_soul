@@ -215,3 +215,24 @@ python -m tools.audit_zero_gap_cut ../../runs/<已有目录> --output ../../runs
 
 旧现场诊断明确标为`equation_compatible_diagnostic_only`，核对Git生产源、输入、
 原物理方程、种子增量和冻结历史；它不能绕过物理续算的精确源码门。生成结果留新目录。
+
+## 真实状态的条件动态释放
+
+`dynamic_release.py`只用于已审查父现场的独立候选过程，不是生产续算或新的起裂规则。
+父目录需要原`result.json`、失败试步、最后接受态，以及绑定相同result哈希的
+`.path_audit.json`和`.finite_audit.json`侧车。`--seed accepted`精确继承最后已接受态；
+`--seed trial`使用重新核查的未决真实试步；两组输出不得拼接或混作同一初值。
+候选48条件激活后，原惯性/Maxwell/已有损伤/刀速均保持，不再选择其他新候选。
+`--no-release-control`仅保持48的连接，**不是关闭损伤**。所有输出必须使用新目录。
+
+```bash
+# 在计算节点执行；服务器通过本站sbatch --rsc分配并由脚本内srun启动。
+python -m tools.dynamic_release run <父现场> --out <新目录> --seed accepted --dt 6.25e-8 --duration 5e-5 --seconds 2400 --ipc-threads 2 --blas-threads 1 --physical-core-affinity
+python -m tools.dynamic_release audit <条件结果目录> --out <新审查.json> --seconds 540 --ipc-threads 2 --blas-threads 1 --physical-core-affinity
+```
+
+加载≤3600 s、审查≤600 s；失败按既有计算/物理类别处理，未知保存停止，只有真实
+非线性或能量分辨率失败回退dt。程序记录实际dt、完整分账、状态/源哈希和运行身份。
+内置独立GL3/7/15给出接触时间积分的经验误差；未收敛不得用其数值认证。第四轮
+另以已有`virtual_work_audit.audit_work`的几何分区GL8/16/32审查同一真实接受弦，
+它与生产中点摩擦不同；积分收敛也不等于整个动态轨迹对dt收敛。
