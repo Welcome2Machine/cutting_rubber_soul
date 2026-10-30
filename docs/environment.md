@@ -266,3 +266,30 @@ POSIX 虚拟环境的 Python 通常是指向系统解释器的符号链接。整
 仿真工作台选用独立本机端口，并记录会话 token，避免误连原库的 8765 服务。关闭桌面工作台不关闭独立 FE 服务。FE 内部的运行/停止/预算继续由原工作台管理，旧队列不会自动恢复。
 
 启动工具写 UTC 机器时间戳以保持可排序；阅读本地报告时以 JST（UTC+9）换算。无需公网、上传或远程服务。
+
+## 2026-10-30 第六轮现场资源复核
+
+本轮初查HEAD为9a5c9ec、工作区干净、本人队列空；先fetch任务分支并只cherry-pick
+任务文档为037f300。原先所有结果和服务器研究分支保留。初始module、spartition、
+qgroup与本人队列快照在`runs/server_1030_round6/cluster_initial.txt`，此快照确实
+早于本轮计算。队列为gr10578b，Rstd/Rmax112；本任务仍服从更小的64物理核、
+64计算线程、128GB及4小时并集/256物理核时上限，不以组队列上限替代任务上限。
+
+本轮核读[本站官方资源说明](https://web.kudpc.kyoto-u.ac.jp/manual/en/run/resource)：
+SysB每核4571MiB，m可能抬高c；明确申请p=1:t=2:c=2:m=8G，完整兼容回归为4核8GB。
+实际计算节点112物理核/224逻辑CPU，2核作业NumCPUs=4，scontrol的TRES为cpu=4,mem=8G；
+最终结合sacct ReqTRES/AllocTRES、物理拓扑、亲和性核账，不能仅从AllocCPUS取物理核数。
+所有程序由sbatch→srun执行，IPC2/BLAS1，物理核亲和性；完整测试容纳旧默认嵌套池。
+运行环境未更换，实测spsolve走SuperLU.gssv，useUmfpack.u=False；BLAS线程不代表
+稀疏分解线程。版本、解释器与实际池记录在environment.json及各路径manifest中。
+
+统一jobs.json与原子allocation start/end包含诊断、加载、独立审查、回归和交付作业。
+加载内部最大3000s，外层3300s、Slurm3330s，无requeue；审查内部540s、外层580s。
+早期审查脚本的Slurm收尾限为610s，虽实际审查均远低于585s，仍不满足将外层
+解释为Slurm硬限的严格要求；发现后将所有后续审查Slurm硬限收紧到585s，保留
+原记录，不回写旧申请。全部实际持续时间按统一账本报告，不能据此增加预算。
+
+本轮未重做1/2/4/8/16线程同工作量加速基准；沿用之前已实测有效IPC2/BLAS1，
+没有新的单任务加速倍数。独立算例的墙钟重叠只作为吞吐并行度，不当作串行对照加速。
+峰值RSS取进程树1秒采样及sacct步骤采样，二者不保证捕获精确瞬时峰值；8GB申请
+保留必要余量，不用过去4GB的采样RSS为再次减配辩护。

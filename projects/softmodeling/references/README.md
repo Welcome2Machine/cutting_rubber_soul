@@ -231,3 +231,19 @@ Fz专项追加核查：R04正式版元数据与检索正文、[2025作者预印�
 
 - Doitrand、Martin、Leguillon（2020），*Numerical implementation of the coupled criterion: Matched asymptotic and full finite element approaches*，[出版入口](https://www.sciencedirect.com/science/article/pii/S0168874X19303002)，DOI 10.1016/j.finel.2019.103344。核查出版摘要的完整FE前后问题路线；未取得全文，不虚构其网格门槛。当前CC/CZM组合与原文弹性示例不同。
 - Herrera-Garrido、Mantič、Leguillon（2025），*Application of the coupled criterion to interface crack growth in the end-notched flexure test considering friction between the crack faces*，[出版全文](https://link.springer.com/article/10.1007/s10704-025-00866-y)，DOI 10.1007/s10704-025-00866-y。核读第2.2、3节：固定边界的释放储能须扣摩擦功，不同裂面摩擦转变假设须区分。本项目冻结Maxwell历史/直线虚拟摩擦路径/动态CZM是自行提出的扩展，尚无原文定理保证。
+
+### 2026-10-30 第六轮：释放路线的适用性复核
+
+以下为本轮实际核读范围，补充而不抹去上面的历史阅读状态；未安装作者环境、
+未运行作者算例，也没有把论文参数作为本批橡胶的实测输入。
+
+| 来源 | 核读范围与本工程边界 |
+|---|---|
+| Moreno-Mateos–Steinmann，R04 [正式版](https://www.nature.com/articles/s41524-025-01869-y) | 正式开放PDF方法约10–14页：Smith–Ferrante界面、损伤历史、接触与摩擦、FEniCSx P1、伪时间自适应和式31的界面黏性正则项。其伪时间/正则化与切割曲线标定不等于真实质量动态释放；本轮不移植η_reg或实验拟合。正式PDF留本轮证据目录。 |
+| Herrera-Garrido等 [全文](https://link.springer.com/article/10.1007/s10704-025-00866-y) | 第2.2节式7–17及NM1/NM2：固定加载释放过程中的摩擦、历史和动能假设需分别定义。NM2预载后解开连接；其ENF线性情形的近似一致性不能证明本项目大变形Maxwell直线虚拟路径。 |
+| Collins-Craft等2022 [作者冲击代码](https://github.com/nickcollins-craft/On-the-formulation-and-implementation-of-extrinsic-cohesive-zone-models-with-contact/blob/main/Python/spring_czm-dynamic_with_impacts.py) | 重新核读自由飞行冲量、LCP接触分支、内聚冲量及速度/位置更新；README为Python3.8、Siconos4.4环境。HAL正文仍未取得；不声称完整原文复现。 |
+| 混合模式作者实现 [release分支](https://github.com/nickcollins-craft/mixed-mode-i-and-mode-ii-extrinsic-cohesive-zone-models-with-contact-and-friction/tree/release) | 核查README、LICENSE.txt及czmlaw_I_II.py的双侧面应力/全求积点插入条件，实际内聚通过外部LCP处理，假内聚切线为零。Apache2.0；Python3.12、Siconos4.5、Akantu5.0.7.post1，后续需独立环境。这里的面级P1核不是该混合模式算法的移植。 |
+| Convergent IPC [作者稿](https://arxiv.org/html/2307.15908v1) | 第8.1–8.2节：减小激活距离会使势更尖锐，时间算法可引入压力振荡。当前已有P1/improved-max；固定现场参数扰动只是因果探针，不能证明改变参数后的整条轨迹有效。 |
+| Larionov等 [作者稿v3](https://arxiv.org/html/2211.10618v3) | 全隐式摩擦式6、12及IV-E式21–23的完整力分裂对比。当前已耦合完整动量；软约束方法不自动给出严格CCD或本项目能量资格。 |
+| Acary–Collins-Craft [开放正式PDF](https://jtcam.episciences.org/15960/pdf) | 第2.1节及3.2节式56–57：线性黏弹动力学M、K、C与接触冲量、加权速度、Frémond冲击律整体定义。不能仅替换时间积分器名称就继承其能量性质；本项目有限应变Maxwell势和大滑移不属于该线性证明。 |
+| Kamarei等 [作者稿v1](https://arxiv.org/html/2506.16479v1) | 第2.2、3.2.3、3.4节：本构、强度、断裂能独立约束，黏弹总撕裂能与平衡储能驱动的区别。没有本批材料参数；该相场路线也未自动包含刀具摩擦。 |

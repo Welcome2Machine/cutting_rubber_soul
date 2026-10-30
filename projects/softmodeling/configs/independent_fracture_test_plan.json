@@ -131,7 +131,11 @@
         "discriminates": "whether a finite nonlocal length is identifiable across sizes; report only bounds if not identifiable"
       }
     ],
-    "forbidden_identification_inputs": ["cutting_force", "57deg_uncracked_2mm", "numerical_energy_residual"],
+    "forbidden_identification_inputs": [
+      "cutting_force",
+      "57deg_uncracked_2mm",
+      "numerical_energy_residual"
+    ],
     "measured_evidence": []
   },
   "data_template": {
@@ -194,5 +198,41 @@
       "additional_planned_specimens": 126,
       "note": "Complete all test groups if pilot supports proceeding; record design amendments before viewing cutting holdouts."
     }
-  ]
+  ],
+  "round6_minimum_execution_protocol": {
+    "status": "planned_not_measured",
+    "new_specimens_added": 0,
+    "scope": "Executable priority subset of the existing counts; no new measurements or calibration performed.",
+    "first_batch": [
+      "uniaxial: 3 rates x 5 fresh specimens",
+      "relaxation: 3 stretch levels x 3 fresh specimens",
+      "pure_shear_notched_rate and matched planar_unnotched: 3 rates x 5 each",
+      "blade_sliding_pressure_speed: 3 loads x 3 speeds x 3 fresh patches"
+    ],
+    "uniaxial_strain_range": "DIC from lambda=1 through rupture for strength; fit nondamaging bulk subset only after cyclic pilot. Pilot lambda=1.1,1.3,1.6 is a design, not an observed safe range.",
+    "conditioning": "Same batch, 23 +/- 1 C; record dwell, preconditioning and blade reuse/wear. Use fresh specimens where history equivalence cannot be demonstrated.",
+    "friction_normal_loads": "Pilot 0.5, 2, 5 N; confirm measurable stable contact and instrument range before preregistering. Measure actual contact area/pressure; do not convert imposed displacement to pressure.",
+    "friction_speeds_mm_s": [
+      0.02,
+      0.2,
+      2.0
+    ],
+    "energy_reduction": "One projected reference plane B0*da0; obtain recoverable bulk work from matched unnotched loading/unloading/relaxation. Report measured total tear energy separately from candidate intrinsic Gc and independently estimated volume loss; unresolved separation gives bounds, not Gc identification.",
+    "bandwidth": "Measure instrument transfer function/time synchronization; sample at >=10 times the highest resolved physical frequency. If event bandwidth exceeds measurement capability, mark it unresolved rather than select smoothing to match FE.",
+    "holdouts": "Reserve original notch-radius/size and mixed-mode groups; cutting force and 57-degree uncracked observations remain excluded from identification.",
+    "required_raw_columns": [
+      "specimen_id",
+      "batch_id",
+      "temperature",
+      "time",
+      "reference_geometry",
+      "load",
+      "local_deformation",
+      "crack_length_interval",
+      "instrument_calibration",
+      "conditioning",
+      "raw_sha256"
+    ],
+    "measured_evidence": []
+  }
 }
