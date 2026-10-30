@@ -17,7 +17,7 @@ from .frozen_scene import check_archived_equations, digest
 from .diagnose_finite_increment import restore_failed_seed
 from prototype.ipc_reference import LoadStepFailure
 from step_control import execute_step, failure_kind, physical_cutback
-from stiff_contact import install as install_integrator, impulse_ledger
+from stiff_contact import install as install_integrator, momentum_ledger as impulse_ledger
 from release_dynamics import (activate, check_energy_gate, instantaneous_friction,
     contact_velocity, independent_friction_work, DEFECT_KEYS)
 
@@ -26,7 +26,7 @@ def sources():
     root = Path(__file__).resolve().parents[1]
     result = driver.hashes()
     for name in ('release_dynamics.py', 'tools/dynamic_release.py', 'tools/frozen_scene.py',
-                 'tools/diagnose_finite_increment.py', 'stiff_contact.py'):
+                 'tools/diagnose_finite_increment.py', 'stiff_contact.py', 'endpoint_friction.py'):
         result[name] = digest(root/name)
     return result
 
@@ -156,8 +156,8 @@ def summarize(result):
         max_candidate_opening_mm=max((r['candidate_opening_mm'] for r in rows), default=0.),
         maximum_speed_mm_s=max((r['maximum_speed_mm_s'] for r in rows), default=0.),
         actual_dt_range_s=[min((r['dt_s'] for r in rows), default=0.), max((r['dt_s'] for r in rows), default=0.)],
-        numerical_ledger_n_mm={k: sum(e[k] for e in energies) for k in DEFECT_KEYS},
-        absolute_numerical_defect_n_mm=sum(sum(abs(e[k]) for k in DEFECT_KEYS) for e in energies),
+        numerical_ledger_n_mm={k: sum(e.get(k, 0.) for e in energies) for k in (*DEFECT_KEYS, 'friction_time_defect_n_mm')},
+        absolute_numerical_defect_n_mm=sum(sum(abs(e.get(k, 0.)) for k in (*DEFECT_KEYS, 'friction_time_defect_n_mm')) for e in energies),
         initiation_qualified=False, complete_cutting_qualified=False, event_energy_converged=False)
 
 
@@ -297,7 +297,8 @@ def inspect(directory, seconds, *, runtime=None):
             quadrature = independent_friction_work(p, state['previous_positions'], state['positions'],
                 state['increment'], deadline)
             audit.update(local_time_s=rec['local_time_s'], friction=quadrature,
-                midpoint_friction_work_n_mm=rec['energy']['friction_work_n_mm'],
+                producer_friction_work_n_mm=rec['energy']['friction_work_n_mm'],
+                friction_comparison_scope='integral on primary displacement chord versus producer time rule; difference includes temporal error',
                 friction_quadrature_difference_n_mm=quadrature['work_n_mm']-rec['energy']['friction_work_n_mm'])
             report['audits'].append(audit); previous = state
         report['passed'] = bool(raw['steps'])
@@ -322,7 +323,7 @@ def main():
     parser.add_argument('--seed', choices=['trial', 'accepted'], default='trial',
         help='Explicit conditional real trial or bitwise inherited last committed state')
     parser.add_argument('--accepted-index', type=int, default=-1, help='Explicit earlier audited parent state; no history interpolation')
-    parser.add_argument('--integrator', choices=['midpoint', 'endpoint_be'], default='midpoint')
+    parser.add_argument('--integrator', choices=['midpoint', 'endpoint_be', 'endpoint_friction'], default='midpoint')
     parser.add_argument('--minimum-dt', type=float, help='Explicit physical cutback stopping bound; default dt/128')
     parser.add_argument('--attempt-seconds', type=float, default=30.)
     add_thread_arguments(parser); args = parser.parse_args()

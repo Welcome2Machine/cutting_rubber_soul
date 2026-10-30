@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import time
 import numpy as np
+from scipy.integrate import quad_vec
 from numerical_runtime import runtime_entry, add_thread_arguments, thread_arguments
 from prototype.ipc_reference import IPCProblem
 from stiff_contact import install
@@ -50,6 +51,33 @@ def integrate(p, state, deadline):
             allowance = np.array([1e-7, 1e-9, 1e-9, 1e-10, 1e-10])+1e-5*np.abs(values[-1])
             converged = bool(np.all(error <= allowance) and np.max(impulse_error) <= 1e-10)
             if converged: break
+    adaptive = None
+    if not converged:
+        # Different quadrature, same native law and the same primary chord.
+        # Scaled max-norm error controls every force/impulse component.
+        scales = np.r_[[1e-7, 1e-9, 1e-9, 1e-10, 1e-10], np.full(2*sd.size, 1e-10)]
+        def power(s):
+            if time.monotonic() >= deadline: raise TimeoutError('Adaptive contact work budget')
+            x = np.asarray(relative+np.longdouble(s)*d, float)
+            lag = IPCProblem.lag(p, x)
+            gf = np.zeros(sd.size) if lag is None else p.friction.gradient(lag, p.cmesh, sd)
+            gn = p.barrier.gradient(p.collisions(x), p.cmesh, x[p.surface])
+            f, n = gf.reshape(-1,2), gn.reshape(-1,2)
+            v = np.r_[[2*float(gf@sd.ravel()),
+                2*float(np.sum(f[blade]*sd[blade])), 2*float(np.sum(n[blade]*sd[blade])),
+                -2*p.material_dt*float(f[blade,1].sum()), -2*p.material_dt*float(n[blade,1].sum())],
+                p.material_dt*gf, p.material_dt*gn]
+            if not np.isfinite(v).all() or v[0] < -1e-12: raise ValueError('Invalid contact power')
+            return v/scales
+        val, err, info = quad_vec(power, 0., 1., epsabs=.1, epsrel=0., norm='max',
+            limit=2000, points=cuts[1:-1], quadrature='gk21', workers=1, full_output=True)
+        adaptive = dict(method='independent_vector_GK21', scaled_empirical_error=float(err),
+            success=bool(info.success), evaluations=int(info.neval), message=info.message,
+            preceding_GL_integral=values[-1].tolist(), preceding_GL_error=error.tolist())
+        values[-1] = val[:5]*scales[:5]
+        forces[-1] = (val[5:]*scales[5:]/p.material_dt).reshape(2,-1)
+        error = err*scales[:5]; impulse_error = err*scales[5:]
+        converged = bool(info.success and err <= 1.)
     fields = ('friction_n_mm', 'blade_friction_work_n_mm', 'blade_normal_work_n_mm',
               'blade_friction_impulse_z_n_s', 'blade_normal_impulse_z_n_s')
     allowance = np.array([1e-7, 1e-9, 1e-9, 1e-10, 1e-10])+1e-5*np.abs(values[-1])
@@ -61,7 +89,7 @@ def integrate(p, state, deadline):
             -p.material_dt*forces[-1][0]-state['impulse_friction'][p.surface].ravel())),
         half_domain_normal_impulse_difference_n_s=float(np.linalg.norm(
             -p.material_dt*forces[-1][1]-state['impulse_normal'][p.surface].ravel())),
-        orders=orders, partitions=len(cuts)-1)
+        orders=orders, partitions=len(cuts)-1, adaptive=adaptive)
 
 
 @runtime_entry
@@ -72,7 +100,7 @@ def inspect(directory, seconds, *, runtime=None):
     report = dict(schema='softcut-independent-contact-time/1', passed=False, audits=[],
         result_sha256=digest(directory/'result.json'), source_hashes=sources(),
         audit_source_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-        method='geometry_partitioned_GL4_8_16_then_bounded_32_64_on_primary_temporal_chords',
+        method='geometry_partitioned_GL4_8_16_32_64_then_GK21_on_primary_temporal_chords',
         physical_time_convergence_certified=False, uncertainty_is_rigorous_bound=False)
     try:
         if sources() != raw['source_hashes']: raise ValueError('Numerical producer source differs')

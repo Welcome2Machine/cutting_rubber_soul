@@ -9,7 +9,7 @@ import types
 import numpy as np
 from scipy.sparse import coo_matrix, diags
 from prototype.energy_cut import EnergyCutProblem
-from prototype.ipc_reference import IPCProblem, LoadStepFailure
+from prototype.ipc_reference import IPCProblem
 from prototype.zero_gap_cut import EnergyResolutionRequired
 from release_dynamics import DEFECT_KEYS
 
@@ -67,7 +67,7 @@ def acceptance(self, x, depth, iterations, outer_iterations):
     rec = EnergyCutProblem.acceptance(self, x, depth, iterations, outer_iterations)
     e = rec['energy']
     if e['friction_work_n_mm'] < -1e-12 or e['friction_algorithmic_work_n_mm'] < -1e-12:
-        raise LoadStepFailure('Negative endpoint-friction work; physical time resolution required')
+        raise EnergyResolutionRequired('Negative endpoint-friction work; physical time resolution required')
     if self.energy_normalization != 'mechanical_reservoir' or self.energy_tolerance is None:
         raise ValueError('Endpoint friction requires the original explicit reservoir energy gate')
     total = sum(abs(e[k]) for k in DEFECT_KEYS)+abs(e['friction_time_defect_n_mm'])

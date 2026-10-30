@@ -33,11 +33,14 @@ def endpoint_acceptance(self, x, depth, iterations, outer_iterations):
 
 def install(p, method):
     """Install only after verifying the incoming state with its original method."""
-    if method not in ('midpoint', 'endpoint_be'):
+    if method not in ('midpoint', 'endpoint_be', 'endpoint_friction'):
         raise ValueError('Unknown conditional momentum integrator')
     if getattr(p, 'conditional_integrator', method) != method:
         raise ValueError('Reconstruct an independent object before changing integrator')
     p.conditional_integrator = method
+    if method == 'endpoint_friction':
+        from endpoint_friction import install as install_endpoint_friction
+        return install_endpoint_friction(p)
     if method == 'endpoint_be':
         p.kinematic_theta = 1.
         # FrozenVirtualCrack supplies only the original instantaneous bulk law;
@@ -98,3 +101,11 @@ material energy. Free-DOF defects are NOT absorbed into a reaction.
         numerical_kinetic_loss_n_mm=(2*p.kinematic_theta-1)*float(p.mass_dof@(dv*dv)),
         vector_scope='half domain; blade vertical scalars and work reflected to full body')
     return fields, summary
+
+
+def momentum_ledger(p, x):
+    """Dispatch the actual installed force law without altering the base ledger."""
+    if getattr(p, 'conditional_integrator', 'midpoint') == 'endpoint_friction':
+        from endpoint_friction import impulse_ledger as endpoint_ledger
+        return endpoint_ledger(p, x)
+    return impulse_ledger(p, x)

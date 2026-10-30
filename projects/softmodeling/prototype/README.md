@@ -54,3 +54,9 @@ Maxwell 加载入口为 `python -m tools.run_material_candidate`，参数与串�
 零开口条件激活及不同时间求积；所有物理方程复用本表中的`energy_cut.py`。
 `tools.dynamic_release run|audit`显式选择已接受或未决真实初值；候选条件激活不构成
 新的起裂判据，也不更新生产路径。定义与限定见合并方法第26节。
+
+
+第五轮完整动量时间对照在上层`stiff_contact.py`、`endpoint_friction.py`显式安装，
+不改变本目录默认生产算法。约束冲量、端点BE数值损失及端点摩擦时间功差单列；
+`tools.dynamic_release`保存实际dt、状态/源码哈希并以原动力学/CCD/历史门验收。
+实际局部算例尚未给出2 mm、起裂选择或网格资格，见方法第27节。

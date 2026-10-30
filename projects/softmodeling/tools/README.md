@@ -236,3 +236,12 @@ python -m tools.dynamic_release audit <条件结果目录> --out <新审查.json
 内置独立GL3/7/15给出接触时间积分的经验误差；未收敛不得用其数值认证。第四轮
 另以已有`virtual_work_audit.audit_work`的几何分区GL8/16/32审查同一真实接受弦，
 它与生产中点摩擦不同；积分收敛也不等于整个动态轨迹对dt收敛。
+
+
+第五轮条件时间对照增加`--integrator midpoint|endpoint_be|endpoint_friction`、
+`--accepted-index`与`--minimum-dt`。已接受索引从完整审查父路径读取，不篡改
+原历史。条件续算只接受同源码、已完成窗口及绑定结果哈希的力/历史与独立接触功
+双审查；条件后缀不成为生产路径。最小dt是停止界限，不放宽接受门。
+`tools.audit_contact_time <目录> --out <新报告> --seconds 540`逐态核查完整CCD与
+几何分区接触功、法向/摩擦冲量。GL4/8/16/32/64未解析时使用向量GK21；经验
+误差不作严格上界。输出同时保留算法功与弦积分的差，不能用求积通过代替时间收敛。

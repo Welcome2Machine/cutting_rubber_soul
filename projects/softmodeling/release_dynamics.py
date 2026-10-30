@@ -18,7 +18,7 @@ def check_energy_gate(p, energy):
     """The production mechanical-reservoir gate, also applied to the input trial."""
     if p.energy_normalization != 'mechanical_reservoir' or p.energy_tolerance is None:
         raise ValueError('Conditional release requires an explicit reservoir energy gate')
-    defect = sum(abs(energy[k]) for k in DEFECT_KEYS)
+    defect = sum(abs(energy[k]) for k in DEFECT_KEYS)+abs(energy.get('friction_time_defect_n_mm', 0.))
     allowance = p.energy_absolute_tolerance+p.energy_tolerance*energy['mechanical_reservoir_n_mm']
     if defect > allowance:
         raise EnergyResolutionRequired(f'Input trial energy defect {defect:g} exceeds {allowance:g}')
@@ -107,8 +107,9 @@ def independent_friction_work(p, start, end, increment, deadline):
     """Integrate the accepted temporal chord with GL3/7/15, not midpoint force.
 
     This probes time-discretization error; it is NOT a new virtual crack path.
-    The constant segment velocity and dt-dependent smoothing are identical to
-    the producer. Extended-precision relative interpolation avoids cancellation.
+    The primary chord uses its constant segment velocity and original velocity
+    smoothing. Endpoint-velocity time rules can differ; that is temporal error,
+    not quadrature uncertainty. Extended-precision relative interpolation avoids cancellation.
     """
     import time
     a = start.astype(np.longdouble)

@@ -4,7 +4,11 @@ import pytest
 from test_energy_cut import candidate
 from test_stiff_contact import contact_fixture
 from tools.run_zero_gap_cut import problem, snapshot, audit
-from endpoint_friction import install, impulse_ledger, velocity_increment
+from endpoint_friction import velocity_increment
+from stiff_contact import install as install_method, momentum_ledger as impulse_ledger
+
+def install(p):
+    return install_method(p, "endpoint_friction")
 
 
 def prepared():
@@ -83,3 +87,12 @@ def test_native_stiff_friction_limit_uses_endpoint_velocity_without_reversal():
     numerical=p.material_dt*force(v1)*(.5*(v0+v1)-v1)
     assert abs(.5*mass*(v1*v1-v0*v0)+physical+numerical)<1e-12
     assert numerical>0 and physical>=0
+
+
+def test_saved_energy_audit_includes_endpoint_friction_time_error():
+    from release_dynamics import check_energy_gate, DEFECT_KEYS
+    from prototype.zero_gap_cut import EnergyResolutionRequired
+    p=install(problem(dict(candidate(),energy_tolerance=.001,energy_normalization='mechanical_reservoir')))
+    e={k:0. for k in DEFECT_KEYS}
+    e.update(mechanical_reservoir_n_mm=1.,friction_time_defect_n_mm=-.00100001)
+    with pytest.raises(EnergyResolutionRequired):check_energy_gate(p,e)
