@@ -162,7 +162,7 @@ def summarize(result):
 
 
 @runtime_entry
-def run(directory, out, dt, duration, seconds, *, release=True, attempt_seconds=30., seed_kind='trial', accepted_index=-1, integrator='midpoint', minimum_dt=None, runtime=None):
+def run(directory, out, dt, duration, seconds, *, release=True, attempt_seconds=30., seed_kind='trial', accepted_index=-1, integrator='midpoint', minimum_dt=None, candidate_index=48, runtime=None):
     if not (np.isfinite([dt, duration, seconds, attempt_seconds]).all() and
             0 < dt <= duration <= .025 and 1 <= seconds <= 3600 and 1 <= attempt_seconds <= 90):
         raise ValueError('Require 0 < dt <= duration <= .025 s and bounded compute budgets')
@@ -175,13 +175,15 @@ def run(directory, out, dt, duration, seconds, *, release=True, attempt_seconds=
     p, x, depth, seed, info, config = real_seed(directory, seed_kind, accepted_index)
     seed_path = out/'seed.npz'; np.savez_compressed(seed_path, **seed)
     original_released = p.released.copy()
-    event = activate(p, x, [48] if release else [])
+    if type(candidate_index) is not int or not 0 <= candidate_index < len(p.seam):
+        raise ValueError('Explicit candidate seam index outside geometry')
+    event = activate(p, x, [candidate_index] if release else [])
     install_integrator(p, integrator)
     result = dict(schema='softcut-conditional-dynamic-release/1', status='running',
         source_hashes=source, execution_identity=driver.execution_identity(), interpreter=sys.executable,
         thread_runtime=runtime, config=config, seed=info, seed_sha256=digest(seed_path),
         activation=event, settings=dict(dt_max_s=dt, duration_s=duration, attempt_seconds=attempt_seconds,
-            seconds=seconds, release_candidate=release, candidate_seam_index=48, seed_kind=seed_kind, accepted_index=accepted_index, integrator=integrator,
+            seconds=seconds, release_candidate=release, candidate_seam_index=candidate_index, seed_kind=seed_kind, accepted_index=accepted_index, integrator=integrator,
             minimum_dt_s=minimum_dt,
             blade_policy='continue original speed', physical_mass_unchanged=True),
         steps=[], attempts=[])
@@ -211,8 +213,8 @@ def run(directory, out, dt, duration, seconds, *, release=True, attempt_seconds=
             x, depth, local_time = value, target_depth, target_time
             q = p.cohesive_response(x, p.history)
             rec.update(local_time_s=local_time, dt_s=p.material_dt,
-                candidate_opening_mm=float(2*(x[p.seam[48], 0]-p.config.drop_s_mm)),
-                candidate_dissipation_n_mm=float(p.seam_area[48]*q['dissipated'][48]*p.released[48]),
+                candidate_opening_mm=float(2*(x[p.seam[candidate_index], 0]-p.config.drop_s_mm)),
+                candidate_dissipation_n_mm=float(p.seam_area[candidate_index]*q['dissipated'][candidate_index]*p.released[candidate_index]),
                 maximum_speed_mm_s=float(np.linalg.norm(p.velocity[:p.n], axis=1).max()))
             impulse_fields, rec['impulse'] = impulse_ledger(p, x)
             state = driver.snapshot(p, x, old_released, depth)
@@ -267,7 +269,8 @@ def inspect(directory, seconds, *, runtime=None):
         driver.audit(p, previous, raw['seed']['real_trial_record'])
         p.velocity = previous['velocity'].copy(); p.history = previous['history'].copy()
         p.material_metric = previous['material_metric'].copy()
-        event = activate(p, previous['positions'], [48] if raw['settings']['release_candidate'] else [])
+        candidate = raw['settings']['candidate_seam_index']
+        event = activate(p, previous['positions'], [candidate] if raw['settings']['release_candidate'] else [])
         np.testing.assert_allclose(event['friction_topology_force_jump_n'],
             raw['activation']['friction_topology_force_jump_n'], atol=1e-10)
         install_integrator(p, raw['settings'].get('integrator', 'midpoint'))
@@ -323,6 +326,7 @@ def main():
     parser.add_argument('--seed', choices=['trial', 'accepted'], default='trial',
         help='Explicit conditional real trial or bitwise inherited last committed state')
     parser.add_argument('--accepted-index', type=int, default=-1, help='Explicit earlier audited parent state; no history interpolation')
+    parser.add_argument('--candidate-index', type=int, default=48, help='Conditional activation only; not an initiation selector')
     parser.add_argument('--integrator', choices=['midpoint', 'endpoint_be', 'endpoint_friction'], default='midpoint')
     parser.add_argument('--minimum-dt', type=float, help='Explicit physical cutback stopping bound; default dt/128')
     parser.add_argument('--attempt-seconds', type=float, default=30.)
@@ -331,7 +335,7 @@ def main():
     if args.mode == 'run':
         report = run(args.directory, args.out, args.dt, args.duration, args.seconds,
             release=not args.no_release_control, attempt_seconds=args.attempt_seconds,
-            seed_kind=args.seed, accepted_index=args.accepted_index, integrator=args.integrator,
+            seed_kind=args.seed, accepted_index=args.accepted_index, candidate_index=args.candidate_index, integrator=args.integrator,
             minimum_dt=args.minimum_dt, **thread_arguments(args))
         # runtime_entry finalizes counters after return.
         write_json(args.out/'result.json', report)
