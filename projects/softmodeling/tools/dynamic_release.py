@@ -35,7 +35,9 @@ def arrays(path):
         return {k: z[k].copy() for k in z.files}
 
 
-def real_seed(directory):
+def real_seed(directory, seed_kind='trial'):
+    if seed_kind not in ('trial', 'accepted'):
+        raise ValueError('Choose the undecided real trial or the last accepted state')
     directory = Path(directory).resolve()
     raw = json.loads((directory/'result.json').read_text())
     provenance = check_archived_equations(raw, Path(__file__).resolve().parents[1])
@@ -59,7 +61,11 @@ def real_seed(directory):
     for path in (previous_path, directory/'failed_trial.npz'):
         inputs[str(path)] = digest(path)
     p = driver.problem(raw['config'])
-    x, depth = restore_failed_seed(p, trial)
+    if seed_kind == 'trial':
+        x, depth = restore_failed_seed(p, trial)
+    else:
+        driver.audit(p, old, raw['steps'][-1])
+        x, depth = old['positions'].copy(), float(old['depth_mm'])
     _, g, _, _ = p.evaluate(x, p.lag(x), tangent=False)
     p.update_constraint_free(x, g)
     record = p.acceptance(x, depth, 0, 0)
@@ -73,6 +79,12 @@ def real_seed(directory):
     p.velocity = p.endpoint_velocity(x)
     p.history = p.cohesive_response(x)['history'].copy()
     p.material_metric = p.material_response(x)['metric'].copy()
+    if seed_kind == 'accepted':
+        # Verify the update, then inherit the saved committed arrays bitwise.
+        for attr, key in (('velocity', 'velocity'), ('history', 'history'),
+                          ('material_metric', 'material_metric')):
+            np.testing.assert_allclose(getattr(p, attr), old[key], rtol=1e-10, atol=1e-11)
+            setattr(p, attr, old[key].copy())
     instant = instantaneous_friction(p, x, contact_velocity(p, p.velocity))
     state = driver.snapshot(p, x, p.released.copy(), depth)
     info = dict(inputs_sha256=inputs, provenance=provenance, real_trial_record=record,
@@ -81,7 +93,9 @@ def real_seed(directory):
         incoming_average_friction_norm_n=float(np.sqrt(2)*np.linalg.norm(incoming)),
         endpoint_instantaneous_friction_norm_n=float(np.sqrt(2)*np.linalg.norm(instant)),
         interval_average_to_instantaneous_difference_n=float(np.sqrt(2)*np.linalg.norm(incoming-instant)),
-        qualification='conditional real trial; finite-increment decision still unknown',
+        seed_kind=seed_kind,
+        qualification=('conditional real trial; finite-increment decision still unknown' if seed_kind == 'trial'
+            else 'committed real state; subsequent candidate activation is conditional, not certified initiation'),
         production_history_committed=False)
     return p, x, depth, state, info, raw['config']
 
@@ -104,14 +118,14 @@ def summarize(result):
 
 
 @runtime_entry
-def run(directory, out, dt, duration, seconds, *, release=True, attempt_seconds=30., runtime=None):
+def run(directory, out, dt, duration, seconds, *, release=True, attempt_seconds=30., seed_kind='trial', runtime=None):
     if not (np.isfinite([dt, duration, seconds, attempt_seconds]).all() and
             0 < dt <= duration <= .025 and 1 <= seconds <= 3600 and 1 <= attempt_seconds <= 90):
         raise ValueError('Require 0 < dt <= duration <= .025 s and bounded compute budgets')
     out = Path(out).resolve(); out.mkdir(parents=True, exist_ok=False)
     started = time.monotonic(); deadline = started+seconds
     source = sources()
-    p, x, depth, seed, info, config = real_seed(directory)
+    p, x, depth, seed, info, config = real_seed(directory, seed_kind)
     seed_path = out/'seed.npz'; np.savez_compressed(seed_path, **seed)
     original_released = p.released.copy()
     event = activate(p, x, [48] if release else [])
@@ -119,7 +133,7 @@ def run(directory, out, dt, duration, seconds, *, release=True, attempt_seconds=
         source_hashes=source, execution_identity=driver.execution_identity(), interpreter=sys.executable,
         thread_runtime=runtime, config=config, seed=info, seed_sha256=digest(seed_path),
         activation=event, settings=dict(dt_max_s=dt, duration_s=duration, attempt_seconds=attempt_seconds,
-            seconds=seconds, release_candidate=release, candidate_seam_index=48,
+            seconds=seconds, release_candidate=release, candidate_seam_index=48, seed_kind=seed_kind,
             blade_policy='continue original speed', physical_mass_unchanged=True),
         steps=[], attempts=[])
     write_json(out/'manifest.json', result)
@@ -162,7 +176,7 @@ def run(directory, out, dt, duration, seconds, *, release=True, attempt_seconds=
                 print(json.dumps(dict(time_s=local_time, steps=len(result['steps']), dt_s=p.material_dt)), flush=True)
             next_dt = min(dt, next_dt*1.25)
         result['status'] = 'completed_conditional_window'
-    except (TimeoutError, LoadStepFailure, RuntimeError, ValueError) as exc:
+    except (TimeoutError, LoadStepFailure, RuntimeError, ValueError, FloatingPointError) as exc:
         result.update(status='stopped', error=str(exc), failure_kind=failure_kind(exc, deadline))
         if hasattr(p, 'failed_positions'):
             np.savez_compressed(out/'failed_trial.npz', positions=p.failed_positions,
@@ -246,12 +260,15 @@ def main():
     parser.add_argument('--seconds', type=float, required=True)
     parser.add_argument('--dt', type=float, default=2e-6); parser.add_argument('--duration', type=float, default=2e-4)
     parser.add_argument('--no-release-control', action='store_true')
+    parser.add_argument('--seed', choices=['trial', 'accepted'], default='trial',
+        help='Explicit conditional real trial or bitwise inherited last committed state')
     parser.add_argument('--attempt-seconds', type=float, default=30.)
     add_thread_arguments(parser); args = parser.parse_args()
     if args.out.exists(): raise FileExistsError('Preserve old evidence; choose a new output')
     if args.mode == 'run':
         report = run(args.directory, args.out, args.dt, args.duration, args.seconds,
-            release=not args.no_release_control, attempt_seconds=args.attempt_seconds, **thread_arguments(args))
+            release=not args.no_release_control, attempt_seconds=args.attempt_seconds,
+            seed_kind=args.seed, **thread_arguments(args))
         # runtime_entry finalizes counters after return.
         write_json(args.out/'result.json', report)
     else:
