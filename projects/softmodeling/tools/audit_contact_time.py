@@ -25,8 +25,8 @@ def integrate(p, state, deadline):
     relative = start.astype(np.longdouble)-start[p.surface[0]].astype(np.longdouble)
     d = du.astype(np.longdouble)
     sd = du[p.surface]; blade = p.surface >= p.n
-    values = []; forces = []
-    for order in (4, 8, 16):
+    values = []; forces = []; orders = []; converged = False
+    for order in (4, 8, 16, 32, 64):
         nodes, weights = np.polynomial.legendre.leggauss(order)
         total = np.zeros(5); accumulated = np.zeros((2, sd.size))
         for left, right in zip(cuts[:-1], cuts[1:]):
@@ -43,21 +43,25 @@ def integrate(p, state, deadline):
                     -2*p.material_dt*float(f[blade,1].sum()), -2*p.material_dt*float(n[blade,1].sum())])
                 if not np.isfinite(row).all() or row[0] < -1e-12: raise ValueError('Invalid contact power')
                 total += weight*row; accumulated += weight*np.stack((gf, gn))
-        values.append(total); forces.append(accumulated)
-    error = 2*np.max(np.abs(np.diff(values, axis=0)), axis=0)
-    impulse_error = 2*p.material_dt*np.max(np.abs(np.diff(forces, axis=0)), axis=0)
+        values.append(total); forces.append(accumulated); orders.append(order)
+        if len(values) >= 3:
+            error = 2*np.max(np.abs(np.diff(values[-3:], axis=0)), axis=0)
+            impulse_error = 2*p.material_dt*np.max(np.abs(np.diff(forces[-3:], axis=0)), axis=0)
+            allowance = np.array([1e-7, 1e-9, 1e-9, 1e-10, 1e-10])+1e-5*np.abs(values[-1])
+            converged = bool(np.all(error <= allowance) and np.max(impulse_error) <= 1e-10)
+            if converged: break
     fields = ('friction_n_mm', 'blade_friction_work_n_mm', 'blade_normal_work_n_mm',
               'blade_friction_impulse_z_n_s', 'blade_normal_impulse_z_n_s')
     allowance = np.array([1e-7, 1e-9, 1e-9, 1e-10, 1e-10])+1e-5*np.abs(values[-1])
     return dict(integral=dict(zip(fields, map(float, values[-1]))),
         empirical_error=dict(zip(fields, map(float, error))),
-        converged=bool(np.all(error <= allowance) and np.max(impulse_error) <= 1e-10),
+        converged=converged,
         half_domain_impulse_error_max_n_s=float(np.max(impulse_error)),
         half_domain_friction_impulse_difference_n_s=float(np.linalg.norm(
             -p.material_dt*forces[-1][0]-state['impulse_friction'][p.surface].ravel())),
         half_domain_normal_impulse_difference_n_s=float(np.linalg.norm(
             -p.material_dt*forces[-1][1]-state['impulse_normal'][p.surface].ravel())),
-        orders=[4,8,16], partitions=len(cuts)-1)
+        orders=orders, partitions=len(cuts)-1)
 
 
 @runtime_entry
@@ -68,7 +72,7 @@ def inspect(directory, seconds, *, runtime=None):
     report = dict(schema='softcut-independent-contact-time/1', passed=False, audits=[],
         result_sha256=digest(directory/'result.json'), source_hashes=sources(),
         audit_source_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-        method='geometry_partitioned_GL4_8_16_on_primary_temporal_chords',
+        method='geometry_partitioned_GL4_8_16_then_bounded_32_64_on_primary_temporal_chords',
         physical_time_convergence_certified=False, uncertainty_is_rigorous_bound=False)
     try:
         if sources() != raw['source_hashes']: raise ValueError('Numerical producer source differs')
