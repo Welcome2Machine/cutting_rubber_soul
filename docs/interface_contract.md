@@ -216,3 +216,17 @@ Maxwell真实时间与半域完整IPC/CCD，未断法向连接为精确约束，
 同源码、已完成窗口与结果哈希绑定的双审查。该能力不允许给未完成窗口改状态、
 跨版本移植历史或将条件裂段当作已认证起裂。所有输出保持独立目录和状态哈希，
 原完整体—视频接口与UI默认不变。
+
+
+## 断裂路线结果资格补充（2026-10-31）
+
+研究入口`run_fracture_route`结果分别记录`preexisting_connected_length_mm`、
+`new_connected_failed_length_mm`、`model_activation_occurred`、
+`activation_witness_verified`、`blade_contacted_strict_crack_face`、
+`blade_contacted_strict_new_face`、`physical_initiation_prediction_validated`。
+不再把输入预裂统称surface_connected或把模型释放称initiation_predicted。
+激活见证由独立审查sidecar绑定result SHA256给资格，生产文件不追改为已审查。
+只有原顶面/角点接触不得升级为严格内部裂面接触；初始预裂内接触也不证明新增
+裂纹增长或完整材料起裂。2 mm、完整事件、能量/时间/网格、实验预测逐项独立。
+原始拒绝态按签名有界保存，不导出为已接受物理路径。条件模型转换有独立schema
+及history_committed=false，不能被比较层拼接为生产后缀。

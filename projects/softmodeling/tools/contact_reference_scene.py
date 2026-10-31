@@ -12,7 +12,7 @@ import numpy as np
 
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('case',type=Path);parser.add_argument('--parent-audit',type=Path,required=True);parser.add_argument('--checkout-fe',type=Path,required=True);parser.add_argument('--out',type=Path,required=True);parser.add_argument('--new-rejection',action='store_true');parser.add_argument('--seconds',type=float,default=120);parser.add_argument('--geometry-subintervals',type=int,choices=(1,16),default=1);a=parser.parse_args()
+    parser=argparse.ArgumentParser();parser.add_argument('case',type=Path);parser.add_argument('--parent-audit',type=Path,required=True);parser.add_argument('--checkout-fe',type=Path,required=True);parser.add_argument('--out',type=Path,required=True);parser.add_argument('--new-rejection',action='store_true');parser.add_argument('--seconds',type=float,default=120);parser.add_argument('--geometry-subintervals',type=int,choices=(1,16),default=1);parser.add_argument('--ipc-threads',type=int,default=2);parser.add_argument('--blas-threads',type=int,default=1);parser.add_argument('--physical-core-affinity',action=argparse.BooleanOptionalAction,default=True);a=parser.parse_args()
     if a.out.exists() or not 0<a.seconds<=540:raise ValueError('New bounded conditional output required')
     sys.path.insert(0,str(a.checkout_fe.resolve()))
     from numerical_runtime import numerical_runtime
@@ -21,7 +21,7 @@ def main():
     from tools.face_events import endpoint_forces
     spec=importlib.util.spec_from_file_location('round7_impulse_reference',Path(__file__).resolve().parents[1]/'mechanics/impulse_reference.py');kernel=importlib.util.module_from_spec(spec);spec.loader.exec_module(kernel)
     start=time.monotonic()
-    with numerical_runtime(2,1,True) as runtime:
+    with numerical_runtime(a.ipc_threads,a.blas_threads,a.physical_core_affinity) as runtime:
         raw=json.loads((a.case/'result.json').read_text());audit=json.loads(a.parent_audit.read_text())
         digest=lambda p:hashlib.sha256(Path(p).read_bytes()).hexdigest()
         if not audit['passed'] or audit['result_sha256']!=digest(a.case/'result.json') or audit['source_hashes']!=raw['source_hashes']:raise ValueError('Original complete prefix audit required')
@@ -108,6 +108,7 @@ def main():
           parent_reassembly=fresh,initial_native_contact_gap_mm=gap,motion_envelope_mm=envelope,full_native_chord_ccd=chord_safe,
           geometry_subintervals=a.geometry_subintervals,certificate_parts=certificate_parts,curved_motion_distance_certificate=bool(distance_certificate),whole_interval_positive_j_certificate=j_certificate,geometry_safe=geometry_safe,
           contact_model='hard e=0 mirror; no blade/self hard contact reached only if full motion envelope proves it; IPC forces removed, never superposed',
+          mirror_tangential_scope='Normal symmetry constraint only: opposing reflected crack nodes have equal tangential velocity, hence zero relative slip. Kernel mu=0 here is not a changed blade/self friction coefficient.',
           initial_ipc_barrier_energy_n_mm=2*float(p.barrier(p.collisions(x),p.cmesh,x[p.surface])),
           original_contact_force_norm_n=float(np.sqrt(2)*np.linalg.norm((fields['normal']+fields['friction'])[:2*p.n])),events=events,
           new_blade_impulse_n_s=[0.,0.],new_friction_work_n_mm=0.,new_wall_work_n_mm=0.,mirror_impact_loss_n_mm=loss,

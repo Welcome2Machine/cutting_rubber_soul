@@ -17,7 +17,7 @@ def inspect(case,out,seconds=540,*,runtime=None):
     if out.exists() or not 0<seconds<=540:raise ValueError('New bounded audit required')
     raw=json.loads((case/'result.json').read_text());prefix=out.with_suffix('.prefix.json')
     base.problem=entry.problem;base.sources=entry.sources
-    path=base.audit(case,prefix,seconds,ipc_threads=2,blas_threads=1,physical_core_affinity=True)
+    path=base.audit(case,prefix,seconds,**runtime['requested'],physical_core_affinity=runtime['one_hardware_thread_per_core'])
     report=dict(schema='softcut-pure-entry-audit/1',passed=False,result_sha256=digest(case/'result.json'),
         auditor_sha256=digest(Path(__file__)),prefix_audit=str(prefix),prefix_audit_sha256=digest(prefix),
         source_hashes=raw['source_hashes'],thread_runtime=runtime,strict_entry_states=[],
