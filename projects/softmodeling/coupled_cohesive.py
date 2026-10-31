@@ -5,14 +5,54 @@ share one quadrature history. Gc is paid by irreversible area-integrated D only;
 activation has no upfront Gc debit. Endpoint cohesive work error is kept in the
 absolute numerical gate. This is the continuous face route, not an FFM decision.
 """
+import time
 import numpy as np
 from coupled_contact import CoupledContactProblem
 from face_cut import eligible_nodes
 from tools.run_precrack_entry import reference_problem
 from tools.face_events import check_connected_endpoint
+from prototype.ipc_reference import LoadStepFailure
+from step_control import PhysicalSolveAccuracyIncomplete,GlobalComputeBudgetExhausted
+from prototype.zero_gap_cut import EnergyResolutionRequired
 
 
 class CoupledCohesiveProblem(CoupledContactProblem):
+    def affine_loading_candidate(self,x,old,depth):
+        candidate=super().affine_loading_candidate(x,old,depth)
+        # Enforce the prescribed analytical boundary at the predictor, before
+        # all nonlinear/trajectory checks; never repair accepted states later.
+        candidate[self.n:]=self.prescribed_blade_positions(depth)
+        return candidate
+
+    def step(self,x,old,depth,deadline):
+        try:return super().step(x,old,depth,deadline)
+        except (LoadStepFailure,TimeoutError) as exc:
+            if isinstance(exc,(EnergyResolutionRequired,GlobalComputeBudgetExhausted)) or time.monotonic()>=getattr(self,'global_compute_deadline',float('inf')):raise
+            # Rollback is already complete. Inspect the actual failed graph,
+            # then restore the committed graph before propagating any failure.
+            if getattr(self,'failed_stage',None)!='force_solve':raise
+            saved={k:getattr(self,k).copy() for k in ('active_faces','released','active_contact')}
+            residual=None
+            try:
+                for k in saved:setattr(self,k,getattr(self,'failed_'+k).copy())
+                self.rebuild_contact();self.set_free()
+                y=self.failed_positions;self.set_primary_increment(y,self.failed_increment)
+                g=self.evaluate(y,self.lag(y),tangent=False)[1]
+                residual=float(np.sqrt(2)*np.linalg.norm(g[self.free]))
+            except (RuntimeError,ValueError,FloatingPointError):pass
+            finally:
+                for k,v in saved.items():setattr(self,k,v)
+                self.rebuild_contact();self.set_free()
+            # An original physical force failure may still use physical
+            # cutback. A stricter solver-goal failure cannot certify a new dt.
+            target=self.force_tolerance_n*np.sqrt(2)
+            if residual is not None and target<residual<=1e-4:
+                error=PhysicalSolveAccuracyIncomplete(
+                    f'Numerical force accuracy unresolved: {residual:.17g} N > goal {target:.17g} N; original physical gate 1e-4 N met; no physical cutback')
+                error.failure_measurement=dict(quantity='numerical_full_force_residual_n',value=residual,limit=target,units='N',comparison='upper')
+                raise error from exc
+            raise
+
     def check_face_topology(self,x):
         if self.pure_precrack:raise RuntimeError('Growth model must be explicitly selected')
         if np.any(self.previous_active_faces&~self.active_faces):raise RuntimeError('Activated face healed')

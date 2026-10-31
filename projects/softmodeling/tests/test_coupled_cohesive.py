@@ -105,3 +105,40 @@ def test_own_path_depth_caps_do_not_jump_over_declared_refinement_interval():
     assert p.next_loading_depth(.354,.005,2.)==.355
     assert p.next_loading_depth(.355,.005,2.)==pytest.approx(.355025)
     assert p.next_loading_depth(.366,.005,2.)==pytest.approx(.3661)
+
+
+def test_analytical_blade_boundary_does_not_accumulate_increment_roundoff():
+    p=problem(config());x=p.rest.copy();old=p.start;records=[]
+    for i in range(4000):
+        depth=p.start+(i+1)*.00013
+        x=p.affine_loading_candidate(x,old,depth);old=depth
+        np.testing.assert_array_equal(x[p.n:],p.prescribed_blade_positions(depth))
+        records=(records+[(depth,x.copy())])[-2:]
+    # This checks predictor representation/boundaries only, not equilibrium.
+    p.seed_predictor_history(records)
+    before=x.copy();x[p.n:,1]+=6.2e-12;perturbed=x.copy()
+    nextx=p.affine_loading_candidate(x,old,old+1e-7)
+    np.testing.assert_array_equal(x,perturbed)
+    np.testing.assert_array_equal(nextx[p.n:],p.prescribed_blade_positions(old+1e-7))
+
+
+@pytest.mark.parametrize('kind',['accuracy','energy','global'])
+def test_stricter_numeric_goal_cannot_shrink_physical_dt_or_hide_energy_failure(monkeypatch,kind):
+    from prototype.ipc_reference import LoadStepFailure
+    from prototype.zero_gap_cut import EnergyResolutionRequired
+    from step_control import PhysicalSolveAccuracyIncomplete,GlobalComputeBudgetExhausted,failure_kind,physical_cutback
+    p=problem(config());x=p.rest.copy();before=array_hash(accepted_fields(p,x));dt=.0005
+    g=np.zeros(p.total);g[p.free[0]]=5e-8
+    monkeypatch.setattr(p,'evaluate',lambda *a,**kw:(0.,g,None,1.))
+    error={'accuracy':LoadStepFailure('controlled stricter numerical goal failure'),'energy':EnergyResolutionRequired('controlled physical traction event'),'global':GlobalComputeBudgetExhausted('controlled global compute deadline')}[kind]
+    def fail(*args):raise error
+    monkeypatch.setattr(p,'solve_active',fail)
+    with pytest.raises((LoadStepFailure,TimeoutError)) as caught:p.step(x,p.start,p.start+.2*dt,time.monotonic()+10)
+    failure=failure_kind(caught.value,float('inf'))
+    assert array_hash(accepted_fields(p,x))==before
+    assert p.material_dt==pytest.approx(dt)
+    if kind=='accuracy':
+        assert isinstance(caught.value,PhysicalSolveAccuracyIncomplete)
+        assert failure=='physical_solver_accuracy_incomplete' and not physical_cutback(failure)
+    elif kind=='energy':assert failure=='physical_energy_resolution' and physical_cutback(failure)
+    else:assert failure=='global_compute_budget_exhausted' and not physical_cutback(failure)

@@ -178,7 +178,9 @@ class FaceCutProblem(EnergyCutProblem):
         newly_free=eligible_nodes(faces)&~self.released
         event_tolerance=getattr(self,'activation_tolerance_n',self.force_tolerance_n)
         if np.max(excess[newly_free],initial=0.)>event_tolerance:
-            raise EnergyResolutionRequired('Constraint-to-cohesive traction event unresolved; refine physical time before activation')
+            error=EnergyResolutionRequired('Constraint-to-cohesive traction event unresolved; refine physical time before activation')
+            error.failure_measurement=dict(quantity='algorithmic_traction_excess_half_n',value=float(np.max(excess[newly_free],initial=0.)),limit=event_tolerance,units='N',comparison='upper')
+            raise error
         if getattr(self,"evidence_hook",None) is not None:
             from tools.face_events import endpoint_forces
             endpoint=endpoint_forces(self,x)

@@ -16,6 +16,10 @@ class VirtualWorkUnresolved(LoadStepFailure):
     pass
 
 
+class PhysicalSolveAccuracyIncomplete(TimeoutError):
+    """Physical force gate is met, but the stricter numerical goal is unresolved."""
+
+
 class GlobalComputeBudgetExhausted(TimeoutError):
     pass
 
@@ -24,6 +28,8 @@ def failure_kind(error, global_deadline):
     from prototype.zero_gap_cut import EnergyResolutionRequired
     if isinstance(error, GlobalComputeBudgetExhausted) or time.monotonic() >= global_deadline:
         return 'global_compute_budget_exhausted'
+    if isinstance(error, PhysicalSolveAccuracyIncomplete):
+        return 'physical_solver_accuracy_incomplete'
     if isinstance(error, VirtualRootIncomplete):
         return 'virtual_candidate_root_incomplete'
     if isinstance(error, VirtualWorkUnresolved):
