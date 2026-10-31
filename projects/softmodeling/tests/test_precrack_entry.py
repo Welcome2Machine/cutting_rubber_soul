@@ -31,3 +31,14 @@ def test_notch_has_real_reference_volume_mass_and_no_initial_strain_or_gc_charge
     assert rec['energy']['fracture_dissipation_n_mm']==pytest.approx(0.,abs=1e-14)
     np.testing.assert_array_equal(p.history,history)
     assert restore_audit(problem(cfg(gap)),snapshot(p,x,old,p.start+1e-4),rec)['passed']
+
+
+def test_saved_pure_notch_trial_restores_its_own_reference_geometry():
+    from tools.face_witness import trial_fields
+    from tools.audit_face_witness import restore
+    c=cfg(.2);p=problem(c)
+    x,_=p.step(p.rest,p.start,p.start+1e-4,time.monotonic()+20)
+    s=trial_fields(p,x);q=restore(c,s)
+    np.testing.assert_array_equal(q.rest,p.rest)
+    np.testing.assert_array_equal(q.mass,p.mass)
+    np.testing.assert_array_equal(q.active_faces,p.precracked_faces)

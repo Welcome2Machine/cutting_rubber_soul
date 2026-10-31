@@ -14,7 +14,10 @@ from .audit_zero_gap_cut import blade_contacts
 
 
 def restore(config,state):
-    p=route.problem(config)
+    if 'initial_slit_halfwidth_mm' in config:
+        from .run_precrack_entry import problem
+        p=problem(config)
+    else:p=route.problem(config)
     for key in ('previous_positions','previous_velocity','previous_history','previous_material_metric'):
         setattr(p,'previous' if key=='previous_positions' else key,state[key].copy())
     p.velocity=p.previous_velocity.copy();p.history=p.previous_history.copy();p.material_metric=p.previous_material_metric.copy()
@@ -86,9 +89,13 @@ def inspect_one(directory,reference,source,deadline):
 
 @runtime_entry
 def inspect(directory,out,seconds=540,*,runtime=None):
-    directory=Path(directory);out=Path(out);start=time.monotonic();source=route.sources()
+    directory=Path(directory);out=Path(out);start=time.monotonic()
     if not 0<seconds<=540 or out.exists():raise ValueError('Bounded new audit output required')
-    raw=json.loads((directory/'result.json').read_text());report=dict(passed=False,activation_witness_verified=False,source_hashes=source,thread_runtime=runtime,audits=[],result_sha256=digest(directory/'result.json'),auditor_sha256=digest(Path(__file__)))
+    raw=json.loads((directory/'result.json').read_text());producer=route
+    if 'initial_slit_halfwidth_mm' in raw['config']:
+        from . import run_precrack_entry as producer
+    source=producer.sources()
+    report=dict(passed=False,activation_witness_verified=False,source_hashes=source,thread_runtime=runtime,audits=[],result_sha256=digest(directory/'result.json'),auditor_sha256=digest(Path(__file__)))
     try:
         if raw['source_hashes']!=source:raise ValueError('Source changed')
         activation=[ref for row in raw['steps'] for ref in row.get('activation_witnesses',[])]
@@ -101,7 +108,7 @@ def inspect(directory,out,seconds=540,*,runtime=None):
         for ref in unique.values():report['audits'].append(inspect_one(directory,ref,source,start+seconds))
         report.update(passed=bool(unique),activation_witness_verified=bool(activation),activation_count=expected,representative_count=len(unique)-len(activation))
     except (ValueError,RuntimeError,AssertionError,TimeoutError,KeyError) as exc:report['error']=str(exc)
-    report.update(elapsed_s=time.monotonic()-start,source_unchanged=source==route.sources());write_json(out,report);return report
+    report.update(elapsed_s=time.monotonic()-start,source_unchanged=source==producer.sources());write_json(out,report);return report
 
 
 def main():

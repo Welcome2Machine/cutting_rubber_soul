@@ -25,6 +25,8 @@ def inspect(case,out,seconds=540,*,runtime=None):
     try:
         if not path['passed']:raise ValueError('Full accepted-prefix audit failed: '+str(path.get('error')))
         p=entry.problem(raw['config']);initial_history=p.history.copy();initial_faces=p.active_faces.copy()
+        free_crack=p.seam[p.released];initial_gap=2*(p.rest[free_crack,0]-p.config.drop_s_mm)
+        report['opening_history']=[]
         for row in raw['steps']:
             if time.monotonic()-start>seconds:raise TimeoutError('Entry audit budget')
             with np.load(case/row['state_file'],allow_pickle=False) as z:s={k:z[k].copy() for k in z.files}
@@ -32,6 +34,12 @@ def inspect(case,out,seconds=540,*,runtime=None):
             np.testing.assert_array_equal(s['active_faces'],initial_faces)
             if abs(row['energy']['fracture_dissipation_n_mm'])>1e-12:raise ValueError('Precrack paid new Gc')
             if row.get('face_events'):raise ValueError('Pure control activated a face')
+            gap=2*(s['positions'][free_crack,0]-p.config.drop_s_mm)
+            if gap.min() < -1e-12:raise ValueError('Mirror crack penetration')
+            report['opening_history'].append(dict(depth_mm=row['depth_mm'],time_s=row['time_s'],
+                minimum_gap_mm=float(gap.min()),maximum_gap_mm=float(gap.max()),
+                minimum_change_from_initial_mm=float(np.min(gap-initial_gap)),
+                maximum_change_from_initial_mm=float(np.max(gap-initial_gap))))
             if row['blade_entered_surface_channel']:
                 base.restore_audit(p,s,row);x=s['positions'];verified=[]
                 for contact in blade_contacts(p,x):
