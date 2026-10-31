@@ -135,10 +135,15 @@ def main():
             free=p.base_free.copy();closed=np.flatnonzero((y[:p.n,0]<=centre+1e-12)&(endv[:p.n,0]<=1e-12))
             free=np.setdiff1d(free,2*np.union1d(closed,list(tied)))
             norm=float(np.sqrt(2)*np.linalg.norm(nonlinear.ravel()[free])/h)
+            bulk_only=delta+h*(bulk+fields['cohesive']).reshape(-1,2)[:p.n]-impulse
+            bulk_norm=float(np.sqrt(2)*np.linalg.norm(bulk_only.ravel()[free])/h)
+            report['restored_nonlinear_bulk_frozen_cohesive_residual_n']=bulk_norm
+            report['first_bulk_layer_passed']=bulk_norm<=1e-4
             report['restored_nonlinear_bulk_cohesive_force_residual_n']=norm
+            report['combined_residual_scope']='Postmortem at the same candidate only; not an advanced cohesive layer or implicit root solve'
             report['nonlinear_force_gate_passed']=norm<=1e-4
             report['maxwell_recovery']='not advanced: coupled nonlinear force must pass first'
-            report['stop_reason']='nonlinear_force_gate' if norm>1e-4 else 'conditional-only: hard-contact activation coupling and Maxwell still unvalidated'
+            report['stop_reason']='nonlinear_bulk_gate' if bulk_norm>1e-4 else ('nonlinear_force_gate' if norm>1e-4 else 'conditional-only: hard-contact activation coupling and Maxwell still unvalidated')
         else:report['stop_reason']='full_geometry_certificate_failed; no isolated contact trajectory accepted'
         a.out.mkdir(parents=True);np.savez_compressed(a.out/'conditional_trial.npz',parent_positions=x,parent_velocity=v,positions=y,velocity=endv,mass=p.mass,noncontact_force=force,mirror_constraint_impulse=impulse,displacement_bound=motion,bulk_positive_j_bound=dF_bound,parent_material_metric=s['material_metric'],parent_history=s['history'])
         report.update(elapsed_s=time.monotonic()-start,source_unchanged=route.sources()==raw['source_hashes'])
