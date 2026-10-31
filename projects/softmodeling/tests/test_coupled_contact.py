@@ -58,3 +58,15 @@ def test_solver_target_can_be_tightened_but_acceptance_cannot_be_relaxed():
     p=problem(cfg(.2),'frozen_metric',1e-7)
     assert p.force_tolerance_n==pytest.approx(1e-7/np.sqrt(2))
     with pytest.raises(ValueError,match='tightened'):problem(cfg(.2),'frozen_metric',1.001e-4)
+
+
+def test_rejected_snapshot_keeps_failed_constraint_set_after_rollback():
+    from tools.run_coupled_contact import rejected_fields
+    p=problem(cfg(.2));x=p.rest.copy();p.material_dt=.001;p.previous_barrier_energy=0.
+    p.friction=p.ipc.FrictionPotential(p.friction_velocity_epsilon*p.material_dt)
+    p.failed_active_contact=p.active_contact.copy()
+    node=p.free[0]//2;p.failed_active_contact[node]=~p.failed_active_contact[node]
+    p.failed_released=p.released.copy();p.failed_active_faces=p.active_faces.copy()
+    before=array_hash(accepted_fields(p,x));fields,_=rejected_fields(p,x)
+    np.testing.assert_array_equal(fields['active_contact'],p.failed_active_contact)
+    assert array_hash(accepted_fields(p,x))==before

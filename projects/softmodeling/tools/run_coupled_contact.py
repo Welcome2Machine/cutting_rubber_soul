@@ -7,7 +7,7 @@ from numerical_runtime import runtime_entry,add_thread_arguments,thread_argument
 from . import run_precrack_entry as parent_route
 from . import run_fracture_route as route
 from . import run_zero_gap_cut as driver
-from .face_witness import native,accepted_fields,array_hash,trial_fields
+from .face_witness import native,accepted_fields,array_hash,trial_fields,rejection_measurement
 from .frozen_scene import digest
 from run_support import write_json
 from step_control import failure_kind
@@ -32,6 +32,21 @@ def restore_parent(p,s):
     p.previous_velocity=p.velocity.copy();p.previous_history=p.history.copy();p.previous_material_metric=p.material_metric.copy()
     p.previous_active_faces=p.active_faces.copy();p._accepted_predictor_history=[]
     return s['positions'].copy()
+
+
+def rejected_fields(p,failed):
+    """Serialize the actual trial graph after step() has rolled the object back."""
+    saved={k:getattr(p,k).copy() for k in ('released','active_contact','active_faces')}
+    try:
+        for k in saved:setattr(p,k,getattr(p,'failed_'+k,getattr(p,k)).copy())
+        p.rebuild_contact();p.set_free()
+        fields=trial_fields(p,failed);energy=None
+        try:energy=p.energy_ledger(failed)
+        except (RuntimeError,ValueError,FloatingPointError):pass
+        return fields,energy
+    finally:
+        for k,v in saved.items():setattr(p,k,v)
+        p.rebuild_contact();p.set_free()
 
 
 def finish(out,result):
@@ -98,15 +113,12 @@ def run(parent,parent_audit,state_index,preregister,out,dt,layer,seconds=600,*,r
             write_json(out/'progress.json',dict(accepted=len(result['steps']),depth_mm=depth,time_s=rec['time_s']))
         except (RuntimeError,ValueError,TimeoutError,AssertionError,FloatingPointError) as exc:
             if array_hash(accepted_fields(p,x))!=before:raise RuntimeError('Failed coupled step committed history') from exc
-            failed=getattr(p,'failed_positions',x);fields=trial_fields(p,failed)
-            # No failed field is promoted to an accepted state.
+            failed=getattr(p,'failed_positions',x);fields,energy=rejected_fields(p,failed)
             np.savez_compressed(out/'rejected_trial.npz',**fields)
-            energy=None
-            try:energy=p.energy_ledger(failed)
-            except (RuntimeError,ValueError,FloatingPointError):pass
+            if array_hash(accepted_fields(p,x))!=before:raise RuntimeError('Rejection serialization changed accepted state')
             result['status']='rejected_fixed_step'
             result['attempts'].append(dict(from_mm=depth,target_mm=target,dt_s=p.material_dt,error=str(exc),failure_kind=failure_kind(exc,deadline),
-                rollback_verified=True,parent_hash=before,trial_file='rejected_trial.npz',trial_sha256=digest(out/'rejected_trial.npz'),energy=energy,
+                rollback_verified=True,parent_hash=before,parent_state_file=result['steps'][-1]['state_file'] if result['steps'] else 'parent_state.npz',rejection_measurement=rejection_measurement(exc,energy,p),trial_file='rejected_trial.npz',trial_sha256=digest(out/'rejected_trial.npz'),energy=energy,
                 nonlinear_summary=getattr(p,'force_globalization_summary',{})))
             break
     else:result['status']='completed_window'

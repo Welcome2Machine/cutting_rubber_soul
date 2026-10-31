@@ -14,7 +14,7 @@ from .face_witness import native
 from run_support import write_json
 
 
-def independent_balance(p,s):
+def independent_balance(p,s,*,require_force_gate=True):
     x=s['positions'];old=s['previous_positions'];du=s['increment'];h=float(s['material_dt_s'])
     grad=p.mesh.bulk_data[1];tri=p.mesh.triangles;volume=p.material_integration_weights()
     F=lambda z:np.einsum('eai,eaJ->eiJ',z[tri],grad)
@@ -31,13 +31,14 @@ def independent_balance(p,s):
     # exact ties. Check this property rather than drop arbitrary cohesive forces.
     cq=p.cohesive_response(x);assert np.max(abs(cq['traction'][p.active_faces]),initial=0.)==0.
     np.testing.assert_array_equal(s['active_faces'],p.precracked_faces)
-    np.testing.assert_array_equal(s['history'],s['previous_history'])
+    np.testing.assert_array_equal(s.get('history',s['previous_history']),s['previous_history'])
     v=s['velocity'];v0=s['previous_velocity'];moment=p.mass_dof.reshape(-1,2)*(v-v0)
     residual=moment/h+bulk+n+f
     force=float(np.sqrt(2)*np.linalg.norm(residual.ravel()[p.free]))
-    if force>1e-4:raise ValueError(f'Independent coupled residual {force:.17g} N')
-    np.testing.assert_allclose(s['impulse_bulk'],-h*bulk,rtol=1e-8,atol=2e-12)
-    for name,z in [('normal',n),('friction',f)]:np.testing.assert_allclose(s['impulse_'+name],-h*z,rtol=1e-10,atol=1e-14)
+    if require_force_gate and force>1e-4:raise ValueError(f'Independent coupled residual {force:.17g} N')
+    if 'impulse_bulk' in s:
+        np.testing.assert_allclose(s['impulse_bulk'],-h*bulk,rtol=1e-8,atol=2e-12)
+        for name,z in [('normal',n),('friction',f)]:np.testing.assert_allclose(s['impulse_'+name],-h*z,rtol=1e-10,atol=1e-14)
     np.testing.assert_allclose(du[:p.n],h*v[:p.n],rtol=0,atol=1e-14)
     Ub=2*float(volume@(q['energy']-oldq['energy']))
     Dv=2*h*float(volume@q['viscous_rate']) if p.material_layer=='maxwell' else 0.
@@ -99,7 +100,42 @@ def inspect(case,out,seconds=500,*,runtime=None):
     report['passed'] &= report['source_unchanged'];write_json(out,native(report));return report
 
 
+@runtime_entry
+def inspect_rejection(case,out,seconds=500,*,runtime=None):
+    case=Path(case);out=Path(out);start=time.monotonic()
+    if out.exists() or not 0<seconds<=540:raise ValueError('New bounded audit required')
+    raw=json.loads((case/'result.json').read_text())
+    report=dict(passed=False,rejected_trial_accepted=False,result_sha256=digest(case/'result.json'),auditor_sha256=digest(Path(__file__)),thread_runtime=runtime)
+    try:
+        if sources()!=raw['source_hashes']:raise ValueError('Source mismatch')
+        a=raw['attempts'][-1];file=case/a['trial_file']
+        if digest(file)!=a['trial_sha256']:raise ValueError('Trial identity mismatch')
+        with np.load(file,allow_pickle=False) as z:s={k:z[k].copy() for k in z.files}
+        with np.load(case/a['parent_state_file'],allow_pickle=False) as z:parent={k:z[k].copy() for k in z.files}
+        for key,field in [('previous_positions','positions'),('previous_velocity','velocity'),('previous_history','history'),('previous_material_metric','material_metric'),('previous_active_faces','active_faces')]:np.testing.assert_array_equal(s[key],parent[field])
+        p=problem(raw['config'],raw['material_layer'],raw.get('solve_tolerance_n',1e-4))
+        for key in ('previous_velocity','previous_history','previous_material_metric','previous_active_faces','active_faces','released','active_contact'):setattr(p,key,s[key].copy())
+        p.previous=s['previous_positions'].copy();p.material_dt=float(s['material_dt_s']);p.previous_barrier_energy=float(s['previous_barrier_energy_n_mm'])
+        p.rebuild_contact();p.set_free();p.friction=p.ipc.FrictionPotential(p.friction_velocity_epsilon*p.material_dt)
+        x=s['positions'];p.set_primary_increment(x,s['increment'])
+        e=p.energy_ledger(x)
+        for k,v in a['energy'].items():np.testing.assert_allclose(e[k],v,atol=1e-12,rtol=1e-9)
+        balance=independent_balance(p,s,require_force_gate=False)
+        from tools.face_witness import accepted_fields,array_hash
+        fields={k:parent[k] for k in ('positions','velocity','history','material_metric','released','active_contact','active_faces')}
+        if array_hash(fields)!=a['parent_hash']:raise ValueError('Wrong accepted parent hash')
+        defect=sum(abs(e[k]) for k in ('backward_euler_inertia_loss_n_mm','bulk_endpoint_defect_n_mm','cohesive_endpoint_defect_n_mm','barrier_endpoint_defect_n_mm','contact_topology_defect_n_mm','hard_contact_endpoint_loss_n_mm','friction_time_defect_n_mm'))
+        allowance=p.energy_absolute_tolerance+p.energy_tolerance*e['mechanical_reservoir_n_mm']
+        if a['failure_kind']=='physical_energy_resolution' and not defect>allowance:raise ValueError('Saved energy rejection does not reproduce')
+        report.update(passed=True,failure_kind=a['failure_kind'],failure_measurement=a['rejection_measurement'],
+            parent_history_verified=True,energy=e,independent=balance,full_chord_safe=p.accepted_chord_is_safe(x),
+            strict_contacts=strict_contacts(p,x,raw['config']['precrack_mm']),scope='Reconstructed rejected equations and frozen history; no acceptance or physical suffix')
+    except (ValueError,RuntimeError,AssertionError,TimeoutError,KeyError) as exc:report['error']=str(exc)
+    report.update(elapsed_s=time.monotonic()-start,source_unchanged=sources()==raw['source_hashes'])
+    report['passed'] &= report['source_unchanged'];write_json(out,native(report));return report
+
+
 def main():
-    p=argparse.ArgumentParser();p.add_argument('case',type=Path);p.add_argument('--out',required=True,type=Path);p.add_argument('--seconds',type=float,default=500);add_thread_arguments(p);a=p.parse_args()
-    q=inspect(a.case,a.out,a.seconds,**thread_arguments(a));print(json.dumps({k:v for k,v in q.items() if k not in ('states','source_hashes','thread_runtime')}))
+    p=argparse.ArgumentParser();p.add_argument('case',type=Path);p.add_argument('--rejected',action='store_true');p.add_argument('--out',required=True,type=Path);p.add_argument('--seconds',type=float,default=500);add_thread_arguments(p);a=p.parse_args()
+    q=(inspect_rejection if a.rejected else inspect)(a.case,a.out,a.seconds,**thread_arguments(a));print(json.dumps({k:v for k,v in q.items() if k not in ('states','source_hashes','thread_runtime')}))
 if __name__=='__main__':main()
