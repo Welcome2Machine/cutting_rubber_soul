@@ -11,6 +11,7 @@ from .audit_precrack_entry import strict_contacts,check_entry_flag
 from . import run_zero_gap_cut as base
 from .frozen_scene import digest
 from .face_witness import native
+from .coupled_audit_contract import TimeChain,input_identity
 from run_support import write_json
 
 
@@ -56,6 +57,8 @@ def independent_balance(p,s,*,require_force_gate=True):
     # energy source. The independent material assembly may differ at roundoff.
     np.testing.assert_allclose(closure,-eqwork,rtol=1e-4,atol=1e-10)
     return dict(residual_n=force,impulse_residual_n_s=h*force,
+        independent_fz_n=-2*float((n+f)[p.n:,1].sum()),
+        blade_normal_impulse_n_s=-2*h*float(n[p.n:,1].sum()),blade_friction_impulse_n_s=-2*h*float(f[p.n:,1].sum()),
         independent_external_work_n_mm=W,independent_friction_n_mm=Df,
         independent_bulk_delta_n_mm=Ub,independent_maxwell_n_mm=Dv,
         independent_barrier_delta_n_mm=Un,independent_kinetic_delta_n_mm=dK,
@@ -68,19 +71,26 @@ def independent_balance(p,s,*,require_force_gate=True):
 def inspect(case,out,seconds=500,*,runtime=None):
     case=Path(case);out=Path(out);start=time.monotonic()
     if out.exists() or not 0<seconds<=540:raise ValueError('New bounded audit required')
-    raw=json.loads((case/'result.json').read_text());report=dict(passed=False,source_hashes=sources(),result_sha256=digest(case/'result.json'),auditor_sha256=digest(Path(__file__)),thread_runtime=runtime,states=[])
+    raw=json.loads((case/'result.json').read_text());report=dict(schema='softcut-coupled-audit/2',passed=False,source_hashes=sources(),result_sha256=digest(case/'result.json'),auditor_sha256=digest(Path(__file__)),contract_sha256=digest(Path(__file__).with_name('coupled_audit_contract.py')),thread_runtime=runtime,states=[])
     try:
         if raw['source_hashes']!=sources():raise ValueError('Numerical source identity mismatch')
         p=problem(raw['config'],raw['material_layer'],raw.get('solve_tolerance_n',1e-4))
         with np.load(case/'parent_state.npz',allow_pickle=False) as z:parent={k:z[k].copy() for k in z.files}
         if digest(case/'parent_state.npz')!=raw['parent']['state_sha256']:raise ValueError('Parent identity mismatch')
-        previous=dict(time_s=raw['initial_time_s'],depth_mm=raw['initial_depth_mm'],state_file='parent_state.npz')
+        planfile=case/'preregistration.json'
+        if digest(planfile)!=raw['preregistration_sha256']:raise ValueError('Preregistration identity mismatch')
+        plan=json.loads(planfile.read_text())['coupled_window']
+        clock=TimeChain(raw,parent,p.loading_rate,p.start,plan)
+        report['input_identity']=input_identity(raw)
+        previous=dict(time_s=clock.t0,depth_mm=raw['initial_depth_mm'],state_file='parent_state.npz')
         for row in raw['steps']:
             if time.monotonic()-start>seconds:raise TimeoutError('Independent window audit budget')
             file=case/row['state_file']
+            if file.resolve().parent!=case.resolve():raise ValueError('State path escaped case')
             if digest(file)!=row['state_sha256']:raise ValueError('State hash mismatch')
             with np.load(file,allow_pickle=False) as z:s={k:z[k].copy() for k in z.files}
             for a,b in [('previous_positions','positions'),('previous_velocity','velocity'),('previous_material_metric','material_metric'),('previous_history','history'),('previous_active_faces','active_faces')]:np.testing.assert_array_equal(s[a],parent[b])
+            actual_clock=clock.advance(s,row)
             p.active_faces=s['active_faces'].copy();p.previous_active_faces=s['previous_active_faces'].copy()
             check=base.audit(p,s,row)
             if not check['accepted_chord_ccd_safe']:raise ValueError('Full chord not safe')
@@ -88,10 +98,13 @@ def inspect(case,out,seconds=500,*,runtime=None):
             contacts=strict_contacts(p,s['positions'],raw['config']['precrack_mm']);check_entry_flag(contacts,row['blade_entered_surface_channel'])
             if contacts and 'first_entry_bracket' not in report:report['first_entry_bracket']=dict(previous_nonentry=previous,first_entry=dict(time_s=row['time_s'],depth_mm=row['depth_mm'],state_file=row['state_file']))
             if not contacts:previous=dict(time_s=row['time_s'],depth_mm=row['depth_mm'],state_file=row['state_file'])
-            report['states'].append(dict(state_file=row['state_file'],time_s=row['time_s'],depth_mm=row['depth_mm'],strict_contacts=contacts,**balance))
+            report['states'].append(dict(min_j=check['min_j'],accepted_chord_ccd_safe=check['accepted_chord_ccd_safe'],
+                maximum_speed_mm_s=float(np.max(np.linalg.norm(s['velocity'][:p.n],axis=1))),
+                mass_velocity_norm_sqrt_nmm=float(np.sqrt(p.mass@np.sum(s['velocity'][:p.n]**2,axis=1))),state_file=row['state_file'],state_sha256=digest(file),**actual_clock,strict_contacts=contacts,**balance))
             parent=s
+        report['time_chain']=clock.finish()
         report.update(passed=bool(raw['steps']),strict_entry_verified=any(s['strict_contacts'] for s in report['states']),
-            complete_requested_window=raw['status']=='completed_window',new_gc_n_mm=0.,no_activation=True,
+            complete_requested_window=report['time_chain']['complete_requested_window'],new_gc_n_mm=0.,no_activation=True,
             time_converged=False,mesh_converged=False,event_complete=False,
             max_residual_n=max((s['residual_n'] for s in report['states']),default=None),
             absolute_numerical_including_equation_work_n_mm=sum(s['absolute_numerical_including_equation_work_n_mm'] for s in report['states']))

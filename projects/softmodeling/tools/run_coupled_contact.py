@@ -1,4 +1,4 @@
-"""Fixed-step conditional FE window; no history splice into a production path."""
+"""Explicit fixed/partitioned conditional FE window; no history splice into a production path."""
 import argparse,csv,json,shutil,sys,time
 from pathlib import Path
 import numpy as np
@@ -12,11 +12,12 @@ from .frozen_scene import digest
 from run_support import write_json
 from step_control import failure_kind
 from release_dynamics import DEFECT_KEYS
+from .contact_time_schedule import requested_schedule
 
 
 def sources():
     s=parent_route.sources();root=Path(__file__).resolve().parents[1]
-    for name in ('coupled_contact.py','tools/run_coupled_contact.py'):
+    for name in ('coupled_contact.py','tools/run_coupled_contact.py','tools/contact_time_schedule.py'):
         s[name]=digest(root/name)
     return s
 
@@ -87,6 +88,8 @@ def run(parent,parent_audit,state_index,preregister,out,dt,layer,seconds=600,*,r
     write_json(out/'parent_record.json',row)
     solve_tolerance=limits.get('solve_tolerance_n',1e-4)
     p=problem(raw['config'],layer,solve_tolerance);x=restore_parent(p,s);depth=float(row['depth_mm']);t0=float(row['time_s'])
+    np.testing.assert_allclose(depth,float(s['depth_mm']),rtol=0,atol=1e-12)
+    np.testing.assert_allclose(t0,(depth-p.start)/p.loading_rate,rtol=0,atol=1e-12)
     source=sources();start=time.monotonic();deadline=start+seconds-5
     result=dict(schema='softcut-coupled-contact-window/1',config=raw['config'],source_hashes=source,source_unchanged=False,
         interpreter=sys.executable,execution_identity=driver.execution_identity(),thread_runtime=runtime,
@@ -96,17 +99,17 @@ def run(parent,parent_audit,state_index,preregister,out,dt,layer,seconds=600,*,r
         initial_barrier_energy_n_mm=2*float(p.barrier(p.collisions(x),p.cmesh,x[p.surface])),contact_conversion_work_n_mm=0.,
         contact_model='unchanged native IPC including initial barrier energy; exact mirror constraint; no added hard blade impulse',
         steps=[],attempts=[],status='running')
-    count=int(round(limits['window_s']/dt))
-    if abs(count*dt-limits['window_s'])>1e-12:raise ValueError('Window must contain whole steps')
-    for i in range(count):
+    offsets,schedule=requested_schedule(limits,dt)
+    if schedule is not None:result['time_schedule']=schedule
+    for i,offset in enumerate(offsets):
         if time.monotonic()>deadline:result['status']='global_compute_budget_exhausted';break
-        target=result['initial_depth_mm']+p.loading_rate*(i+1)*dt
+        target=result['initial_depth_mm']+p.loading_rate*offset
         before=array_hash(accepted_fields(p,x));oldreleased=p.released.copy()
         p.global_compute_deadline=deadline
         try:
             y,rec=p.step(x,depth,target,min(deadline,time.monotonic()+raw['config']['base']['attempt_seconds']))
             x=y;depth=target
-            rec.update(time_s=t0+(i+1)*dt,dt_s=p.material_dt)
+            rec.update(time_s=t0+offset,dt_s=p.material_dt)
             route.observables(p,x,rec)
             state=route.snapshot(p,x,oldreleased,depth);name=f'state_{i:05d}.npz';np.savez_compressed(out/name,**state)
             rec.update(state_file=name,state_sha256=digest(out/name));result['steps'].append(native(rec))
@@ -116,7 +119,7 @@ def run(parent,parent_audit,state_index,preregister,out,dt,layer,seconds=600,*,r
             failed=getattr(p,'failed_positions',x);fields,energy=rejected_fields(p,failed)
             np.savez_compressed(out/'rejected_trial.npz',**fields)
             if array_hash(accepted_fields(p,x))!=before:raise RuntimeError('Rejection serialization changed accepted state')
-            result['status']='rejected_fixed_step'
+            result['status']='rejected_fixed_step' if schedule is None else 'rejected_partition_step'
             result['attempts'].append(dict(from_mm=depth,target_mm=target,dt_s=p.material_dt,error=str(exc),failure_kind=failure_kind(exc,deadline),
                 rollback_verified=True,parent_hash=before,parent_state_file=result['steps'][-1]['state_file'] if result['steps'] else 'parent_state.npz',rejection_measurement=rejection_measurement(exc,energy,p),trial_file='rejected_trial.npz',trial_sha256=digest(out/'rejected_trial.npz'),energy=energy,
                 nonlinear_summary=getattr(p,'force_globalization_summary',{})))
