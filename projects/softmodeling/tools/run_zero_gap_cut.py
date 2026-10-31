@@ -52,6 +52,8 @@ def problem(config):
         raise ValueError('Unknown integrator or options not supported by backward Euler')
     criterion = config.get('fracture_criterion', 'local_or_neighbourhood')
     if criterion == 'finite_increment':
+        if config.get('cohesive_unloading','secant') != 'secant':
+            raise ValueError('Finite-increment frozen virtual potential requires secant unloading')
         if config.get('insertion_rule', 'local_strength') != 'local_strength':
             raise ValueError('Finite-increment criterion cannot combine a second insertion gate')
         from prototype.finite_increment_cut import FiniteIncrementEnergyCutProblem, FiniteIncrementBackwardCutProblem

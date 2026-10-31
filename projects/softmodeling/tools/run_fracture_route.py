@@ -18,22 +18,26 @@ from release_dynamics import check_energy_gate,DEFECT_KEYS,contact_velocity,inst
 from prototype.ipc_reference import LoadStepFailure,IPCProblem
 from step_control import execute_step,failure_kind,physical_cutback,reduced_increment
 from endpoint_friction import velocity_increment
+from .face_witness import WitnessStore,qualification,native
 
 
 def sources():
     result=driver.hashes();root=Path(__file__).resolve().parents[1]
     for name in ('face_cut.py','face_cohesive_quadrature.py','release_dynamics.py','endpoint_friction.py',
-                 'stiff_contact.py','tools/run_fracture_route.py'):
+                 'stiff_contact.py','tools/run_fracture_route.py','tools/face_witness.py'):
         result[name]=digest(root/name)
     return result
 
 
 def problem(config):
-    if set(config)!={'schema','base','interface','precrack_mm','quadrature_order','friction_time'} or config['schema']!='softcut-fracture-route/1':
+    if set(config)-{'schema','base','interface','precrack_mm','quadrature_order','friction_time','pure_precrack'} or not {'schema','base','interface','precrack_mm','quadrature_order','friction_time'}<=set(config) or config['schema']!='softcut-fracture-route/1':
         raise ValueError('Explicit route configuration required')
     if config['base'].get('fracture_criterion')!='local_or_neighbourhood' or config['base']['insertion_rule']!='local_strength':
         raise ValueError('Continuous route cannot silently combine FFM or a second threshold')
+    if type(config.get('pure_precrack',False)) is not bool:raise ValueError('pure_precrack must be boolean')
     p=driver.problem(config['base'])
+    p.pure_precrack=config.get('pure_precrack',False)
+    if p.pure_precrack and config['interface']!='face':raise ValueError('Pure precrack requires face topology')
     if config['interface']=='face':
         # Factory preserves all physical/geometry arguments of the original
         # EnergyCutProblem. Change only the explicitly selected interface class.
@@ -51,6 +55,7 @@ def problem(config):
             install(p)
         elif config['friction_time']!='midpoint':raise ValueError('Unknown friction time rule')
     else:raise ValueError('Choose explicit face or node interface')
+    p.precrack_input_mm=config['precrack_mm']
     return p
 
 
@@ -129,6 +134,7 @@ def observables(p,x,rec):
         maximum_speed_mm_s=float(np.linalg.norm(p.velocity[:p.n],axis=1).max()),
         maximum_speed_node=int(np.argmax(np.linalg.norm(p.velocity[:p.n],axis=1))),
         mass_velocity_norm_sqrt_nmm=float(np.sqrt(p.mass@np.sum(p.velocity[:p.n]**2,axis=1))))
+    rec['blade_contacted_strict_new_face']=any(np.all(p.rest[c['body_nodes'],1]<p.config.height_mm-float(getattr(p,'precrack_input_mm',0.))-1e-9) for c in interior)
     rec['instantaneous_fz_n']=rec['instantaneous_normal_fz_n']+rec['instantaneous_friction_fz_n']
     du=p.step_increment(x);fu=velocity_increment(p,du) if getattr(p,'friction_time',getattr(p,'conditional_integrator','midpoint'))=='endpoint_friction' else du
     lag=p.lag(x);gfr=np.zeros(2*len(p.surface)) if lag is None else p.friction.gradient(lag,p.cmesh,fu[p.surface])
@@ -140,14 +146,15 @@ def finish(out,result):
     rows=result['steps'];energies=[r['energy'] for r in rows]
     result['summary']=dict(last_depth_mm=rows[-1]['depth_mm'] if rows else -.02,accepted_states=len(rows),
         completed_2mm=bool(rows) and rows[-1]['depth_mm']>=2-1e-12,
-        surface_connected=any(r['surface_connected_failed_length_mm']>0 for r in rows),
         blade_entered=any(r['blade_entered_surface_channel'] for r in rows),
-        initiation_predicted=bool(rows) and result['config']['precrack_mm']==0 and any(r['released_nodes'] for r in rows),
         event_complete=False,energy_converged=False,time_converged=False,mesh_converged=False,independent_material_parameters=False,
         ledger_n_mm={k:sum(e[k] for e in energies) for k in energies[0]} if energies else {},
         absolute_numerical_work_n_mm=sum(sum(abs(e.get(k,0.)) for k in (*DEFECT_KEYS,'friction_time_defect_n_mm')) for e in energies),
         max_residual_n=max((r['residual_n'] for r in rows),default=None),
         actual_dt_range_s=[min((r['dt_s'] for r in rows),default=None),max((r['dt_s'] for r in rows),default=None)])
+    result['summary'].update(qualification(rows,result['config']['precrack_mm']))
+    for key in ('mechanical_reservoir_n_mm','kinetic_energy_n_mm'):result['summary']['ledger_n_mm'].pop(key,None)
+    result.update(native(result))
     write_json(out/'result.json',result)
     if rows:
         keys=['depth_mm','time_s','dt_s','reaction_fz_n','reaction_normal_fz_n','reaction_friction_fz_n','instantaneous_fz_n','instantaneous_normal_fz_n','instantaneous_friction_fz_n','maximum_speed_mm_s','mass_velocity_norm_sqrt_nmm','surface_connected_failed_length_mm','blade_entered_surface_channel','blade_normal_impulse_n_s','blade_friction_impulse_n_s']
@@ -172,21 +179,30 @@ def run(config,out,seconds,*,stop_depth=None,runtime=None):
         initial=dict(full_mass_n_s2_mm=float(2*p.mass.sum()),minimum_node_mass_n_s2_mm=float(p.mass.min()),geometry='30x5x20 mm centred s=15 mm mirror mode I',
             precrack_mm=config['precrack_mm'],preexisting_gc_excluded_n_mm=getattr(p,'initial_fracture_energy_n_mm',float(p.toughness*p.seam_area[p.released].sum()))))
     write_json(out/'manifest.json',result)
+    store=WitnessStore(out,dict(config=config,source_hashes=source,execution_identity=result['execution_identity'],runtime=runtime)) if isinstance(p,FaceCutProblem) else None
+    initial=dict(positions=x,velocity=p.velocity,history=p.history,material_metric=p.material_metric,released=p.released,active_contact=p.active_contact)
+    if store:initial['active_faces']=p.active_faces
+    np.savez_compressed(out/'initial_state.npz',**initial)
+    parent=dict(file='initial_state.npz',sha256=digest(out/'initial_state.npz'))
     try:
         while depth<target-1e-12:
             if time.monotonic()>=deadline:raise TimeoutError('Global route loading budget')
             next_depth=min(target,depth+increment);old=p.released.copy();before=time.monotonic()
+            if store:store.begin(p,x,dict(parent=parent,from_depth_mm=depth,target_depth_mm=next_depth,physical_dt_s=(next_depth-depth)/p.loading_rate))
             try:value,rec=execute_step(p,x,depth,next_depth,min(deadline,before+base['attempt_seconds']),deadline)
             except (LoadStepFailure,TimeoutError) as exc:
                 kind=failure_kind(exc,deadline)
-                result['attempts'].append(dict(from_mm=depth,target_mm=next_depth,dt_s=(next_depth-depth)/p.loading_rate,failure_kind=kind,error=str(exc),elapsed_s=time.monotonic()-before))
+                witness=store.rejected(p,x,exc,kind) if store else None
+                result['attempts'].append(dict(from_mm=depth,target_mm=next_depth,dt_s=(next_depth-depth)/p.loading_rate,failure_kind=kind,error=str(exc),elapsed_s=time.monotonic()-before,witness=witness))
                 if not physical_cutback(kind) or next_depth-depth<=base['minimum_increment_mm']+4*np.spacing(max(1.,abs(depth))):raise
                 increment=reduced_increment(p,base,next_depth-depth,kind);continue
+            if store:store.accepted(rec)
             x,depth=value,next_depth
             rec.update(time_s=(depth-p.start)/p.loading_rate,dt_s=p.material_dt)
             observables(p,x,rec)
             state=snapshot(p,x,old,depth);name=f'state_{len(result["steps"]):05d}.npz';np.savez_compressed(out/name,**state)
             rec.update(state_file=name,state_sha256=digest(out/name));result['steps'].append(rec)
+            parent=dict(file=name,sha256=rec['state_sha256'])
             write_json(out/'progress.json',dict(depth_mm=depth,accepted=len(result['steps']),surface_connected_mm=rec['surface_connected_failed_length_mm'],blade_entered=rec['blade_entered_surface_channel']))
             print('ACCEPTED '+json.dumps({k:rec[k] for k in ('depth_mm','reaction_fz_n','residual_n','released_nodes')}),flush=True)
             increment=max(base['minimum_increment_mm'],min(base['increment_mm'],increment*driver.accepted_step_growth(base,rec)))

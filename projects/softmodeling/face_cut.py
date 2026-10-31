@@ -77,6 +77,7 @@ class FaceCutProblem(EnergyCutProblem):
             after = 2*float(self.barrier(self.collisions(x),self.cmesh,x[self.surface]))
             event['contact_topology_energy_jump_n_mm'] = after-before
             self.face_events.append(event)
+            self.evidence('activation_after',x,event)
             if abs(after-before)>1e-10:
                 raise RuntimeError('Unfunded face-contact topology energy jump; model handoff unresolved')
 
@@ -85,8 +86,10 @@ class FaceCutProblem(EnergyCutProblem):
         return u[:-1,None]*self.rule['shape'][None,:,0]+u[1:,None]*self.rule['shape'][None,:,1]
 
     def cohesive_response(self, x, history=None):
-        return extrinsic_response(self.opening_at_points(x), self.previous_history if history is None else history,
-                                  self.strength,self.toughness)
+        old=self.previous_history if history is None else history
+        q=extrinsic_response(self.opening_at_points(x),old,self.strength,self.toughness)
+        if getattr(self,'pure_precrack',False):q['history']=old.copy()
+        return q
 
     def cohesive_algorithmic(self, x):
         return cohesive_discrete_response(self.opening_at_points(self.previous),self.opening_at_points(x),
@@ -145,6 +148,10 @@ class FaceCutProblem(EnergyCutProblem):
     def coupled_friction_tangent(self,x,lag,H):
         return coupled_tangent(self,x,lag,H) if self.friction_time=='endpoint_friction' else super().coupled_friction_tangent(x,lag,H)
 
+    def evidence(self,kind,x,data):
+        hook=getattr(self,"evidence_hook",None)
+        if hook is not None:hook(kind,self,x,data)
+
     def propose_insertion(self,x,traction,depth,deadline):
         """Current constraint resultant versus outgoing force of virgin faces.
 
@@ -153,6 +160,7 @@ class FaceCutProblem(EnergyCutProblem):
         preference and no second virtual Gc debit. Every newly free tensile DOF
         is checked against the original force tolerance before the graph event.
         """
+        if getattr(self,"pure_precrack",False):return np.zeros_like(self.released)
         g=self.evaluate(x,self.lag(x),tangent=False)[1]
         weights=self.rule['weights_mm2']*(~self.active_faces)[:,None]
         local=np.einsum('eq,qi->ei',weights,self.rule['shape'])*self.strength
@@ -166,6 +174,15 @@ class FaceCutProblem(EnergyCutProblem):
         newly_free=eligible_nodes(faces)&~self.released
         if np.max(excess[newly_free],initial=0.)>self.force_tolerance_n:
             raise EnergyResolutionRequired('Constraint-to-cohesive traction event unresolved; refine physical time before activation')
+        if getattr(self,"evidence_hook",None) is not None:
+            from tools.face_events import endpoint_forces
+            endpoint=endpoint_forces(self,x)
+            ranking=sorted(np.flatnonzero(eligible).tolist(),key=lambda i:(-excess[i],i))
+            self.evidence("activation",x,dict(candidate_seam_index=candidate,candidate_ranking=ranking,
+                algorithmic_gradient=g,algorithmic_excess_half_n=excess,outgoing_half_n=outgoing,
+                endpoint_force_components=endpoint,endpoint_excess_half_n=-sum(endpoint.values())[2*self.seam]-outgoing,
+                new_faces=np.flatnonzero(faces&~self.active_faces),new_free_nodes=self.seam[newly_free],
+                force_tolerance_half_n=self.force_tolerance_n,target_depth_mm=depth))
         self.pending_faces=faces;mask[newly_free]=True
         self.activation_positions=x.copy()
         self.pending_handoff=dict(candidate_seam_index=candidate,new_faces=np.flatnonzero(faces&~self.active_faces).tolist(),
@@ -185,11 +202,14 @@ class FaceCutProblem(EnergyCutProblem):
         try:return super().step(x,old,depth,deadline)
         except BaseException:
             self.failed_active_faces=self.active_faces.copy()
+            self.evidence("failed",self.failed_positions,dict(stage=self.failed_stage))
             self.active_faces=before;self.released=eligible_nodes(before)
             if hasattr(self,'pending_faces'):del self.pending_faces
             self.rebuild_contact();self.set_free();raise
 
     def acceptance(self,x,depth,iterations,outer_iterations):
+        if getattr(self,'pure_precrack',False) and not np.array_equal(self.active_faces,self.precracked_faces):
+            raise RuntimeError('Pure precrack gained an activated face')
         rec=super().acceptance(x,depth,iterations,outer_iterations)
         if not np.array_equal(self.released,eligible_nodes(self.active_faces)):
             raise RuntimeError('Face ties and free-node mask disagree')
@@ -248,8 +268,11 @@ class FaceCutProblem(EnergyCutProblem):
             friction_time_defect_n_mm=fw-friction)
         physical=stored+cs+cd+viscous+bd+friction+kinetic-oldk
         reservoir=float(volume@(relaxed+old))+.5*float(np.sum(weights*(q['stored']+oldq['stored'])))+b1+self.previous_barrier_energy+.5*(kinetic+oldk)
-        return dict(external_work_n_mm=external,bulk_stored_delta_n_mm=stored,mechanical_reservoir_n_mm=reservoir,
+        ledger=dict(external_work_n_mm=external,bulk_stored_delta_n_mm=stored,mechanical_reservoir_n_mm=reservoir,
             cohesive_stored_delta_n_mm=cs,fracture_dissipation_n_mm=cd,viscous_endpoint_dissipation_n_mm=viscous,
             friction_work_n_mm=friction,friction_algorithmic_work_n_mm=fw,barrier_delta_n_mm=bd,kinetic_delta_n_mm=kinetic-oldk,
             kinetic_energy_n_mm=kinetic,physical_balance_defect_n_mm=external-physical,
             algebraic_balance_residual_n_mm=external-physical-sum(defects.values()),**defects)
+
+        self.evidence("energy",x,dict(ledger=ledger,friction_gradient_surface=fg,friction_velocity_increment_surface=fu[self.surface],friction_surface_nodes=self.surface))
+        return ledger

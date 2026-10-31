@@ -20,7 +20,7 @@ BASE_FINISH=base.finish
 
 class EndpointFaceCutProblem(FaceCutProblem):
     def acceptance(self,x,depth,iterations,outer_iterations):
-        endpoint=check_connected_endpoint(self,x)
+        endpoint=({'endpoint_strength_check':'not applicable: pure precrack forbids activation'} if getattr(self,'pure_precrack',False) else check_connected_endpoint(self,x))
         record=super().acceptance(x,depth,iterations,outer_iterations)
         record.update(endpoint)
         return record
