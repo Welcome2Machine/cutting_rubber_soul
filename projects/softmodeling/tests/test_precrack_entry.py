@@ -42,3 +42,25 @@ def test_saved_pure_notch_trial_restores_its_own_reference_geometry():
     np.testing.assert_array_equal(q.rest,p.rest)
     np.testing.assert_array_equal(q.mass,p.mass)
     np.testing.assert_array_equal(q.active_faces,p.precracked_faces)
+
+
+def test_independent_entry_reconstruction_detects_false_producer_flag(monkeypatch):
+    from tools import audit_precrack_entry as audit
+    p=problem(cfg(.2));x=p.rest.copy();ids=p.seam[-5:-3].tolist()
+    # Contact decoder fixture supplies a strict-interior EV stencil; the audit
+    # must inspect geometry even with a false production qualification flag.
+    contact=dict(body_nodes=ids,body_reference_group='seam')
+    monkeypatch.setattr(audit,'blade_contacts',lambda p,x:[contact])
+    contacts=audit.strict_contacts(p,x,.5)
+    assert contacts
+    with pytest.raises(ValueError,match='reconstructed=True, producer=False'):audit.check_entry_flag(contacts,False)
+    audit.check_entry_flag(contacts,True)
+    with pytest.raises(ValueError,match='reconstructed=False, producer=True'):audit.check_entry_flag([],True)
+
+
+def test_native_internal_contact_false_flag_is_detected():
+    from tools.audit_precrack_entry import strict_contacts,check_entry_flag
+    p=problem(cfg(.2));x=p.rest.copy();x[p.n:]=p.prescribed_blade_positions(.3582)
+    contacts=strict_contacts(p,x,.5)
+    assert contacts, 'Native EV/VV contact must exist strictly below the top'
+    with pytest.raises(ValueError,match='reconstructed=True, producer=False'):check_entry_flag(contacts,False)

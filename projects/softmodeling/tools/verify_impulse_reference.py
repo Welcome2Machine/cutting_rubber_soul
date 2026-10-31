@@ -49,7 +49,7 @@ def run(out,preregister,seconds=120,*,runtime=None):
             errors=dict(endpoint_velocity=float(np.max(np.abs(v-analytic['velocity']))),endpoint_position=float(np.max(abs(x-analytic['position']))),stop_time=abs(stop-analytic['stop_time_s']),impulse=float(np.max(abs(sums['contact_impulse_n_s']-analytic['contact_impulse_n_s']))),
                 work=max(abs(sums[k]-analytic[k]) for k in ('friction_dissipation_n_mm','normal_impact_loss_n_mm','wall_work_n_mm','external_work_n_mm')),
                 numerical_absolute=sum(abs(row['numerical_work_n_mm']) for row in rows),momentum=max(float(np.linalg.norm(row['momentum_residual_n_s'])) for row in rows))
-            passed=errors['endpoint_velocity']<=limits['velocity_abs_tol'] and errors['stop_time']<=limits['stop_time_abs_tol_s'] and errors['impulse']<=limits['impulse_abs_tol_ns'] and errors['work']<=limits['work_abs_tol_nmm'] and errors['numerical_absolute']<=limits['work_abs_tol_nmm'] and min(row['minimum_gap_mm'] for row in rows)>=-limits['gap_tol_mm']
+            passed=errors['endpoint_position']<=limits['position_abs_tol_mm'] and errors['momentum']<=limits['momentum_abs_tol_ns'] and errors['endpoint_velocity']<=limits['velocity_abs_tol'] and errors['stop_time']<=limits['stop_time_abs_tol_s'] and errors['impulse']<=limits['impulse_abs_tol_ns'] and errors['work']<=limits['work_abs_tol_nmm'] and errors['numerical_absolute']<=limits['work_abs_tol_nmm'] and min(row['minimum_gap_mm'] for row in rows)>=-limits['gap_tol_mm']
             report['cases'].append(native(dict(name=name,dt_s=h,analytic=analytic,rows=rows,sums=sums,errors=errors,passed=passed)))
     old=[]
     for h in limits['dt_s']:

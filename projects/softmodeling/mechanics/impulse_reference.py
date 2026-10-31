@@ -19,7 +19,6 @@ def advance(position, velocity, time_s, dt, *, mass, force, wall_velocity=(0.,0.
     def gap():return float(x[1]-wall_offset-w[1]*t)
     for iteration in range(max_events):
         remaining=end-t
-        if remaining<=0:break
         g=gap();minimum_gap=min(minimum_gap,g)
         if g < -1e-12:raise ValueError('Initial/intermediate penetration; no position projection permitted')
         relative=v-w
@@ -31,6 +30,9 @@ def advance(position, velocity, time_s, dt, *, mass, force, wall_velocity=(0.,0.
             impulse+=P;work_wall+=float(P@w);dfric+=friction;dimpact+=normal
             events.append(dict(kind='impact',time_s=t,position=x.tolist(),velocity_before=before.tolist(),velocity_after=v.tolist(),impulse_n_s=P.tolist(),friction_n_mm=friction,normal_impact_loss_n_mm=normal))
             continue
+        # Output is right-continuous: consume an impact at end before returning.
+        # Its impulse and work above are part of this interval, including at h=0.
+        if remaining<=0:break
         contact=g<=1e-12 and abs(relative[1])<=1e-12 and f[1]<=0
         contact_force=np.zeros(2);event=None;h=remaining
         if contact:

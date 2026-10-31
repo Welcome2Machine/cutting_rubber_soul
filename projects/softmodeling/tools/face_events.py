@@ -54,8 +54,10 @@ def check_connected_endpoint(p, x):
     tied = (~p.released) & (p.rest[p.seam, 1] > 0)
     maximum = float(np.max(excess[tied], initial=0.))
     if maximum > p.force_tolerance_n:
-        raise EnergyResolutionRequired(
+        error=EnergyResolutionRequired(
             f'Instantaneous endpoint traction event unresolved: excess {maximum:.17g} N; '
             'refine current physical step before committing history')
+        error.failure_measurement=dict(quantity='endpoint_traction_excess_half_n',value=maximum,limit=p.force_tolerance_n,units='N',comparison='upper')
+        raise error
     return dict(maximum_connected_endpoint_excess_half_n=maximum,
                 endpoint_strength_check='relaxed Maxwell metric and native endpoint velocity friction')

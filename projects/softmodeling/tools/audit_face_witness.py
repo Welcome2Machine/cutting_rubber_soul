@@ -22,6 +22,9 @@ def restore(config,state):
         setattr(p,'previous' if key=='previous_positions' else key,state[key].copy())
     p.velocity=p.previous_velocity.copy();p.history=p.previous_history.copy();p.material_metric=p.previous_material_metric.copy()
     p.active_faces=state['active_faces'].copy();p.previous_active_faces=state['previous_active_faces'].copy()
+    # Restore the graph AND its exact constraints before constructing contact/DOFs.
+    np.testing.assert_array_equal(state['released'],eligible_nodes(p.active_faces))
+    p.released=state['released'].copy()
     p.rebuild_contact();p.active_contact=state['active_contact'].copy();p.set_free()
     np.testing.assert_array_equal(p.released,state['released'])
     np.testing.assert_array_equal(p.rest,state['reference_xy']);np.testing.assert_array_equal(p.mass,state['mass'])
@@ -65,7 +68,7 @@ def inspect_one(directory,reference,source,deadline):
         np.testing.assert_array_equal(np.flatnonzero(faces&~p.active_faces),d['new_faces'])
         before=2*float(p.barrier(p.collisions(x),p.cmesh,x[p.surface]))
         out['blade_contacts_before']=blade_contacts(p,x)
-        p.active_faces=faces;p.rebuild_contact()
+        p.active_faces=faces;p.released=eligible_nodes(faces);p.rebuild_contact();p.set_free()
         after=2*float(p.barrier(p.collisions(x),p.cmesh,x[p.surface]))
         out['blade_contacts_after']=blade_contacts(p,x)
         np.testing.assert_allclose(after-before,d['contact_topology_energy_jump_n_mm'],rtol=0,atol=1e-12)
@@ -103,7 +106,7 @@ def inspect(directory,out,seconds=540,*,runtime=None):
         if len(activation)!=expected:raise ValueError('Missing event witnesses')
         refs=list(activation);index=directory/'witnesses/representatives.json'
         if index.exists():
-            for item in json.loads(index.read_text())['signatures'].values():refs.extend(item[k] for k in ('first','worst','latest'))
+            for item in json.loads(index.read_text())['signatures'].values():refs.extend(item[k] for k in ('first','worst','latest') if item.get(k) is not None)
         unique={r['sha256']:r for r in refs}
         for ref in unique.values():report['audits'].append(inspect_one(directory,ref,source,start+seconds))
         report.update(passed=bool(unique),activation_witness_verified=bool(activation),activation_count=expected,representative_count=len(unique)-len(activation))

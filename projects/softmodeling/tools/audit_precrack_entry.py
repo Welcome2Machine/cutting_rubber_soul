@@ -11,6 +11,23 @@ from .face_witness import native
 from run_support import write_json
 
 
+def strict_contacts(p,x,precrack_mm):
+    """Reconstruct geometrically, irrespective of ANY producer qualification flag."""
+    verified=[]
+    for contact in blade_contacts(p,x):
+        ids=contact['body_nodes'];y=p.rest[ids,1]
+        if (contact['body_reference_group']=='seam' and np.all(y<p.config.height_mm-1e-9)
+            and np.all(y>p.config.height_mm-precrack_mm+1e-9)
+            and np.all(x[ids,0]>p.config.drop_s_mm+1e-10)):
+            verified.append(dict(contact=contact,reference_y_mm=y.tolist(),current_positions_mm=x[ids].tolist()))
+    return verified
+
+
+def check_entry_flag(contacts,claimed):
+    if bool(contacts)!=bool(claimed):
+        raise ValueError('Strict entry flag mismatch: independently reconstructed='+str(bool(contacts))+', producer='+str(bool(claimed)))
+
+
 @runtime_entry
 def inspect(case,out,seconds=540,*,runtime=None):
     case=Path(case);out=Path(out);start=time.monotonic()
@@ -27,6 +44,9 @@ def inspect(case,out,seconds=540,*,runtime=None):
         p=entry.problem(raw['config']);initial_history=p.history.copy();initial_faces=p.active_faces.copy()
         free_crack=p.seam[p.released];initial_gap=2*(p.rest[free_crack,0]-p.config.drop_s_mm)
         report['opening_history']=[]
+        initial_contacts=strict_contacts(p,p.rest,raw['config']['precrack_mm'])
+        if initial_contacts:raise ValueError('Initial state already entered; no prior nonentry bracket')
+        previous=dict(time_s=0.,depth_mm=p.start,state_file='initial_state.npz')
         for row in raw['steps']:
             if time.monotonic()-start>seconds:raise TimeoutError('Entry audit budget')
             with np.load(case/row['state_file'],allow_pickle=False) as z:s={k:z[k].copy() for k in z.files}
@@ -40,17 +60,16 @@ def inspect(case,out,seconds=540,*,runtime=None):
                 minimum_gap_mm=float(gap.min()),maximum_gap_mm=float(gap.max()),
                 minimum_change_from_initial_mm=float(np.min(gap-initial_gap)),
                 maximum_change_from_initial_mm=float(np.max(gap-initial_gap))))
-            if row['blade_entered_surface_channel']:
-                base.restore_audit(p,s,row);x=s['positions'];verified=[]
-                for contact in blade_contacts(p,x):
-                    ids=contact['body_nodes'];y=p.rest[ids,1]
-                    if (contact['body_reference_group']=='seam' and np.all(y<p.config.height_mm-1e-9)
-                        and np.all(y>p.config.height_mm-raw['config']['precrack_mm']+1e-9)
-                        and np.all(x[ids,0]>p.config.drop_s_mm+1e-10)):
-                        verified.append(dict(contact=contact,reference_y_mm=y.tolist(),current_positions_mm=x[ids].tolist()))
-                if not verified:raise ValueError('Claimed entry is only top/corner or closed')
+            # Prefix already verifies equations; reconstruction here is unconditional.
+            base.restore_audit(p,s,row)
+            verified=strict_contacts(p,s['positions'],raw['config']['precrack_mm'])
+            if verified:
+                if not report['strict_entry_states']:
+                    report['first_entry_bracket']=dict(previous_nonentry=previous,first_entry=dict(time_s=row['time_s'],depth_mm=row['depth_mm'],state_file=row['state_file']))
                 report['strict_entry_states'].append(dict(depth_mm=row['depth_mm'],time_s=row['time_s'],
                     state_file=row['state_file'],state_sha256=row['state_sha256'],contacts=verified))
+            else:previous=dict(time_s=row['time_s'],depth_mm=row['depth_mm'],state_file=row['state_file'])
+            check_entry_flag(verified,row['blade_entered_surface_channel'])
         report.update(passed=True,history_frozen=True,new_fracture_work_n_mm=0.,
             strict_interior_entry_verified=bool(report['strict_entry_states']),
             new_activation=False,new_connected_crack_growth=False)

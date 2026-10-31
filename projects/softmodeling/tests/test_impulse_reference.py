@@ -55,3 +55,24 @@ def test_saved_c1_tiny_return_event_is_not_discarded_by_absolute_time_floor():
 def test_positive_short_interval_is_actually_integrated():
     q=advance([0,1],[1,0],0,1e-16,mass=1,force=[0,0])
     assert q['position'][0]==1e-16
+
+
+def test_impact_exactly_at_output_end_is_right_continuous():
+    r=advance([0,1],[0,-1],0,1,mass=1,force=[0,0])
+    np.testing.assert_allclose(r['position'],[0,0],atol=1e-15)
+    np.testing.assert_allclose(r['velocity'],[0,0],atol=1e-15)
+    np.testing.assert_allclose(r['contact_impulse_n_s'],[0,1],atol=1e-15)
+    assert r['normal_impact_loss_n_mm']==pytest.approx(.5)
+    assert abs(r['numerical_work_n_mm'])<1e-15
+    np.testing.assert_allclose(r['momentum_residual_n_s'],0,atol=1e-15)
+
+
+@pytest.mark.parametrize('parts',[[1,1],[.4,.6,.7,.3],[2]])
+def test_output_partition_does_not_defer_or_duplicate_impact(parts):
+    x=np.array([0.,1.]);v=np.array([0.,-1.]);t=0.;rows=[]
+    for h in parts:
+        q=advance(x,v,t,h,mass=1,force=[0,0]);rows.append(q);x,v,t=q['position'],q['velocity'],q['time_s']
+    np.testing.assert_allclose(x,[0,0],atol=1e-15);np.testing.assert_allclose(v,0,atol=1e-15)
+    np.testing.assert_allclose(sum(r['contact_impulse_n_s'] for r in rows),[0,1],atol=1e-15)
+    assert sum(r['normal_impact_loss_n_mm'] for r in rows)==pytest.approx(.5)
+    assert sum(abs(r['numerical_work_n_mm']) for r in rows)<1e-15

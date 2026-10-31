@@ -40,6 +40,31 @@ def trial_fields(p,x):
     return {k:np.array(v,copy=True) for k,v in d.items()}
 
 
+def rejection_measurement(error,energy,p):
+    """Order only a measured violation of the SAME gate, never missing data as 0."""
+    measurement=getattr(error,'failure_measurement',None)
+    if measurement is not None:
+        m=dict(measurement)
+    elif energy is not None and 'Negative' in str(error) and 'friction' in str(error):
+        m=dict(quantity='minimum_friction_work',value=min(energy['friction_work_n_mm'],energy['friction_algorithmic_work_n_mm']),limit=-1e-12,units='N mm',comparison='lower')
+    elif energy is not None and ('defect' in str(error) or 'energy' in str(error).lower()):
+        from release_dynamics import DEFECT_KEYS
+        value=sum(abs(energy.get(k,0.)) for k in (*DEFECT_KEYS,'friction_time_defect_n_mm'))
+        limit=p.energy_absolute_tolerance+(p.energy_tolerance or 0)*energy['mechanical_reservoir_n_mm']
+        m=dict(quantity='absolute_temporal_defect',value=value,limit=limit,units='N mm',comparison='upper')
+    else:
+        # A narrow parser covers original nonlinear diagnostics without inventing
+        # residuals for timeouts or iteration budgets that did not record one.
+        match=re.search(r'residual=([+\-0-9.eE]+) N',str(error))
+        if match is None:return dict(comparable=False,reason='No measured gate violation recorded')
+        m=dict(quantity='free_force_residual_half_n',value=float(match[1]),limit=p.force_tolerance_n,units='N',comparison='upper')
+    value,limit=float(m['value']),float(m['limit'])
+    if not np.isfinite(value+limit) or m['comparison'] not in ('upper','lower'):
+        raise ValueError('Invalid rejection measurement')
+    m.update(comparable=True,severity=(value-limit) if m['comparison']=='upper' else (limit-value))
+    return m
+
+
 class WitnessStore:
     def __init__(self,directory,identity,max_signatures=8):
         self.root=Path(directory)/'witnesses';self.root.mkdir(exist_ok=False)
@@ -88,15 +113,18 @@ class WitnessStore:
         fields,stage=self.trial
         energy=self.last_energy
         signature=kind+'|'+str(stage.get('stage'))+'|'+re.sub(r'[-+]?\d+(?:\.\d+)?(?:e[-+]?\d+)?','#',str(error).split(';')[0])
+        measurement=rejection_measurement(error,energy,p)
+        # Different quantities/gates cannot compete for one worst representative.
+        signature+='|'+str(measurement.get('quantity','unmeasured'))+'|'+str(measurement.get('limit'))
         if signature not in self.signatures and len(self.signatures)>=self.max_signatures:
             self.omitted_signatures+=1;return dict(saved=False,reason='Signature cap',rollback_verified=True)
-        score=max((abs(float(v)) for k,v in (energy or {}).items() if k in ('friction_time_defect_n_mm','physical_balance_defect_n_mm')),default=0.)
         ref=self._save('rejected',fields,dict(kind='rejected',error=str(error),failure_kind=kind,stage=stage,
-            energy=energy,negative_work_gate_n_mm=-1e-12,rollback_array_sha256=array_hash(after),rollback_verified=rollback))
-        item=self.signatures.setdefault(signature,dict(first=ref,worst=ref,worst_score=score))
-        if score>item['worst_score']:item.update(worst=ref,worst_score=score)
+            rejection_measurement=measurement,energy=energy,negative_work_gate_n_mm=-1e-12,rollback_array_sha256=array_hash(after),rollback_verified=rollback))
+        item=self.signatures.setdefault(signature,dict(first=ref,worst=None,worst_score=None,worst_status='not_comparable'))
+        if measurement['comparable'] and (item['worst_score'] is None or measurement['severity']>item['worst_score']):
+            item.update(worst=ref,worst_score=measurement['severity'],worst_status='measured_gate_violation')
         item['latest']=ref
-        retained={q[k]['file'] for q in self.signatures.values() for k in ('first','worst','latest')}
+        retained={q[k]['file'] for q in self.signatures.values() for k in ('first','worst','latest') if q.get(k) is not None}
         for path in (self.root/'rejected').glob('*.npz'):
             if str(path.relative_to(self.root.parent)) not in retained:path.unlink()
         manifest=dict(signatures=self.signatures,maximum_signatures=self.max_signatures,maximum_files=3*self.max_signatures,
