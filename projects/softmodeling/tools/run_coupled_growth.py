@@ -12,6 +12,7 @@ from .audit_face_witness import inspect_one
 from .coupled_audit_contract import close
 from .frozen_scene import digest
 from .face_witness import native
+from .face_activation_chain import transition
 from run_support import write_json
 BASE_FINISH=route.finish
 
@@ -67,6 +68,7 @@ def audit(directory,out,seconds=500,*,runtime=None):
             released=p.released.copy(),active_contact=p.active_contact.copy(),active_faces=p.active_faces.copy(),depth_mm=p.start)
         with np.load(directory/'initial_state.npz',allow_pickle=False) as z:
             for key in z.files:np.testing.assert_array_equal(z[key],previous[key])
+        parent_ref=dict(file='initial_state.npz',sha256=digest(directory/'initial_state.npz'))
         previous_time=0.;entry_previous=dict(time_s=0.,depth_mm=p.start,state_file='initial_state.npz')
         for row in raw['steps']:
             if time.monotonic()>deadline:raise TimeoutError('Independent growth audit budget')
@@ -81,6 +83,7 @@ def audit(directory,out,seconds=500,*,runtime=None):
             close(row['dt_s'],h,'Production dt');close(row['time_s'],t,'Production time');close(t-previous_time,h,'Clock chain')
             if h<=0 or h>raw['config']['base']['increment_mm']/p.loading_rate+1e-12:raise ValueError('Invalid physical cutback schedule')
             if hasattr(p,'next_loading_depth') and depth>p.next_loading_depth(float(previous['depth_mm']),raw['config']['base']['increment_mm'],raw['requested_stop_depth_mm'])+1e-12:raise ValueError('Declared local time cap violated')
+            activation_chain=transition(directory,previous,s,row,parent_ref,float(previous['depth_mm']),raw['config'],source,p.seam)
             fresh=route.restore_audit(p,s,row)
             if not fresh['accepted_chord_ccd_safe']:raise ValueError('Full trajectory unsafe')
             balance=independent_balance(p,s)
@@ -94,8 +97,8 @@ def audit(directory,out,seconds=500,*,runtime=None):
                 report['first_activation_bracket']=dict(previous_time_s=previous_time,time_s=t,depth_mm=depth,new_faces=np.flatnonzero(s['active_faces']&~previous['active_faces']).tolist())
             if np.any(s['history'][~p.precracked_faces]>previous['history'][~p.precracked_faces]) and 'first_new_damage' not in report:report['first_new_damage']=now
             report['states'].append(dict(**now,dt_s=h,state_sha256=digest(file),min_j=fresh['min_j'],strict_contacts=contacts,
-                connected_length_mm=length,active_faces=int(s['active_faces'].sum()),**balance))
-            previous=s;previous_time=t
+                activation_chain=activation_chain,connected_length_mm=length,active_faces=int(s['active_faces'].sum()),**balance))
+            previous=s;previous_time=t;parent_ref=dict(file=row['state_file'],sha256=row['state_sha256'])
         complete=abs(previous['depth_mm']-raw['requested_stop_depth_mm'])<=1e-12
         if complete!=(raw['status'] in ('completed_pilot','completed_2mm')):raise ValueError('False completion label')
         refs=[ref for row in raw['steps'] for ref in row.get('activation_witnesses',[])]

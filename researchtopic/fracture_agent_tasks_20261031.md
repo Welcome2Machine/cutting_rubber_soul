@@ -236,3 +236,10 @@ physical_initiation_prediction_validated
 - [T2 Kamarei et al. 2025：黏弹性、强度、断裂能及准静态相场理论](https://pamies.cee.illinois.edu/assets/pdf/CMAME2025b.pdf)
 - [T3 Acary & Collins-Craft 2025：非光滑接触、摩擦和冲击的能量时间离散](https://jtcam.episciences.org/15960/pdf)
 - [T4 Siconos 官方摩擦接触问题及求解器说明](https://nonsmooth.gricad-pages.univ-grenoble-alpes.fr/siconos/users_guide/problems_and_solvers/friction_contact.html)
+
+
+## 2026-11-01 第十轮执行记录（计算前登记）
+
+接续已审查 e3a5c5b；仅采用 Maxwell 储能一致的当前主线。先修复 NPZ 拓扑—事件—见证的有序对应审计，重审已有数据。负责人指定机制开发反力绝对差 1e-5 N（10 μN）；三个时间层级在同一绝对时间集合比较，仍保留原相对、速度、冲量、事件、耗散、历史、几何和能量门。独立输出 `mechanism_force_consistency_passed`，原 `force_difference_decreases=false` 不改写。此容差不是实验分辨率、非线性残量误差界或渐近收敛证明。
+
+先推进最新版本至约 0.55、0.65 mm；依据失效开度及预算决定是否继续，最大 1.0 mm。不得继承旧储能版本的 0.55 mm 历史。新完全失效要求该面全部必要积分点达到真实阈值；区分激活、软化、失效、连通增长和刀具进入新面。计算运行区间并集 90 分钟、探索最多 72 分钟、并发最多两项，每项最多 4 物理核／4 计算线程／16 GiB。预算及原始记录目录 `runs/server_1101_round10/`。

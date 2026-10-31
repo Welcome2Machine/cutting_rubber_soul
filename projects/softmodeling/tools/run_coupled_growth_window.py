@@ -16,6 +16,7 @@ from .audit_face_witness import inspect_one
 from .audit_precrack_entry import strict_contacts,check_entry_flag
 from .coupled_audit_contract import TimeChain,input_identity
 from .face_witness import WitnessStore,qualification,native
+from .face_activation_chain import transition
 from .frozen_scene import digest
 from face_cut import eligible_nodes
 from step_control import failure_kind
@@ -104,6 +105,7 @@ def audit(case,out,seconds=500,*,runtime=None):
         initial_failed=parent['active_faces']&np.all(parent['history']>=2*p.toughness/p.strength,axis=1)
         report['entry_present_at_parent']=bool(strict_contacts(p,parent['positions'],p.connected_length(initial_failed)))
         previous=dict(time_s=clock.t0,depth_mm=raw['initial_depth_mm'],state_file='parent_state.npz')
+        parent_ref=dict(file='parent_state.npz',sha256=digest(case/'parent_state.npz'))
         for row in raw['steps']:
             if time.monotonic()>deadline:raise TimeoutError('Conditional softening audit budget')
             file=case/row['state_file']
@@ -111,6 +113,7 @@ def audit(case,out,seconds=500,*,runtime=None):
             with np.load(file,allow_pickle=False) as z:s={k:z[k].copy() for k in z.files}
             for key in ('positions','velocity','material_metric','history','released','active_faces'):
                 np.testing.assert_array_equal(s['previous_'+key],parent[key])
+            activation_chain=transition(case,parent,s,row,parent_ref,previous['depth_mm'],raw['config'],sources(),p.seam)
             tick=clock.advance(s,row);fresh=route.restore_audit(p,s,row)
             if not fresh['accepted_chord_ccd_safe']:raise ValueError('Full chord unsafe')
             balance=independent_balance(p,s)
@@ -120,9 +123,9 @@ def audit(case,out,seconds=500,*,runtime=None):
             if np.any(s['active_faces']&~parent['active_faces']) and 'first_activation_bracket' not in report:
                 report['first_activation_bracket']=dict(previous=previous,first=dict(**tick,state_file=row['state_file']),new_faces=np.flatnonzero(s['active_faces']&~parent['active_faces']).tolist())
             report['states'].append(dict(state_file=row['state_file'],state_sha256=digest(file),**tick,**balance,strict_contacts=contacts,
-                min_j=fresh['min_j'],accepted_chord_ccd_safe=True,maximum_speed_mm_s=float(np.linalg.norm(s['velocity'][:p.n],axis=1).max()),
+                activation_chain=activation_chain,min_j=fresh['min_j'],accepted_chord_ccd_safe=True,maximum_speed_mm_s=float(np.linalg.norm(s['velocity'][:p.n],axis=1).max()),
                 mass_velocity_norm_sqrt_nmm=float(np.sqrt(p.mass@np.sum(s['velocity'][:p.n]**2,axis=1)))))
-            previous=dict(**tick,state_file=row['state_file']);parent=s
+            previous=dict(**tick,state_file=row['state_file']);parent=s;parent_ref=dict(file=row['state_file'],sha256=row['state_sha256'])
         report['time_chain']=clock.finish()
         activation=[ref for row in raw['steps'] for ref in row.get('activation_witnesses',[])]
         if len(activation)!=sum(len(row.get('face_events',[])) for row in raw['steps']):raise ValueError('Missing activation witnesses')
