@@ -12,20 +12,9 @@ import numpy as np
 from . import run_endpoint_face_route as endpoint
 from . import run_fracture_route as base
 from .frozen_scene import digest
-from mechanics.discrete_gradient import cohesive_discrete_response
 
 
 class PurePrecrackProblem(endpoint.EndpointFaceCutProblem):
-    def cohesive_algorithmic(self, x):
-        u0=self.opening_at_points(self.previous);u1=self.opening_at_points(x)
-        # A fully failed initial face has identically zero traction/storage.
-        # Its frozen marker is delta_f, not a record of later maximum gap.
-        # Satisfy the generic kernel's reload-history domain without changing
-        # any saved history, damage, or fracture charge.
-        effective=self.previous_history.copy()
-        effective[self.precracked_faces]=np.maximum(effective[self.precracked_faces],u0[self.precracked_faces])
-        return cohesive_discrete_response(u0,u1,effective,self.strength,self.toughness)
-
     def connected_length(self, failed):
         # Entry classification uses vertical depth; the notch's longer arc
         # length is already represented by its physical integration areas.
@@ -38,7 +27,7 @@ class PurePrecrackProblem(endpoint.EndpointFaceCutProblem):
 
 def problem(config):
     c=copy.deepcopy(config);gap=c.pop('initial_slit_halfwidth_mm',None)
-    if not isinstance(gap,(float,int)) or not np.isfinite(gap) or not 0<=gap<=.1:raise ValueError('Explicit geometric control halfwidth in [0,.1] mm required')
+    if not isinstance(gap,(float,int)) or not np.isfinite(gap) or not 0<=gap<=.25:raise ValueError('Explicit geometric control halfwidth in [0,.25] mm required')
     if not c.get('pure_precrack') or c['precrack_mm']<=0:raise ValueError('Pure initial crack required')
     p=endpoint.problem(c)
     p.__class__=PurePrecrackProblem

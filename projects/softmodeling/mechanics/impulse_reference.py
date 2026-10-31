@@ -19,7 +19,7 @@ def advance(position, velocity, time_s, dt, *, mass, force, wall_velocity=(0.,0.
     def gap():return float(x[1]-wall_offset-w[1]*t)
     for iteration in range(max_events):
         remaining=end-t
-        if remaining<=4*np.spacing(max(1.,abs(end))):break
+        if remaining<=0:break
         g=gap();minimum_gap=min(minimum_gap,g)
         if g < -1e-12:raise ValueError('Initial/intermediate penetration; no position projection permitted')
         relative=v-w
@@ -55,7 +55,10 @@ def advance(position, velocity, time_s, dt, *, mass, force, wall_velocity=(0.,0.
                     # Stable quadratic roots for g+b*t+a*t²/2=0.
                     q=-b-np.copysign(root,b)
                     if q:roots=[q/a,2*g/q]
-            approaching=[z for z in roots if z>1e-15 and b+a*z<0]
+            # A dimensionful absolute cutoff can discard a real return to the
+            # wall (tiny outward velocity under a stiff inward load). Resolve
+            # every positive event; the event budget bounds degenerate cases.
+            approaching=[z for z in roots if z>0 and b+a*z<0]
             if approaching and min(approaching)<=h:h=min(approaching);event='contact'
         a=(f+contact_force)/mass;beforex=x.copy();beforev=v.copy();beforet=t
         dx=h*v+.5*h*h*a;x+=dx;v+=h*a;t+=h

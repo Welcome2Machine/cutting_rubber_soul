@@ -92,8 +92,12 @@ class FaceCutProblem(EnergyCutProblem):
         return q
 
     def cohesive_algorithmic(self, x):
-        return cohesive_discrete_response(self.opening_at_points(self.previous),self.opening_at_points(x),
-                                           self.previous_history,self.strength,self.toughness)
+        u0=self.opening_at_points(self.previous);old=self.previous_history
+        if getattr(self,'pure_precrack',False):
+            # Fully failed markers remain fixed; the generic reload kernel
+            # requires a max-gap input even on this identically zero branch.
+            old=old.copy();old[self.precracked_faces]=np.maximum(old[self.precracked_faces],u0[self.precracked_faces])
+        return cohesive_discrete_response(u0,self.opening_at_points(x),old,self.strength,self.toughness)
 
     def face_force(self, q, projected=False):
         weights = self.rule['weights_mm2']*self.active_faces[:,None]

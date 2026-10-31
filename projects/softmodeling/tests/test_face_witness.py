@@ -22,6 +22,10 @@ def test_pure_precrack_preserves_existing_failure_and_exact_intact_faces():
     np.testing.assert_array_equal(p.cohesive_response(x)['history'],history)
     assert not p.propose_insertion(x,None,0,time.monotonic()+1).any()
     assert not p.released[np.flatnonzero(p.rest[p.seam,1]==4.5)[0]]
+    p.previous=x.copy()
+    q=p.cohesive_algorithmic(x)
+    np.testing.assert_allclose(q['traction'][p.precracked_faces],0.,atol=1e-14)
+    np.testing.assert_array_equal(p.previous_history,history)
 
 
 def test_failure_store_captures_actual_attempt_and_exact_rollback(tmp_path,monkeypatch):

@@ -36,3 +36,22 @@ def test_moving_wall_impact_power_is_not_material_energy():
 
 def test_penetration_is_rejected_without_projection():
     with pytest.raises(ValueError,match='penetration'):advance([0,-.01],[0,0],0,.1,mass=1,force=[0,0])
+
+
+def test_saved_c1_tiny_return_event_is_not_discarded_by_absolute_time_floor():
+    # Exact node inputs from round7/new_negative_minimal, not a reduced mass.
+    m=6.666666666666646e-11;f=np.array([.0012053823221488402,-.039566369797932543])
+    v=np.array([-19.911961501423303,6.7762260825201945e-9]);h=2.0599365234373612e-5
+    q=advance([4.763011904588151,0.],v,0.,h,mass=m,force=f,mu=0.)
+    hit=-2*m*v[1]/f[1]
+    assert 0<hit<1e-15
+    assert next(e['time_s'] for e in q['events'] if e['kind']=='contact')==pytest.approx(hit,rel=1e-12,abs=1e-30)
+    assert q['velocity'][1]==pytest.approx(0.,abs=1e-14)
+    assert q['minimum_gap_mm']>=-1e-12
+    assert np.linalg.norm(q['momentum_residual_n_s'])/h<1e-4
+    assert abs(q['numerical_work_n_mm'])<1e-12
+
+
+def test_positive_short_interval_is_actually_integrated():
+    q=advance([0,1],[1,0],0,1e-16,mass=1,force=[0,0])
+    assert q['position'][0]==1e-16

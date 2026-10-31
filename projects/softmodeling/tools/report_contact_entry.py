@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 def report(root):
     root=Path(root);cases={};energy=[];events=[]
     fig,axes=plt.subplots(3,1,figsize=(11,10),sharex=True)
-    for name in ('activation_witness_pilot','pure_notch_entry','pure_closed_entry'):
+    for name in ('activation_witness_pilot','pure_notch_entry','pure_wide_notch_entry','pure_closed_entry'):
         path=root/name/'result.json'
         if not path.exists():continue
         raw=json.loads(path.read_text());rows=raw['steps'];audit_path=root/(name+'.audit.json')
