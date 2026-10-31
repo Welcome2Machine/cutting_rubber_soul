@@ -38,6 +38,9 @@ def compare(cases,limits,allowed_variations=('dt_requested_s','time_schedule')):
             rows1.append(bytime[key])
         f0=np.array([r['independent_fz_n'] for r in rows0]);f1=np.array([r['independent_fz_n'] for r in rows1])
         ferror=float(max(abs(f0-f1))/max(abs(f1)))
+        iforce=int(np.argmax(abs(f0-f1)));rf0,rf1=rows0[iforce],rows1[iforce]
+        normal_difference=rf1['blade_normal_impulse_n_s']/rf1['dt_s']-rf0['blade_normal_impulse_n_s']/rf0['dt_s']
+        friction_difference=rf1['blade_friction_impulse_n_s']/rf1['dt_s']-rf0['blade_friction_impulse_n_s']/rf0['dt_s']
         velocity_errors=[];velocity_scale=[];position_errors=[];impulse_errors=[];impulse_scales=[];blade_impulse_errors=[];blade_impulse_scales=[]
         impulses0=cumulative_impulses(path0,a0['states']);impulses1=cumulative_impulses(path1,a1['states'])
         for r0,r1 in zip(rows0,rows1):
@@ -62,6 +65,8 @@ def compare(cases,limits,allowed_variations=('dt_requested_s','time_schedule')):
             entry_difference=abs(br0['first_entry']['depth_mm']-br1['first_entry']['depth_mm'])
         result['pairs'].append(dict(coarse_dt_s=q0['dt_requested_s'],fine_dt_s=q1['dt_requested_s'],
             maximum_fz_error_over_fine_peak=ferror,maximum_mass_velocity_error_over_fine_peak=verror,
+            worst_force_time_s=rf0['time_s'],signed_force_difference_at_worst_n=float(f1[iforce]-f0[iforce]),
+            signed_normal_force_difference_at_worst_n=normal_difference,signed_friction_force_difference_at_worst_n=friction_difference,
             maximum_mass_velocity_difference_sqrt_nmm=max(velocity_errors),fine_peak_mass_velocity_sqrt_nmm=max(velocity_scale),
             worst_velocity_time_s=rows0[int(np.argmax(velocity_errors))]['time_s'],
             maximum_cumulative_contact_impulse_mass_error_over_fine_peak=max(impulse_errors)/max(impulse_scales),
