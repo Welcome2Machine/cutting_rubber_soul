@@ -1,0 +1,174 @@
+{
+  "schema": "softcut-intact-baseline-upgrade-handoff/1",
+  "created_date_jst": "2026-10-31",
+  "purpose": "Review the next intact-baseline upgrade; not a runnable workbench configuration.",
+  "automatic_launch": false,
+  "no_experimental_force_parameter_fitting": true,
+  "fracture_enabled": false,
+  "angles_deg": [
+    0,
+    33,
+    45,
+    50,
+    55,
+    57
+  ],
+  "experimental_angles_deg": [
+    0,
+    33,
+    57
+  ],
+  "material": {
+    "id": "cr_baseline",
+    "label": "CR 橡胶 · 可计算基线",
+    "law": "isochoric_maxwell",
+    "Ginf_MPa": 0.14,
+    "Gv_MPa": 1.24,
+    "tau_s": 1.7,
+    "K_MPa": 23.34333333333331,
+    "source_note": "Legacy reference parameters; historical 57-degree force-based selection, not independent material identification. Held fixed; no fitting in this study."
+  },
+  "blade": {
+    "id": "a_low_profile",
+    "label": "A blade (low performance)",
+    "shape": "symmetric_wedge",
+    "thickness_mm": 0.24577088241513723,
+    "included_angle_deg": 13.31684633759535,
+    "source_note": "Microscopy 1b44cde22b7008c09ded49a107c02e8f4628f9527388f7902480064c32e189b7; slide 4. User-confirmed normal section; symmetric macro-wedge approximation. Tip radius independently supplied: Unchanged historical 0.020 mm assumption, NOT microscopy-derived; isolate macro geometry.. Microscopic edge and physical prediction remain unqualified."
+  },
+  "tip_radius_mm": 0.02,
+  "tip_radius_status": "Historical assumption; this study does not certify a measured tip radius.",
+  "contact": {
+    "condition": "dry",
+    "mu": 0.35,
+    "formulation": "improved-max",
+    "dhat_mm": 0.0025,
+    "friction_displacement_smoothing_mm": 1e-05,
+    "full_ev_vv_self_contact_ccd": true
+  },
+  "specimen": {
+    "length_mm": 30,
+    "height_mm": 5,
+    "out_of_plane_width_mm": 20,
+    "drop_s_mm": 7,
+    "kinematics": "plane_strain_F33_1",
+    "bottom": "both_in_plane_dofs_fixed"
+  },
+  "simulation": {
+    "depth_mm": 2.0,
+    "increment_mm": 0.01,
+    "speed_mm_s": 0.2,
+    "mesh": "standard",
+    "local_spacing_mm": 0.05,
+    "surface_spacing_mm": 0.005,
+    "fine_halfwidth_mm": 3.0,
+    "coarse_spacing_mm": 1.0,
+    "nose_facets": 64,
+    "blade_spacing_mm": null
+  },
+  "numerical_invariants": {
+    "force_residual_n": 0.0001,
+    "positive_whole_element_J": true,
+    "exact_history_rollback": true,
+    "independent_initial_histories": true,
+    "whole_path_audit_required": true
+  },
+  "experimental_processing": {
+    "depth": "original first column in micrometers divided by 1000; no offset",
+    "force": "subtract first sample only; original files unchanged",
+    "simulation_force": "raw; no zeroing or scale",
+    "common_grid_mm": 0.001,
+    "windows_mm": [
+      [
+        0,
+        2
+      ],
+      [
+        0.1,
+        0.5
+      ],
+      [
+        0.5,
+        1
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "metrics": [
+      "RMSE_N",
+      "mean_bias_N",
+      "max_abs_error_N",
+      "relative_L2",
+      "secant_slope_N_per_mm",
+      "angle_differences_at_common_depths"
+    ],
+    "relative_L2_definition": "norm(FE-exp)/norm(exp) on declared common grid"
+  },
+  "input_provenance": [
+    {
+      "angle_deg": 0,
+      "original_local_config_path": "configs/intact_a_macro_20261030/angle0.json",
+      "original_local_config_sha256": "94600ad7a9fa14a97815fdb62658be3188ccb67a9f2d092cf16908837ac0e43f"
+    },
+    {
+      "angle_deg": 33,
+      "original_local_config_path": "configs/intact_a_macro_20261030/angle33.json",
+      "original_local_config_sha256": "a1f0a0d1fa006f6cc61eb6737bb7e9ba1c2e2cbc6376d064f8b7e95b477b871a"
+    },
+    {
+      "angle_deg": 45,
+      "original_local_config_path": "configs/intact_angles_45_50_55_20261030/angle45.json",
+      "original_local_config_sha256": "b4fc6f148c8debbe468199175ab65adfa231b1536174ea96c81ddca4fb802a6e"
+    },
+    {
+      "angle_deg": 50,
+      "original_local_config_path": "configs/intact_angles_45_50_55_20261030/angle50.json",
+      "original_local_config_sha256": "4cdf7dd6395d306318138a0025536c6b212201ce1b02d110e49986241c247a2f"
+    },
+    {
+      "angle_deg": 55,
+      "original_local_config_path": "configs/intact_angles_45_50_55_20261030/angle55.json",
+      "original_local_config_sha256": "b00276005d0caba703672b7bb29fec30559f411ccf111b41dd53de1a7ce6221d"
+    },
+    {
+      "angle_deg": 57,
+      "original_local_config_path": "configs/intact_a_macro_20261030/angle57.json",
+      "original_local_config_sha256": "fa6418f361cab3f89ca36ddc76d70ebe45ce5703f4a6164545b34f7ef150aae8"
+    }
+  ],
+  "authorized_experimental_inputs": [
+    {
+      "angle_deg": 0,
+      "repository_relative_local_path": "projects/softmodeling/docs/1008n0a2__Fz__curve_1.csv",
+      "sha256": "a76083c74c362b045760cc0568b4cfc47afc37deeca8d5d7da0c86bf2adcfe55",
+      "subtracted_initial_force_n": 0.0
+    },
+    {
+      "angle_deg": 33,
+      "repository_relative_local_path": "projects/softmodeling/docs/1008n33a1__Fz__curve_2.csv",
+      "sha256": "b5da5a081a909a426629ea0d08246cb6d9715e671923b48cb9ab7ad1788b6b64",
+      "subtracted_initial_force_n": 0.0
+    },
+    {
+      "angle_deg": 57,
+      "repository_relative_local_path": "projects/softmodeling/docs/1014n57a1__Fz__curve_0.csv",
+      "sha256": "50c25c112e3fe1a885d930c34a287cd5ae5bed008e5c9f39f589cbe6c9ebc022",
+      "subtracted_initial_force_n": 0.51
+    }
+  ],
+  "implementation_status": {
+    "current_production": "P1 intact finite-strain Maxwell",
+    "mixed_finite_strain_actual_cutting": "not_implemented_or_qualified",
+    "finite_width_actual_cutting": "not_qualified",
+    "direct_independent_friction_decomposition_audit": "not_completed"
+  },
+  "scope": {
+    "baseline_owner": "local intact-baseline development and reporting",
+    "receiving_agent": "independent assessment first",
+    "server_operations": "outside this task",
+    "fracture_development": "outside this task"
+  },
+  "publishing": "Only reviewed text/configuration; original experimental inputs, checkpoints, logs, media and runtimes remain local."
+}
