@@ -366,3 +366,13 @@ TotalCPU为19969.087 s，仅取作业层求和不重复步骤；占申请物理�
 运行并集。完整账本保留各任务ExitCode、Req/AllocTRES、TotalCPU、MaxRSS和原始日志。
 打包作业结束后再核账，包含其资源的最终accounting与finalization作为证据包旁附件；
 上述明确是打包前数字，不从总预算中漏掉交付作业。
+
+第八轮最终36项作业全部结束，包含打包与逐成员复核：调度运行并集980 s，原子
+标记965.206 s，保守合并口径1000 s（16分40秒）；保守物理核时.792222。
+总TotalCPU1452.33 s，调度申请物理核时间利用率52.3%；并发Elapsed/并集1.186。
+峰值仍为6物理核/6计算线程/16 GiB申请内存，RSS采样范围同上，无活动作业。
+最终明细在`runs/server_1031_round8/final_accounting.json`及`sacct_final.psv`。
+最小包`runs/deliverables/server_1031_round8_minimal_20261031.tar.gz`为78019926 bytes，
+1333个成员逐项核验；SHA256为
+`dd7c9c984564c2eac8e4969e533b7ff8a992cb4769a6553917a0fafe629dc915`。
+包内数值源码/文字快照为926ae0b；最终核账作为包外附件，避免伪造打包尚未结束的统计。
