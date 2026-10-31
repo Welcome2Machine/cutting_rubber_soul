@@ -36,6 +36,30 @@ def test_failed_coupled_step_keeps_all_committed_history(monkeypatch):
     assert array_hash(accepted_fields(p,x))==before
 
 
+def test_maxwell_stored_energy_uses_same_deviatoric_law_without_projecting_history():
+    from mechanics.discrete_gradient import frozen_response
+    p=problem(cfg(.2),'maxwell');x=p.rest.copy();x[:p.n,1]*=.997
+    F=p.deformation(x);A=p.previous_material_metric.copy();A[:,0,0]=1.03;A[:,1,1]=1/1.03
+    # Amplify a still admissible roundoff determinant discrepancy so the
+    # det(A)==1 shortcut is distinguishable from the physical isochoric law.
+    drift=A*(1-2e-10);before=drift.copy();correct=p.frozen(x,drift)
+    np.testing.assert_allclose(correct,p.frozen(x,A),rtol=0,atol=3e-15)
+    wrong=frozen_response(F,drift,p.config.shear_modulus_n_mm2,p.material.mu_ov[0],p.config.bulk_modulus_n_mm2,tangent=False)['energy']
+    assert max(abs(wrong-correct))>1e-10
+    p.previous_material_metric=drift;p.material_dt=1e-16
+    np.testing.assert_allclose(p.material_response(x)['energy'],correct,rtol=0,atol=3e-15)
+    np.testing.assert_array_equal(drift,before)
+
+
+def test_maxwell_energy_matches_independent_normalized_invariant_identity():
+    from mechanics.discrete_gradient import frozen_response
+    p=problem(cfg(.2),'maxwell');x=p.rest.copy();x[:p.n,0]+= .003*x[:p.n,1]
+    A=p.previous_material_metric.copy();A[:,0,0]=1.02;A[:,1,1]=(1+3e-10)/1.02
+    expected=frozen_response(p.deformation(x),A/np.cbrt(np.linalg.det(A))[:,None,None],
+        p.config.shear_modulus_n_mm2,p.material.mu_ov[0],p.config.bulk_modulus_n_mm2,tangent=False)['energy']
+    np.testing.assert_allclose(p.frozen(x,A),expected,rtol=0,atol=3e-15)
+
+
 @pytest.mark.parametrize('layer',['frozen_metric','maxwell'])
 def test_full_coupled_contact_jacobian_includes_geometry_and_material(layer):
     p=problem(cfg(.2),layer);p.material_dt=.0005

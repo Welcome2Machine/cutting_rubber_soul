@@ -21,7 +21,15 @@ def independent_balance(p,s,*,require_force_gate=True):
     grad=p.mesh.bulk_data[1];tri=p.mesh.triangles;volume=p.material_integration_weights()
     F=lambda z:np.einsum('eai,eaJ->eiJ',z[tri],grad)
     F1,F0=F(x),F(old);A=s['previous_material_metric']
-    oldq=frozen_response(F0,A,p.config.shear_modulus_n_mm2,p.material.mu_ov[0],p.config.bulk_modulus_n_mm2,tangent=False)
+    # Independent closed-form alpha=2 deviatoric identity: normalize only a
+    # temporary evaluation copy, never the committed history. Production uses
+    # principal log stretches. The old det(A)==1 shortcut is not this energy
+    # when floating-point history has a nonzero determinant error.
+    if p.material_layer=='maxwell':
+        if p.material.alpha_eq!=(2.,) or p.material.alpha_ov!=(2.,):raise ValueError('Independent closed-form energy audit requires alpha=2')
+        old_metric=A/np.cbrt(np.linalg.det(A))[:,None,None]
+    else:old_metric=A
+    oldq=frozen_response(F0,old_metric,p.config.shear_modulus_n_mm2,p.material.mu_ov[0],p.config.bulk_modulus_n_mm2,tangent=False)
     if p.material_layer=='maxwell':q=response(F1,A,h,p.material,tangent=False,kinematics='plane_strain')
     else:q=frozen_response(F1,A,p.config.shear_modulus_n_mm2,p.material.mu_ov[0],p.config.bulk_modulus_n_mm2,tangent=False)
     bulk=np.zeros_like(x);local=volume[:,None,None]*np.einsum('eiJ,eaJ->eai',q['P'],grad)

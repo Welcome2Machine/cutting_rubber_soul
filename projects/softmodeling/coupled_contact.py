@@ -9,6 +9,7 @@ BE numerical work is measured and gated, never called physical damping.
 import numpy as np
 from scipy.sparse import coo_matrix
 from mechanics.discrete_gradient import frozen_response
+from mechanics.finite_strain import principal
 from prototype.ipc_reference import IPCProblem,LoadStepFailure
 from tools.run_precrack_entry import PurePrecrackProblem,problem as original_problem
 from face_cut import FaceCutProblem,eligible_nodes
@@ -16,6 +17,17 @@ from release_dynamics import check_energy_gate,DEFECT_KEYS
 
 
 class CoupledContactProblem(PurePrecrackProblem):
+    def frozen(self,x,metric=None):
+        if self.material_layer!='maxwell':return super().frozen(x,metric)
+        # Use the SAME stored-energy law as the implicit Maxwell return map.
+        # Its overstress energy is deviatoric in elastic log stretches. The
+        # closed-form det(A)==1 shortcut acquires a per-step energy offset when
+        # committed metrics drift by roundoff. Do not project or edit history.
+        F=self.deformation(x);A=self.previous_material_metric if metric is None else metric
+        eq=np.column_stack((.5*np.log(np.linalg.eigvalsh(F@F.transpose(0,2,1))),np.zeros(len(F))))
+        ov=np.column_stack((.5*np.log(np.linalg.eigvalsh(F@A[:,:2,:2]@F.transpose(0,2,1))),.5*np.log(A[:,2,2])))
+        return principal(eq,self.material)[0]+principal(ov,self.material,True)[0]
+
     def material_response(self,x,*,tangent=False):
         F=self.deformation(x)
         if self.material_layer=='maxwell':
@@ -96,6 +108,7 @@ class CoupledContactProblem(PurePrecrackProblem):
         gate=check_energy_gate(self,e)
         rec.update(energy=e,energy_gate=gate,unilateral_force_violation_n=violation,
             material_layer=self.material_layer,time_integrator='fully_coupled_backward_euler_IPC',
+            bulk_energy_identity='same principal Maxwell stored law at both endpoints; no metric projection' if self.material_layer=='maxwell' else 'declared frozen-metric control',
             reaction_sampling='endpoint backward-Euler force; contact impulse = h times force',
             material=dict(dt_s=self.material_dt,stored_energy_n_mm=float(self.material_integration_weights()@q['energy']),
                 viscous_dissipation_increment_n_mm=.5*e['viscous_endpoint_dissipation_n_mm'],
