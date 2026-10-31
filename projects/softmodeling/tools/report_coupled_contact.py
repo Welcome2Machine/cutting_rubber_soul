@@ -51,9 +51,15 @@ def compare(cases,limits,allowed_variations=('dt_requested_s','time_schedule')):
             velocity_scale.append(float(np.sqrt(mass@np.sum(v1[:n]**2,axis=1))))
             position_errors.append(float(np.max(np.linalg.norm(x1[:n]-x0[:n],axis=1))))
         verror=max(velocity_errors)/max(velocity_scale)
-        br0=a0['first_entry_bracket'];br1=a1['first_entry_bracket']
-        lo=max(br0['previous_nonentry']['depth_mm'],br1['previous_nonentry']['depth_mm'])
-        hi=min(br0['first_entry']['depth_mm'],br1['first_entry']['depth_mm'])
+        preexisting=bool(a0.get('entry_present_at_parent',False))
+        if preexisting!=bool(a1.get('entry_present_at_parent',False)):raise ValueError('Same parent has inconsistent entry identity')
+        if preexisting:
+            lo=hi=q0['initial_depth_mm'];entry_difference=0.
+        else:
+            br0=a0['first_entry_bracket'];br1=a1['first_entry_bracket']
+            lo=max(br0['previous_nonentry']['depth_mm'],br1['previous_nonentry']['depth_mm'])
+            hi=min(br0['first_entry']['depth_mm'],br1['first_entry']['depth_mm'])
+            entry_difference=abs(br0['first_entry']['depth_mm']-br1['first_entry']['depth_mm'])
         result['pairs'].append(dict(coarse_dt_s=q0['dt_requested_s'],fine_dt_s=q1['dt_requested_s'],
             maximum_fz_error_over_fine_peak=ferror,maximum_mass_velocity_error_over_fine_peak=verror,
             maximum_mass_velocity_difference_sqrt_nmm=max(velocity_errors),fine_peak_mass_velocity_sqrt_nmm=max(velocity_scale),
@@ -62,7 +68,7 @@ def compare(cases,limits,allowed_variations=('dt_requested_s','time_schedule')):
             maximum_cumulative_blade_impulse_error_over_fine_peak=max(blade_impulse_errors)/max(blade_impulse_scales),
             terminal_blade_normal_impulse_difference_n_s=N1-N0,terminal_blade_friction_impulse_difference_n_s=T1-T0,
             maximum_position_difference_mm=max(position_errors),entry_brackets_overlap=lo<=hi+1e-14,
-            entry_depth_difference_mm=abs(br0['first_entry']['depth_mm']-br1['first_entry']['depth_mm'])))
+            entry_depth_difference_mm=entry_difference,entry_preexists_parent=preexisting))
     result['absolute_numerical_fraction']=fractions
     fine=result['pairs'][-1]
     result['gates']=dict(force=fine['maximum_fz_error_over_fine_peak']<=limits['force_relative'],
@@ -75,6 +81,18 @@ def compare(cases,limits,allowed_variations=('dt_requested_s','time_schedule')):
     if 'impulse_relative' in limits:
         result['gates']['contact_impulse']=fine['maximum_cumulative_contact_impulse_mass_error_over_fine_peak']<=limits['impulse_relative']
         result['gates']['impulse_difference_decreases']=fine['maximum_cumulative_contact_impulse_mass_error_over_fine_peak']<result['pairs'][0]['maximum_cumulative_contact_impulse_mass_error_over_fine_peak']
+    if cases[0][1]['config'].get('pure_precrack') is False:
+        audits=[a for _,_,a in cases]
+        result['new_fracture_dissipation_n_mm']=[sum(s['independent_fracture_n_mm'] for s in a['states']) for a in audits]
+        events=[a.get('first_activation_bracket') for a in audits]
+        result['activation_brackets']=events
+        result['gates']['activation_replayed']=all(a.get('activation_witness_verified',False) for a in audits)
+        result['gates']['positive_new_fracture_dissipation']=all(d>0 for d in result['new_fracture_dissipation_n_mm'])
+        result['gates']['activation_brackets_overlap']=all(
+            a and b and max(a['previous']['time_s'],b['previous']['time_s'])<=min(a['first']['time_s'],b['first']['time_s'])+1e-12 for a,b in zip(events[:-1],events[1:]))
+        d=result['new_fracture_dissipation_n_mm']
+        result['fracture_dissipation_relative_differences']=[abs(a-b)/b if b>0 else None for a,b in zip(d[:-1],d[1:])]
+        result['gates']['fracture_dissipation']=d[-1]>0 and abs(d[-2]-d[-1])/d[-1]<=limits.get('fracture_relative',.05)
     result['passed']=all(result['gates'].values());return result
 
 
