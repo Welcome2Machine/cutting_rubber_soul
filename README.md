@@ -1,5 +1,7 @@
 # SoftCut Solution · 橡胶斜切研究工作台
 
+> **2026-10-31 当前任务**：[负责人审查与任务入口](researchtopic/README.md) · [本地基线任务](researchtopic/baseline_agent_tasks_20261031.md) · [远程断裂任务](researchtopic/fracture_agent_tasks_20261031.md) · [服务器启动提示词](researchtopic/server_agent_prompt_20261031.md)。当前任务更新不代表新增计算结果；实际进展见既有研究状态。
+
 把有限元仿真与视频材料点观测放在同一个本地工程内：启动各自流程、检查输入、导出已审查有限元状态、比较同参考态位移，以及显式运行起裂候选诊断和受限裂后研究算例。各流程保存可追溯的 HTML / CSV / JSON 报告。
 
 ## 开始使用
