@@ -70,7 +70,7 @@ def inspect(case,out,seconds=500,*,runtime=None):
     raw=json.loads((case/'result.json').read_text());report=dict(passed=False,source_hashes=sources(),result_sha256=digest(case/'result.json'),auditor_sha256=digest(Path(__file__)),thread_runtime=runtime,states=[])
     try:
         if raw['source_hashes']!=sources():raise ValueError('Numerical source identity mismatch')
-        p=problem(raw['config'],raw['material_layer'])
+        p=problem(raw['config'],raw['material_layer'],raw.get('solve_tolerance_n',1e-4))
         with np.load(case/'parent_state.npz',allow_pickle=False) as z:parent={k:z[k].copy() for k in z.files}
         if digest(case/'parent_state.npz')!=raw['parent']['state_sha256']:raise ValueError('Parent identity mismatch')
         previous=dict(time_s=raw['initial_time_s'],depth_mm=raw['initial_depth_mm'],state_file='parent_state.npz')

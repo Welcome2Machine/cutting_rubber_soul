@@ -230,3 +230,14 @@ Maxwell真实时间与半域完整IPC/CCD，未断法向连接为精确约束，
 裂纹增长或完整材料起裂。2 mm、完整事件、能量/时间/网格、实验预测逐项独立。
 原始拒绝态按签名有界保存，不导出为已接受物理路径。条件模型转换有独立schema
 及history_committed=false，不能被比较层拼接为生产后缀。
+
+### 第八轮条件耦合接触窗口
+
+`python -m tools.run_coupled_contact`明确标记`conditional_comparison=true`和
+`production_continuation=false`；只允许纯预裂、固定共同窗口及预登记时间步。
+其`solve_tolerance_n`是可收紧的求根目标，`physical_acceptance_n=1e-4`独立保留。
+父态、旧生产源码、配置和独立审查的SHA必须匹配；换积分器的条件结果不得接入
+旧生产series.qualified。`audit_coupled_contact`重新装配动量和功，逐态重建内部
+接触并报告首次进入区间。`report_coupled_contact`比较共同绝对时刻，不对齐事件。
+净能量余项、绝对数值项（含方程残量功）、窗口完成、进入和时间资格分别保存。
+未测得拒绝量的`worst`可为null；下游不能再无条件解引用或称首条为最严重。

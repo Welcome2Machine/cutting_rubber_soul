@@ -101,10 +101,12 @@ class CoupledContactProblem(PurePrecrackProblem):
         return rec
 
 
-def problem(config,layer='frozen_metric'):
+def problem(config,layer='frozen_metric',solve_tolerance_n=1e-4):
     if layer not in ('frozen_metric','maxwell'):raise ValueError('Explicit material layer required')
     p=original_problem(config)
     p.__class__=CoupledContactProblem
+    if not 0<solve_tolerance_n<=1e-4:raise ValueError('Solve target may only be tightened')
+    p.force_tolerance_n=solve_tolerance_n/np.sqrt(2.)
     p.material_layer=layer;p.kinematic_theta=1.
     # Face assembler uses du for friction; lag() above uses endpoint geometry.
     # Thus du=h*v1 including prescribed blade motion, unlike old midpoint law.

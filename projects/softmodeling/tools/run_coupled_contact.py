@@ -70,11 +70,12 @@ def run(parent,parent_audit,state_index,preregister,out,dt,layer,seconds=600,*,r
     out.mkdir(parents=True,exist_ok=False);shutil.copy2(file,out/'parent_state.npz')
     shutil.copy2(audit,out/'parent_audit.json');shutil.copy2(pre,out/'preregistration.json')
     write_json(out/'parent_record.json',row)
-    p=problem(raw['config'],layer);x=restore_parent(p,s);depth=float(row['depth_mm']);t0=float(row['time_s'])
+    solve_tolerance=limits.get('solve_tolerance_n',1e-4)
+    p=problem(raw['config'],layer,solve_tolerance);x=restore_parent(p,s);depth=float(row['depth_mm']);t0=float(row['time_s'])
     source=sources();start=time.monotonic();deadline=start+seconds-5
     result=dict(schema='softcut-coupled-contact-window/1',config=raw['config'],source_hashes=source,source_unchanged=False,
         interpreter=sys.executable,execution_identity=driver.execution_identity(),thread_runtime=runtime,
-        conditional_comparison=True,production_continuation=False,material_layer=layer,
+        conditional_comparison=True,production_continuation=False,material_layer=layer,solve_tolerance_n=solve_tolerance,physical_acceptance_n=1e-4,
         parent=dict(directory=str(parent.resolve()),state_file=row['state_file'],state_sha256=digest(file),result_sha256=digest(parent/'result.json'),source_hashes=raw['source_hashes'],audit_sha256=digest(audit)),
         preregistration_sha256=digest(pre),initial_depth_mm=depth,initial_time_s=t0,dt_requested_s=dt,window_s=limits['window_s'],
         initial_barrier_energy_n_mm=2*float(p.barrier(p.collisions(x),p.cmesh,x[p.surface])),contact_conversion_work_n_mm=0.,

@@ -52,3 +52,9 @@ def test_full_coupled_contact_jacobian_includes_geometry_and_material(layer):
     gm=p.evaluate(x-eps*d,p.lag(x-eps*d),tangent=False)[1]
     fd=(gp-gm)/(2*eps);analytic=J@d.ravel()
     assert np.linalg.norm(fd-analytic)<=2e-5*np.linalg.norm(analytic)
+
+
+def test_solver_target_can_be_tightened_but_acceptance_cannot_be_relaxed():
+    p=problem(cfg(.2),'frozen_metric',1e-7)
+    assert p.force_tolerance_n==pytest.approx(1e-7/np.sqrt(2))
+    with pytest.raises(ValueError,match='tightened'):problem(cfg(.2),'frozen_metric',1.001e-4)
