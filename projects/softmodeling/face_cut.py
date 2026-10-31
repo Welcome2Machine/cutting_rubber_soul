@@ -176,7 +176,8 @@ class FaceCutProblem(EnergyCutProblem):
         candidate=int(np.flatnonzero(eligible)[np.argmax(excess[eligible])])
         faces=self.active_faces.copy();faces[max(0,candidate-1):min(len(faces),candidate+1)]=True
         newly_free=eligible_nodes(faces)&~self.released
-        if np.max(excess[newly_free],initial=0.)>self.force_tolerance_n:
+        event_tolerance=getattr(self,'activation_tolerance_n',self.force_tolerance_n)
+        if np.max(excess[newly_free],initial=0.)>event_tolerance:
             raise EnergyResolutionRequired('Constraint-to-cohesive traction event unresolved; refine physical time before activation')
         if getattr(self,"evidence_hook",None) is not None:
             from tools.face_events import endpoint_forces
@@ -186,7 +187,7 @@ class FaceCutProblem(EnergyCutProblem):
                 algorithmic_gradient=g,algorithmic_excess_half_n=excess,outgoing_half_n=outgoing,
                 endpoint_force_components=endpoint,endpoint_excess_half_n=-sum(endpoint.values())[2*self.seam]-outgoing,
                 new_faces=np.flatnonzero(faces&~self.active_faces),new_free_nodes=self.seam[newly_free],
-                force_tolerance_half_n=self.force_tolerance_n,target_depth_mm=depth))
+                force_tolerance_half_n=event_tolerance,target_depth_mm=depth))
         self.pending_faces=faces;mask[newly_free]=True
         self.activation_positions=x.copy()
         self.pending_handoff=dict(candidate_seam_index=candidate,new_faces=np.flatnonzero(faces&~self.active_faces).tolist(),

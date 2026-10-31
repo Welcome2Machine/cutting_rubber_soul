@@ -13,8 +13,9 @@ from run_support import write_json
 from .audit_zero_gap_cut import blade_contacts
 
 
-def restore(config,state):
-    if 'initial_slit_halfwidth_mm' in config:
+def restore(config,state,*,factory=None):
+    if factory is not None:p=factory(config)
+    elif 'initial_slit_halfwidth_mm' in config:
         from .run_precrack_entry import problem
         p=problem(config)
     else:p=route.problem(config)
@@ -35,7 +36,7 @@ def restore(config,state):
     return p
 
 
-def inspect_one(directory,reference,source,deadline):
+def inspect_one(directory,reference,source,deadline,*,factory=None):
     if time.monotonic()>deadline:raise TimeoutError('Witness audit budget')
     path=directory/reference['file']
     if not path.resolve().is_relative_to((directory/'witnesses').resolve()) or digest(path)!=reference['sha256']:raise ValueError('Witness identity mismatch')
@@ -48,7 +49,7 @@ def inspect_one(directory,reference,source,deadline):
     if array_hash(fields)!=m['parent_accepted_array_sha256']:raise ValueError('Wrong accepted parent')
     for a,b in [('previous_positions','positions'),('previous_velocity','velocity'),('previous_history','history'),('previous_material_metric','material_metric'),('previous_active_faces','active_faces')]:np.testing.assert_array_equal(s[a],fields[b])
     np.testing.assert_allclose(s['material_dt_s'],m['attempt']['physical_dt_s'],rtol=0,atol=1e-14)
-    p=restore(m['identity']['config'],s);x=s['positions'];out=dict(file=reference['file'],kind=m['kind'],passed=False)
+    p=restore(m['identity']['config'],s,factory=factory);x=s['positions'];out=dict(file=reference['file'],kind=m['kind'],passed=False)
     if m['kind']=='activation':
         g=p.evaluate(x,p.lag(x),tangent=False)[1];d=m['decision'];outgoing=np.zeros(len(p.seam))
         for face in np.flatnonzero(~p.active_faces):
@@ -64,7 +65,7 @@ def inspect_one(directory,reference,source,deadline):
         np.testing.assert_allclose(-sum(endpoint.values())[2*p.seam]-outgoing,d['endpoint_excess_half_n'],rtol=1e-11,atol=1e-12)
         i=ranking[0];faces=p.active_faces.copy();faces[max(0,i-1):min(len(faces),i+1)]=True
         newfree=eligible_nodes(faces)&~p.released
-        if np.max(excess[newfree],initial=0)>p.force_tolerance_n:raise ValueError('Handoff force gate failed')
+        if np.max(excess[newfree],initial=0)>getattr(p,'activation_tolerance_n',p.force_tolerance_n):raise ValueError('Handoff force gate failed')
         np.testing.assert_array_equal(np.flatnonzero(faces&~p.active_faces),d['new_faces'])
         before=2*float(p.barrier(p.collisions(x),p.cmesh,x[p.surface]))
         out['blade_contacts_before']=blade_contacts(p,x)
@@ -79,7 +80,7 @@ def inspect_one(directory,reference,source,deadline):
         if m['energy'] is not None:
             e=p.energy_ledger(x)
             for k,v in m['energy'].items():np.testing.assert_allclose(e[k],v,rtol=1e-10,atol=1e-12)
-            fu=velocity_increment(p,p.step_increment(x));lag=p.lag(x)
+            fu=velocity_increment(p,p.step_increment(x)) if p.friction_time=='endpoint_friction' else p.step_increment(x);lag=p.lag(x)
             fg=np.zeros(2*len(p.surface)) if lag is None else p.friction.gradient(lag,p.cmesh,fu[p.surface])
             np.testing.assert_array_equal(p.surface,s['friction_surface_nodes'])
             np.testing.assert_allclose(fu[p.surface],s['friction_velocity_increment_surface'],rtol=1e-12,atol=1e-14)

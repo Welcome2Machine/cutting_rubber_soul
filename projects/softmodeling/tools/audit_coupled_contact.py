@@ -4,6 +4,7 @@ from pathlib import Path
 import numpy as np
 from mechanics.discrete_gradient import frozen_response
 from mechanics.finite_strain import response
+from prototype.zero_gap_cut import extrinsic_response
 from coupled_contact import problem
 from numerical_runtime import runtime_entry,add_thread_arguments,thread_arguments
 from .run_coupled_contact import sources
@@ -28,18 +29,28 @@ def independent_balance(p,s,*,require_force_gate=True):
     n=np.zeros_like(x);n[p.surface]=p.barrier.gradient(p.collisions(x),p.cmesh,x[p.surface]).reshape(-1,2)
     f=np.zeros_like(x);lag=p.lag(x)
     if lag is not None:f[p.surface]=p.friction.gradient(lag,p.cmesh,du[p.surface]).reshape(-1,2)
-    # Pure precrack has zero traction on every exposed face; intact faces are
-    # exact ties. Check this property rather than drop arbitrary cohesive forces.
-    cq=p.cohesive_response(x);assert np.max(abs(cq['traction'][p.active_faces]),initial=0.)==0.
-    np.testing.assert_array_equal(s['active_faces'],p.precracked_faces)
-    np.testing.assert_array_equal(s.get('history',s['previous_history']),s['previous_history'])
+    # Separate quadrature assembly, including softening and full-area Gc once.
+    opening=lambda z:np.einsum('ei,qi->eq',np.column_stack((2*(z[p.seam[:-1],0]-p.config.drop_s_mm),2*(z[p.seam[1:],0]-p.config.drop_s_mm))),p.rule['shape'])
+    cq=extrinsic_response(opening(x),s['previous_history'],p.strength,p.toughness)
+    c0=extrinsic_response(opening(old),s['previous_history'],p.strength,p.toughness)
+    weights=p.rule['weights_mm2']*p.active_faces[:,None];coh=np.zeros_like(x)
+    for face in range(len(p.active_faces)):
+        for iq,w in enumerate(weights[face]):
+            coh[p.seam[face:face+2],0]+=w*cq['traction'][face,iq]*p.rule['shape'][iq]
+    Uc=float(np.sum(weights*(cq['stored']-c0['stored'])))
+    Dc=float(np.sum(weights*(cq['dissipated']-c0['dissipated'])))
+    if getattr(p,'pure_precrack',False):
+        assert np.max(abs(cq['traction'][p.active_faces]),initial=0.)==0.
+        np.testing.assert_array_equal(s['active_faces'],p.precracked_faces)
+        np.testing.assert_array_equal(s.get('history',s['previous_history']),s['previous_history'])
+    if Dc < -1e-12:raise ValueError('Negative independent fracture dissipation')
     v=s['velocity'];v0=s['previous_velocity'];moment=p.mass_dof.reshape(-1,2)*(v-v0)
-    residual=moment/h+bulk+n+f
+    residual=moment/h+bulk+coh+n+f
     force=float(np.sqrt(2)*np.linalg.norm(residual.ravel()[p.free]))
     if require_force_gate and force>1e-4:raise ValueError(f'Independent coupled residual {force:.17g} N')
     if 'impulse_bulk' in s:
         np.testing.assert_allclose(s['impulse_bulk'],-h*bulk,rtol=1e-8,atol=2e-12)
-        for name,z in [('normal',n),('friction',f)]:np.testing.assert_allclose(s['impulse_'+name],-h*z,rtol=1e-10,atol=1e-14)
+        for name,z in [('normal',n),('friction',f),('cohesive',coh)]:np.testing.assert_allclose(s['impulse_'+name],-h*z,rtol=1e-10,atol=1e-14)
     np.testing.assert_allclose(du[:p.n],h*v[:p.n],rtol=0,atol=1e-14)
     Ub=2*float(volume@(q['energy']-oldq['energy']))
     Dv=2*h*float(volume@q['viscous_rate']) if p.material_layer=='maxwell' else 0.
@@ -51,8 +62,9 @@ def independent_balance(p,s,*,require_force_gate=True):
     active=p.active_contact.copy();active[p.seam[~p.released]]=False
     Rc=-2*float(residual[:p.n,0][active]@du[:p.n,0][active])
     eqwork=2*float(residual.ravel()[p.free]@du.ravel()[p.free])
-    physical=W-Ub-Un-Df-Dv-dK
-    closure=physical-Rb-Rn-Rm-Rc
+    Rcoh=2*float(np.sum(coh*du))-Uc-Dc
+    physical=W-Ub-Un-Df-Dv-dK-Uc-Dc
+    closure=physical-Rb-Rn-Rm-Rc-Rcoh
     # Free residual work is the only allowed algebraic remainder, not a hidden
     # energy source. The independent material assembly may differ at roundoff.
     np.testing.assert_allclose(closure,-eqwork,rtol=1e-4,atol=1e-10)
@@ -62,9 +74,10 @@ def independent_balance(p,s,*,require_force_gate=True):
         independent_external_work_n_mm=W,independent_friction_n_mm=Df,
         independent_bulk_delta_n_mm=Ub,independent_maxwell_n_mm=Dv,
         independent_barrier_delta_n_mm=Un,independent_kinetic_delta_n_mm=dK,
+        independent_cohesive_delta_n_mm=Uc,independent_fracture_n_mm=Dc,numerical_cohesive_n_mm=Rcoh,
         net_physical_remainder_n_mm=physical,numerical_bulk_n_mm=Rb,numerical_barrier_n_mm=Rn,
         numerical_inertia_n_mm=Rm,numerical_constraint_n_mm=Rc,algebraic_residual_work_n_mm=closure,
-        absolute_numerical_including_equation_work_n_mm=sum(abs(z) for z in (Rb,Rn,Rm,Rc,closure)))
+        absolute_numerical_including_equation_work_n_mm=sum(abs(z) for z in (Rb,Rn,Rm,Rc,Rcoh,closure)))
 
 
 @runtime_entry

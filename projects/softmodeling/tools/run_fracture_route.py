@@ -184,18 +184,25 @@ def run(config,out,seconds,*,stop_depth=None,runtime=None):
     if store:initial['active_faces']=p.active_faces
     np.savez_compressed(out/'initial_state.npz',**initial)
     parent=dict(file='initial_state.npz',sha256=digest(out/'initial_state.npz'))
+    consecutive_rejections=0
     try:
         while depth<target-1e-12:
             if time.monotonic()>=deadline:raise TimeoutError('Global route loading budget')
-            next_depth=min(target,depth+increment);old=p.released.copy();before=time.monotonic()
+            next_depth=min(target,depth+increment)
+            if hasattr(p,'next_loading_depth'):next_depth=p.next_loading_depth(depth,increment,target)
+            old=p.released.copy();before=time.monotonic()
             if store:store.begin(p,x,dict(parent=parent,from_depth_mm=depth,target_depth_mm=next_depth,physical_dt_s=(next_depth-depth)/p.loading_rate))
             try:value,rec=execute_step(p,x,depth,next_depth,min(deadline,before+base['attempt_seconds']),deadline)
             except (LoadStepFailure,TimeoutError) as exc:
                 kind=failure_kind(exc,deadline)
                 witness=store.rejected(p,x,exc,kind) if store else None
                 result['attempts'].append(dict(from_mm=depth,target_mm=next_depth,dt_s=(next_depth-depth)/p.loading_rate,failure_kind=kind,error=str(exc),elapsed_s=time.monotonic()-before,witness=witness))
+                consecutive_rejections+=1
+                if consecutive_rejections>=getattr(p,'maximum_consecutive_rejections',float('inf')):
+                    raise TimeoutError('Local physical refinement computation cap reached; saved rejection remains unresolved') from exc
                 if not physical_cutback(kind) or next_depth-depth<=base['minimum_increment_mm']+4*np.spacing(max(1.,abs(depth))):raise
                 increment=reduced_increment(p,base,next_depth-depth,kind);continue
+            consecutive_rejections=0
             if store:store.accepted(rec)
             x,depth=value,next_depth
             rec.update(time_s=(depth-p.start)/p.loading_rate,dt_s=p.material_dt)

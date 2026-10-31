@@ -72,6 +72,10 @@ class CoupledContactProblem(PurePrecrackProblem):
         e['algebraic_balance_residual_n_mm']=e['physical_balance_defect_n_mm']-sum(e[k] for k in DEFECT_KEYS)-e['friction_time_defect_n_mm']
         return e
 
+    def check_face_topology(self,x):
+        np.testing.assert_array_equal(self.active_faces,self.precracked_faces)
+        np.testing.assert_array_equal(self.cohesive_response(x)['history'],self.previous_history)
+
     def acceptance(self,x,depth,iterations,outer_iterations):
         rec=IPCProblem.acceptance(self,x,depth,iterations,outer_iterations)
         rec['residual_n']*=np.sqrt(2)
@@ -84,7 +88,7 @@ class CoupledContactProblem(PurePrecrackProblem):
         if violation>1e-5 or x[:self.n,0].min()<self.config.drop_s_mm-1e-12:raise LoadStepFailure('Unilateral contact violation')
         if np.any(x[self.seam[~self.released],0]!=self.config.drop_s_mm):raise RuntimeError('Exact intact tie lost')
         np.testing.assert_array_equal(self.released,eligible_nodes(self.active_faces))
-        np.testing.assert_array_equal(self.active_faces,self.precracked_faces)
+        self.check_face_topology(x)
         q=self.material_response(x);a=q['metric']
         if np.min(np.linalg.eigvalsh(a))<=0 or np.max(abs(np.linalg.det(a)-1))>1e-8:raise RuntimeError('Invalid Maxwell metric')
         e=self.energy_ledger(x)

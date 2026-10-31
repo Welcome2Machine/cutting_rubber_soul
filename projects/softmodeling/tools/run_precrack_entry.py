@@ -25,10 +25,11 @@ class PurePrecrackProblem(endpoint.EndpointFaceCutProblem):
         return float(length)
 
 
-def problem(config):
+def reference_problem(config, *, require_pure=True):
     c=copy.deepcopy(config);gap=c.pop('initial_slit_halfwidth_mm',None)
     if not isinstance(gap,(float,int)) or not np.isfinite(gap) or not 0<=gap<=.25:raise ValueError('Explicit geometric control halfwidth in [0,.25] mm required')
-    if not c.get('pure_precrack') or c['precrack_mm']<=0:raise ValueError('Pure initial crack required')
+    if require_pure and (not c.get('pure_precrack') or c['precrack_mm']<=0):raise ValueError('Pure initial crack required')
+    if gap and c['precrack_mm']<=0:raise ValueError('Positive notch requires a prescribed precrack')
     p=endpoint.problem(c)
     p.__class__=PurePrecrackProblem
     p.entry_reference_geometry='actual closed 0.5 mm precrack' if gap==0 else 'prescribed stress-free tapered notch; diagnostic geometry only'
@@ -52,6 +53,10 @@ def problem(config):
         if p.ipc.has_intersections(p.cmesh,p.rest[p.surface]):raise ValueError('Notch/blade initial intersections')
     p.initial_slit_halfwidth_mm=float(gap)
     return p
+
+
+def problem(config):
+    return reference_problem(config,require_pure=True)
 
 
 def sources():
