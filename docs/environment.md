@@ -1,5 +1,32 @@
 # 运行环境与迁移
 
+## 2026-11-01 第十轮：连通全失效与新面进入
+
+起点e3a5c5b，工作区干净、本人队列为空；现场module、spartition、qgroup和CPU
+拓扑存于runs/server_1101_round10/cluster_initial.txt。沿用SysB gr10578b，
+p=1:t=2:c=2:m=8G、IPC2/BLAS1与物理核亲和性；完整回归4核8G。没有新增收费
+资源、修改活动数值源码或复活旧队列；全部sbatch --no-requeue及srun。数值代码
+检查点5d29dd6，后续源码对象发布映射见release_identity.json；物理源哈希、配置、
+解释器及线程池逐任务保存。每加载内部≤2340 s，主路径实算817.883 s。
+
+预算90分钟运行并集、至少20%审查交付、≤2并发、每项≤4核/4线程/16 GiB。
+打包前27任务保守运行并集2922 s（48.7分钟）、申请物理核时2.133889；探索
+1815 s。峰6物理核/6计算线程/16 GiB申请内存。进程树RSS采样峰435716096 bytes，
+sacct步骤MaxRSS峰325287936 bytes；二者范围不同，非全局同时精确峰或OOM安全界。
+SysB AllocCPUS按每物理核2个逻辑CPU解释，所有ReqTRES/AllocTRES与申请核对。
+TotalCPU4142.905 s、约申请物理核时间54.35%；加载59.7–66.9%。Elapsed之和/
+运行并集1.228表示独立作业重叠，不是同工作量串行加速证明。本轮无新线程加速实验。
+排队合计774 s、最大489 s，均不计运行并集。完整作业/步骤统计及最终含打包
+核账另存accounting_final.json与sacct_final.psv；包内为明确标注的打包前账本。
+
+完整结果根：`/LARGE1/gr10578/Zhao_Guorui/SoftCutting/1029/runs/server_1101_round10`。
+入口index.html、round_results.json、energy_windows.csv；原始主路径growth_065及
+三组窗口failure_window、failure_partition、entry_window原位保留。最小审查包只
+收关键父态/接受态/拒绝见证，不冒充完整NPZ库；独立全路径审计需完整清单数据或
+从自身初态复算。已登记的短窗口可用所含共同父态复算，README_REPLAY.md给出命令。
+正式范围、失败速度门及下一步见现有研究状态；未完成2 mm、闭合C1/C2或网格验证。
+
+
 ## 2026-10-31 第八轮非线性耦合窗口
 
 从49c00f6、干净工作区和空本人/组内队列接续；module、spartition、qgroup及CPU

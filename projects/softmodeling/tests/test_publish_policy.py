@@ -11,6 +11,7 @@ class PublicationPolicyTests(unittest.TestCase):
                      'workbench/static/app.js', 'workbench/static/app.css',
                      'configs/materials.json', 'configs/blades.json',
                      'configs/finite_increment_constrained_control.json',
+                     'configs/coupled_growth_event_windows_20261101.json',
                      'stiff_contact.py', 'endpoint_friction.py', 'release_dynamics.py',
                      'docs/workbench.md', 'references/README.md',
                      'reproductions/dammass2023/acceptance.json'):
