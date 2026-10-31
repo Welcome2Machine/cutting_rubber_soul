@@ -10,6 +10,7 @@ from . import run_endpoint_face_route as route
 from face_cut import eligible_nodes
 from endpoint_friction import velocity_increment
 from run_support import write_json
+from .audit_zero_gap_cut import blade_contacts
 
 
 def restore(config,state):
@@ -60,8 +61,10 @@ def inspect_one(directory,reference,source,deadline):
         if np.max(excess[newfree],initial=0)>p.force_tolerance_n:raise ValueError('Handoff force gate failed')
         np.testing.assert_array_equal(np.flatnonzero(faces&~p.active_faces),d['new_faces'])
         before=2*float(p.barrier(p.collisions(x),p.cmesh,x[p.surface]))
+        out['blade_contacts_before']=blade_contacts(p,x)
         p.active_faces=faces;p.rebuild_contact()
         after=2*float(p.barrier(p.collisions(x),p.cmesh,x[p.surface]))
+        out['blade_contacts_after']=blade_contacts(p,x)
         np.testing.assert_allclose(after-before,d['contact_topology_energy_jump_n_mm'],rtol=0,atol=1e-12)
         if abs(after-before)>1e-10:raise ValueError('Unfunded topology jump')
         out.update(candidate_seam_index=i,ranking=ranking,maximum_excess_half_n=float(np.max(excess[newfree])),topology_jump_n_mm=after-before)
@@ -70,7 +73,13 @@ def inspect_one(directory,reference,source,deadline):
         if m['energy'] is not None:
             e=p.energy_ledger(x)
             for k,v in m['energy'].items():np.testing.assert_allclose(e[k],v,rtol=1e-10,atol=1e-12)
+            fu=velocity_increment(p,p.step_increment(x));lag=p.lag(x)
+            fg=np.zeros(2*len(p.surface)) if lag is None else p.friction.gradient(lag,p.cmesh,fu[p.surface])
+            np.testing.assert_array_equal(p.surface,s['friction_surface_nodes'])
+            np.testing.assert_allclose(fu[p.surface],s['friction_velocity_increment_surface'],rtol=1e-12,atol=1e-14)
+            np.testing.assert_allclose(fg,s['friction_gradient_surface'],rtol=1e-10,atol=1e-12)
             out['energy']=e
+            out['friction_fields_verified']=True
         out.update(failure_kind=m['failure_kind'],stage=m['stage'],rollback_verified=True,scope='Saved actual trial, reconstructed equations; nonlinear iteration replay is a separate check')
     out['passed']=True;return out
 
@@ -79,7 +88,7 @@ def inspect_one(directory,reference,source,deadline):
 def inspect(directory,out,seconds=540,*,runtime=None):
     directory=Path(directory);out=Path(out);start=time.monotonic();source=route.sources()
     if not 0<seconds<=540 or out.exists():raise ValueError('Bounded new audit output required')
-    raw=json.loads((directory/'result.json').read_text());report=dict(passed=False,activation_witness_verified=False,source_hashes=source,thread_runtime=runtime,audits=[])
+    raw=json.loads((directory/'result.json').read_text());report=dict(passed=False,activation_witness_verified=False,source_hashes=source,thread_runtime=runtime,audits=[],result_sha256=digest(directory/'result.json'),auditor_sha256=digest(Path(__file__)))
     try:
         if raw['source_hashes']!=source:raise ValueError('Source changed')
         activation=[ref for row in raw['steps'] for ref in row.get('activation_witnesses',[])]

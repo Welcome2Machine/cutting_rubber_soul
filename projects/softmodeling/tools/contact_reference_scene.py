@@ -12,7 +12,7 @@ import numpy as np
 
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('case',type=Path);parser.add_argument('--parent-audit',type=Path,required=True);parser.add_argument('--checkout-fe',type=Path,required=True);parser.add_argument('--out',type=Path,required=True);parser.add_argument('--new-rejection',action='store_true');parser.add_argument('--seconds',type=float,default=120);a=parser.parse_args()
+    parser=argparse.ArgumentParser();parser.add_argument('case',type=Path);parser.add_argument('--parent-audit',type=Path,required=True);parser.add_argument('--checkout-fe',type=Path,required=True);parser.add_argument('--out',type=Path,required=True);parser.add_argument('--new-rejection',action='store_true');parser.add_argument('--seconds',type=float,default=120);parser.add_argument('--geometry-subintervals',type=int,choices=(1,16),default=1);a=parser.parse_args()
     if a.out.exists() or not 0<a.seconds<=540:raise ValueError('New bounded conditional output required')
     sys.path.insert(0,str(a.checkout_fe.resolve()))
     from numerical_runtime import numerical_runtime
@@ -51,7 +51,18 @@ def main():
             if i in bottom:impulse[i]=-h*force[i];continue
             f=force[i].copy()
             if i in tied:f[0]=0
-            q=kernel.advance([x[i,1],x[i,0]-centre],[v[i,1],v[i,0]],0.,h,mass=p.mass[i],force=f[::-1],mu=0.)
+            kernel_input=dict(position=[float(x[i,1]),float(x[i,0]-centre)],velocity=[float(v[i,1]),float(v[i,0])],time_s=0.,dt=h,mass=float(p.mass[i]),force=f[::-1].tolist(),mu=0.)
+            try:q=kernel.advance(**kernel_input)
+            except (RuntimeError,ValueError) as exc:
+                a.out.mkdir(parents=True)
+                report=dict(schema='softcut-conditional-hard-flight/1',scope='Rejected conditional frozen-force trial; never a suffix',
+                    stop_reason='planar_kernel_rejected',error=str(exc),node=i,minimal_reproducer=kernel_input,
+                    parent_depth_mm=rec['depth_mm'],parent_result_sha256=digest(a.case/'result.json'),parent_state_sha256=digest(parent),
+                    parent_source_hashes=raw['source_hashes'],new_rejection_sha256=digest(trial) if trial else None,
+                    current_reference_sha256=digest(spec.origin),runner_sha256=digest(Path(__file__)),thread_runtime=runtime,
+                    history_committed=False,full_contact_coupled_reference_qualified=False,source_unchanged=route.sources()==raw['source_hashes'])
+                np.savez_compressed(a.out/'conditional_rejected.npz',parent_positions=x,parent_velocity=v,mass=p.mass,noncontact_force=force)
+                (a.out/'result.json').write_text(json.dumps(report,indent=2));print(json.dumps(report['minimal_reproducer']));return
             y[i]=np.array(q['position'])[::-1]+[centre,0.];endv[i]=np.array(q['velocity'])[::-1];impulse[i]=q['contact_impulse_n_s'][::-1]
             if i in tied:impulse[i,0]=-h*force[i,0]
             loss+=2*q['normal_impact_loss_n_mm'];frozen_work+=2*float(force[i]@(y[i]-x[i]));motion[i]=np.linalg.norm(v[i])*h+.5*np.linalg.norm(f)*h*h/p.mass[i]
@@ -65,12 +76,37 @@ def main():
         dF_bound=np.sum(motion[p.mesh.triangles]*np.linalg.norm(grad,axis=2),axis=1)
         singular=np.linalg.svd(F0,compute_uv=False)[:,-1];j_certificate=bool(np.all(dF_bound<singular))
         chord_safe=bool(p.safe_step(x,y-x)>=1-1e-10)
+        certificate_parts=[]
+        if a.geometry_subintervals==16:
+            # A single targeted certificate refinement, not a physical-step
+            # cutback: the SAME frozen-force event trajectory and endpoint.
+            for part in range(16):
+                elapsed=h*part/16;z=x.copy();w=v.copy();radii=np.zeros(len(x))
+                for i in range(p.n):
+                    if i in bottom:continue
+                    f=force[i].copy()
+                    if i in tied:f[0]=0
+                    if part:
+                        q=kernel.advance([x[i,1],x[i,0]-centre],[v[i,1],v[i,0]],0.,elapsed,mass=p.mass[i],force=f[::-1],mu=0.)
+                        z[i]=np.array(q['position'])[::-1]+[centre,0.];w[i]=np.array(q['velocity'])[::-1]
+                    # e=0 mirror impact never increases speed. This bounds
+                    # every smooth segment and intervening impact uniformly.
+                    radii[i]=np.linalg.norm(w[i])*h/16+.5*np.linalg.norm(f)*(h/16)**2/p.mass[i]
+                z[p.n:]=p.prescribed_blade_positions(rec['depth_mm']+p.loading_rate*elapsed);radii[p.n:]=p.loading_rate*h/16
+                g=float(np.sqrt(p.collisions(z).compute_minimum_distance(p.cmesh,z[p.surface])))
+                df=np.sum(radii[p.mesh.triangles]*np.linalg.norm(grad,axis=2),axis=1)
+                sj=np.linalg.svd(p.deformation(z),compute_uv=False)[:,-1]
+                certificate_parts.append(dict(start_s=elapsed,radius_mm=float(2*max(radii)),gap_mm=g,
+                    distance_passed=bool(2*max(radii)<min(g,p.dhat)),j_passed=bool(np.all(df<sj))))
+                if time.monotonic()-start>a.seconds:raise TimeoutError('Geometry certificate budget')
+            distance_certificate=all(q['distance_passed'] for q in certificate_parts)
+            j_certificate=all(q['j_passed'] for q in certificate_parts)
         geometry_safe=bool(distance_certificate and j_certificate and chord_safe)
         report=dict(schema='softcut-conditional-hard-flight/1',scope='Conditional contact model change with frozen noncontact forces; never a production suffix',
           parent_source_hashes=raw['source_hashes'],parent_checkout=str(a.checkout_fe.resolve()),parent_result_sha256=digest(a.case/'result.json'),parent_audit_sha256=digest(a.parent_audit),parent_state_sha256=digest(parent),parent_index=index,parent_depth_mm=rec['depth_mm'],
           new_rejection_sha256=digest(trial) if trial else None,current_reference_sha256=digest(spec.origin),runner_sha256=digest(Path(__file__)),thread_runtime=runtime,physical_dt_s=h,
           parent_reassembly=fresh,initial_native_contact_gap_mm=gap,motion_envelope_mm=envelope,full_native_chord_ccd=chord_safe,
-          curved_motion_distance_certificate=bool(distance_certificate),whole_interval_positive_j_certificate=j_certificate,geometry_safe=geometry_safe,
+          geometry_subintervals=a.geometry_subintervals,certificate_parts=certificate_parts,curved_motion_distance_certificate=bool(distance_certificate),whole_interval_positive_j_certificate=j_certificate,geometry_safe=geometry_safe,
           contact_model='hard e=0 mirror; no blade/self hard contact reached only if full motion envelope proves it; IPC forces removed, never superposed',
           initial_ipc_barrier_energy_n_mm=2*float(p.barrier(p.collisions(x),p.cmesh,x[p.surface])),
           original_contact_force_norm_n=float(np.sqrt(2)*np.linalg.norm((fields['normal']+fields['friction'])[:2*p.n])),events=events,
@@ -83,6 +119,14 @@ def main():
         delta=p.mass[:,None]*(endv[:p.n]-v[:p.n]);residual=delta-h*force-impulse
         report['frozen_equivalent_force_residual_n']=float(np.sqrt(2)*np.linalg.norm(residual)/h)
         report['frozen_energy_residual_n_mm']=frozen_work-report['kinetic_delta_n_mm']-loss
+        if trial:
+            with np.load(trial,allow_pickle=False) as z:original_velocity=z['velocity'].copy()
+            report['original_rejected_trial_energy']=meta['energy']
+            report['mass_weighted_endpoint_velocity_difference_sqrt_nmm']=float(np.sqrt(2*np.sum(p.mass[:,None]*(endv[:p.n]-original_velocity[:p.n])**2)))
+            report['original_trial_is_saved_actual_attempt']=True
+        else:
+            report['original_trial_is_saved_actual_attempt']=False
+            report['endpoint_velocity_comparison']='Original rejected coordinates were not saved; no invented comparison'
         if geometry_safe:
             p.previous=x.copy();p.previous_velocity=v.copy();p.previous_material_metric=s['material_metric'].copy();p.previous_history=s['history'].copy();p.material_dt=h;p.set_primary_increment(y,y-x)
             r,_,dofs,_,_=p.material_bulk((y[:p.n]-p.mesh.reference_xy).ravel(),with_tangent=False)

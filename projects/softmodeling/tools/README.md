@@ -250,3 +250,19 @@ python -m tools.dynamic_release audit <条件结果目录> --out <新审查.json
 分段仅标`chunk_passed`，`passed`保持false；`--combine <分段JSON> ...`核对结果/
 源码/审查代码/逐态SHA256、精确完整覆盖和每段收敛后，才生成完整接触审查。
 遗漏、重复、状态变化或不合格片段一律拒绝。完整积分审查仍不授予物理时间资格。
+
+
+### 接触进入与纯预裂研究入口（2026-10-31）
+
+这些入口只在用户授权的有界计算作业中启动；不是工作台默认基线。
+
+- `python -m tools.verify_impulse_reference --out <新目录> --preregister <预登记JSON> --seconds 120 --ipc-threads 2 --blas-threads 1 --physical-core-affinity`：解析点质量停滑/运动壁三档对照，不能给FE路径升级资格。
+- `python -m tools.run_precrack_entry run configs/face_entry_notch_control.json --out <新目录> --seconds 600 --stop-depth .4 --ipc-threads 2 --blas-threads 1 --physical-core-affinity`：规定无应力缺口的原生IPC控制；闭合实际C1使用`face_entry_closed_control.json`。预裂之外禁止新激活及新损伤，未接入硬接触参考。
+- `python -m tools.audit_precrack_entry <结果目录> --out <新审查JSON> --seconds 540 --ipc-threads 2 --blas-threads 1 --physical-core-affinity`：同数值源码完整前缀、固定历史/Gc及严格内部裂面接触审查。
+- `python -m tools.audit_face_witness <结果目录> --out <新审查JSON> --seconds 540 --ipc-threads 2 --blas-threads 1 --physical-core-affinity`：从保存的实际激活/拒绝数组重算，不能用于不存在原始数组的旧现场。
+- `python -m tools.report_contact_entry <本轮结果根>`：原始绝对时间力/能量和明确不完整的峰谷子窗，属于后处理，不替代独立审查。
+
+`contact_reference_scene.py`需显式指定与父结果匹配的`--checkout-fe`、完整父路径
+`--parent-audit`，可用`--new-rejection`选择新保存负功试探。它在自身方法能力之外
+立即留下拒绝，不能续接生产路径。源码版本、精确命令与原始输入见本轮证据包；
+复制Git代码不自动取得历史NPZ。所有入口使用独立对象，不共享可变材料/IPC历史。
