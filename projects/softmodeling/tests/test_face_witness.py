@@ -101,3 +101,18 @@ def test_unmeasured_timeout_is_not_claimed_worst(tmp_path):
     store.rejected(p,x,TimeoutError('deadline'),'compute_budget')
     item=next(iter(store.signatures.values()))
     assert item['worst'] is None and item['worst_status']=='not_comparable'
+
+
+def test_changing_energy_allowance_keeps_one_comparable_signature(tmp_path):
+    from tools.face_witness import trial_fields
+    from prototype.zero_gap_cut import EnergyResolutionRequired
+    c=config(.5,'endpoint_friction');p=problem(c);x=p.rest.copy();p.material_dt=.001;p.previous_barrier_energy=0.
+    store=WitnessStore(tmp_path,dict(config=c),max_signatures=1)
+    for value,limit in [(2.,1.),(20.,2.),(3.,1.)]:
+        store.begin(p,x,dict(value=value,limit=limit));store.trial=(trial_fields(p,x),dict(stage='acceptance'))
+        e=EnergyResolutionRequired(f'Energy defect {value} exceeds {limit}')
+        e.failure_measurement=dict(quantity='energy_defect',value=value,limit=limit,units='N mm',comparison='upper')
+        store.rejected(p,x,e,'physical_resolution')
+    assert len(store.signatures)==1 and store.omitted_signatures==0
+    item=next(iter(store.signatures.values()))
+    assert item['worst_score']==9. and item['first']!=item['worst']!=item['latest']

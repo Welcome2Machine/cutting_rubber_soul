@@ -61,7 +61,8 @@ def rejection_measurement(error,energy,p):
     value,limit=float(m['value']),float(m['limit'])
     if not np.isfinite(value+limit) or m['comparison'] not in ('upper','lower'):
         raise ValueError('Invalid rejection measurement')
-    m.update(comparable=True,severity=(value-limit) if m['comparison']=='upper' else (limit-value))
+    excess=(value-limit) if m['comparison']=='upper' else (limit-value)
+    m.update(comparable=True,signed_gate_excess=excess,severity=excess/max(abs(limit),1e-30),severity_units='dimensionless excess / absolute gate')
     return m
 
 
@@ -115,7 +116,7 @@ class WitnessStore:
         signature=kind+'|'+str(stage.get('stage'))+'|'+re.sub(r'[-+]?\d+(?:\.\d+)?(?:e[-+]?\d+)?','#',str(error).split(';')[0])
         measurement=rejection_measurement(error,energy,p)
         # Different quantities/gates cannot compete for one worst representative.
-        signature+='|'+str(measurement.get('quantity','unmeasured'))+'|'+str(measurement.get('limit'))
+        signature+='|'+str(measurement.get('quantity','unmeasured'))+'|'+str(measurement.get('comparison'))+'|'+str(measurement.get('units'))
         if signature not in self.signatures and len(self.signatures)>=self.max_signatures:
             self.omitted_signatures+=1;return dict(saved=False,reason='Signature cap',rollback_verified=True)
         ref=self._save('rejected',fields,dict(kind='rejected',error=str(error),failure_kind=kind,stage=stage,
