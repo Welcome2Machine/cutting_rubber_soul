@@ -4,11 +4,11 @@ from pathlib import Path
 import numpy as np
 from .frozen_scene import digest
 from .face_witness import native
-from .coupled_audit_contract import common_inputs,bind_case
+from .coupled_audit_contract import common_inputs,bind_case,registered_offsets,common_offset_indices
 from run_support import write_json
 
 
-def cumulative_impulses(path,rows):
+def cumulative_impulses(path,rows,*,key_by_state=False):
     """Integrate each case on its own accepted partition, then sample common times."""
     total=None;out={};normal=friction=0.
     for row in rows:
@@ -16,11 +16,11 @@ def cumulative_impulses(path,rows):
             n=len(z['mass']);I=z['impulse_normal'][:n]+z['impulse_friction'][:n]
             total=I.copy() if total is None else total+I
         normal+=row['blade_normal_impulse_n_s'];friction+=row['blade_friction_impulse_n_s']
-        out[round(row['time_s'],12)]=(total.copy(),normal,friction)
+        out[row['state_file'] if key_by_state else round(row['time_s'],12)]=(total.copy(),normal,friction)
     return out
 
 
-def compare(cases,limits,allowed_variations=('dt_requested_s','time_schedule')):
+def compare(cases,limits,allowed_variations=('dt_requested_s','time_schedule'),*,entry_required=True):
     identity=common_inputs(cases,allowed_variations)
     result=dict(input_identity=identity,allowed_variations=list(allowed_variations),passed=False,scope='this prescribed-notch conditional window only',pairs=[])
     if any(q['status']!='completed_window' for _,q,_ in cases):
@@ -30,23 +30,21 @@ def compare(cases,limits,allowed_variations=('dt_requested_s','time_schedule')):
         if not a['passed']:result['error']='Independent audit failed';return result
         fractions.append(a['absolute_numerical_including_equation_work_n_mm']/abs(sum(s['independent_external_work_n_mm'] for s in a['states'])))
     for (path0,q0,a0),(path1,q1,a1) in zip(cases[:-1],cases[1:]):
-        bytime={round(r['time_s'],12):r for r in a1['states']}
-        rows0=a0['states'];rows1=[]
-        for row in rows0:
-            key=round(row['time_s'],12)
-            if key not in bytime:raise ValueError('No identical absolute-time comparison state; interpolation prohibited')
-            rows1.append(bytime[key])
+        offsets0=registered_offsets(q0,a0);offsets1=registered_offsets(q1,a1)
+        matches=common_offset_indices(offsets1,offsets0)
+        rows0=a0['states'];rows1=[a1['states'][j] for _,j in matches]
+        clock_roundoff=max(abs(r1['time_s']-r0['time_s']) for r0,r1 in zip(rows0,rows1))
         f0=np.array([r['independent_fz_n'] for r in rows0]);f1=np.array([r['independent_fz_n'] for r in rows1])
         ferror=float(max(abs(f0-f1))/max(abs(f1)))
         iforce=int(np.argmax(abs(f0-f1)));rf0,rf1=rows0[iforce],rows1[iforce]
         normal_difference=rf1['blade_normal_impulse_n_s']/rf1['dt_s']-rf0['blade_normal_impulse_n_s']/rf0['dt_s']
         friction_difference=rf1['blade_friction_impulse_n_s']/rf1['dt_s']-rf0['blade_friction_impulse_n_s']/rf0['dt_s']
         velocity_errors=[];velocity_scale=[];position_errors=[];impulse_errors=[];impulse_scales=[];blade_impulse_errors=[];blade_impulse_scales=[]
-        impulses0=cumulative_impulses(path0,a0['states']);impulses1=cumulative_impulses(path1,a1['states'])
+        impulses0=cumulative_impulses(path0,a0['states'],key_by_state=True);impulses1=cumulative_impulses(path1,a1['states'],key_by_state=True)
         for r0,r1 in zip(rows0,rows1):
             with np.load(path0/r0['state_file'],allow_pickle=False) as z:v0=z['velocity'];x0=z['positions'];mass=z['mass'];n=len(mass)
             with np.load(path1/r1['state_file'],allow_pickle=False) as z:v1=z['velocity'];x1=z['positions']
-            I0,N0,T0=impulses0[round(r0['time_s'],12)];I1,N1,T1=impulses1[round(r1['time_s'],12)]
+            I0,N0,T0=impulses0[r0['state_file']];I1,N1,T1=impulses1[r1['state_file']]
             impulse_errors.append(float(np.sqrt(np.sum((I1-I0)**2/mass[:,None]))))
             impulse_scales.append(float(np.sqrt(np.sum(I1**2/mass[:,None]))))
             blade_impulse_errors.append(abs((N1+T1)-(N0+T0)));blade_impulse_scales.append(abs(N1+T1))
@@ -56,14 +54,20 @@ def compare(cases,limits,allowed_variations=('dt_requested_s','time_schedule')):
         verror=max(velocity_errors)/max(velocity_scale)
         preexisting=bool(a0.get('entry_present_at_parent',False))
         if preexisting!=bool(a1.get('entry_present_at_parent',False)):raise ValueError('Same parent has inconsistent entry identity')
+        no_entry=False
         if preexisting:
             lo=hi=q0['initial_depth_mm'];entry_difference=0.
+        elif not entry_required and not a0.get('first_entry_bracket') and not a1.get('first_entry_bracket'):
+            no_entry=True;lo=hi=q0['initial_depth_mm'];entry_difference=0.
         else:
+            if not a0.get('first_entry_bracket') or not a1.get('first_entry_bracket'):
+                raise ValueError('Required or inconsistent strict entry event in comparison')
             br0=a0['first_entry_bracket'];br1=a1['first_entry_bracket']
             lo=max(br0['previous_nonentry']['depth_mm'],br1['previous_nonentry']['depth_mm'])
             hi=min(br0['first_entry']['depth_mm'],br1['first_entry']['depth_mm'])
             entry_difference=abs(br0['first_entry']['depth_mm']-br1['first_entry']['depth_mm'])
         result['pairs'].append(dict(coarse_dt_s=q0['dt_requested_s'],fine_dt_s=q1['dt_requested_s'],
+            matching_basis='same independently checked registered offset; no state interpolation or event alignment',maximum_reconstructed_clock_difference_s=clock_roundoff,
             maximum_fz_error_over_fine_peak=ferror,maximum_mass_velocity_error_over_fine_peak=verror,
             worst_force_time_s=rf0['time_s'],signed_force_difference_at_worst_n=float(f1[iforce]-f0[iforce]),
             signed_normal_force_difference_at_worst_n=normal_difference,signed_friction_force_difference_at_worst_n=friction_difference,
@@ -72,13 +76,14 @@ def compare(cases,limits,allowed_variations=('dt_requested_s','time_schedule')):
             maximum_cumulative_contact_impulse_mass_error_over_fine_peak=max(impulse_errors)/max(impulse_scales),
             maximum_cumulative_blade_impulse_error_over_fine_peak=max(blade_impulse_errors)/max(blade_impulse_scales),
             terminal_blade_normal_impulse_difference_n_s=N1-N0,terminal_blade_friction_impulse_difference_n_s=T1-T0,
-            maximum_position_difference_mm=max(position_errors),entry_brackets_overlap=lo<=hi+1e-14,
+            maximum_position_difference_mm=max(position_errors),entry_brackets_overlap=None if no_entry else lo<=hi+1e-14,
+            entry_not_observed_in_either_window=no_entry,
             entry_depth_difference_mm=entry_difference,entry_preexists_parent=preexisting))
     result['absolute_numerical_fraction']=fractions
     fine=result['pairs'][-1]
     result['gates']=dict(force=fine['maximum_fz_error_over_fine_peak']<=limits['force_relative'],
         mass_velocity=fine['maximum_mass_velocity_error_over_fine_peak']<=limits['velocity_mass_relative'],
-        event=all(p['entry_brackets_overlap'] and p['entry_depth_difference_mm']<=limits['event_bracket_mm'] for p in result['pairs']),
+        event=all((not entry_required and p['entry_not_observed_in_either_window']) or (p['entry_brackets_overlap'] and p['entry_depth_difference_mm']<=limits['event_bracket_mm']) for p in result['pairs']),
         absolute_numerical=fractions[-1]<=limits['absolute_numerical_work_fraction'],
         numerical_decreases=all(a>b for a,b in zip(fractions[:-1],fractions[1:])),
         force_difference_decreases=result['pairs'][-1]['maximum_fz_error_over_fine_peak']<result['pairs'][0]['maximum_fz_error_over_fine_peak'],

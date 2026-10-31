@@ -98,3 +98,35 @@ def common_inputs(cases,allowed_variations=('dt_requested_s','time_schedule')):
         if reference is None:reference=identity
         elif identity!=reference:raise ValueError('Different parent/model/configuration/window in comparison')
     return reference
+
+
+def registered_offsets(raw,audit):
+    """Use the independently checked requested schedule to associate samples.
+
+    Actual NPZ-derived clocks remain untouched. Decimal rounding of absolute
+    accumulated clocks can split one intended time across a rounding boundary.
+    This does not authorize interpolation or associating different schedules.
+    """
+    schedule=raw.get('time_schedule')
+    offsets=np.asarray(schedule['end_offsets_s'],float) if schedule else np.arange(1,len(audit['states'])+1)*raw['dt_requested_s']
+    if len(offsets)!=len(audit['states']) or np.any(np.diff(offsets)<=0):raise ValueError('Invalid comparison schedule')
+    for offset,row in zip(offsets,audit['states']):close(row['time_s'],raw['initial_time_s']+offset,'Compared physical clock vs registered time')
+    return offsets
+
+
+def common_offset_indices(offsets,targets,*,require_all=True):
+    """Unique matching of nominal offsets within 32 floating-point ULPs."""
+    offsets=np.asarray(offsets,float);pairs=[]
+    for i,target in enumerate(targets):
+        k=int(np.searchsorted(offsets,target));candidates=[]
+        for j in (k-1,k):
+            if 0<=j<len(offsets):
+                tolerance=32*max(abs(np.spacing(float(target))),abs(np.spacing(offsets[j])))
+                if abs(offsets[j]-target)<=tolerance:candidates.append(j)
+        if len(candidates)>1:raise ValueError('Ambiguous registered comparison time')
+        if not candidates:
+            if require_all:raise ValueError('No identical registered comparison time; interpolation prohibited')
+            continue
+        pairs.append((i,candidates[0]))
+    if len({j for _,j in pairs})!=len(pairs):raise ValueError('Nonunique registered comparison time')
+    return pairs

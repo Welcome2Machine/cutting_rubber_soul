@@ -58,6 +58,33 @@ def restore(p,state,records):
     return x
 
 
+def replay_saved_step(parent,index,out,seconds=90):
+    """Restart an actual accepted parent and reproduce its already saved child.
+
+    This is a diagnostic, never a suffix. Covers nonzero Maxwell/cohesive
+    history and graph changes that a small split-path regression may not reach.
+    """
+    parent=Path(parent);out=Path(out);raw=json.loads((parent/'result.json').read_text())
+    if raw['source_hashes']!=growth.sources() or not 2<=index<len(raw['steps']):raise ValueError('Same-source saved child and two predecessors required')
+    p=growth.problem(raw['config']);records=[]
+    for row in raw['steps'][index-2:index]:
+        file=parent/row['state_file']
+        if digest(file)!=row['state_sha256']:raise ValueError('Changed replay parent')
+        with np.load(file,allow_pickle=False) as z:s={k:z[k].copy() for k in z.files}
+        records.append((row['depth_mm'],s['positions']))
+    x=restore(p,s,records);old=p.released.copy();target=raw['steps'][index];deadline=time.monotonic()+seconds
+    y,row=execute_step(p,x,records[-1][0],target['depth_mm'],deadline,deadline)
+    actual=route.snapshot(p,y,old,target['depth_mm']);np.savez_compressed(out,**actual)
+    with np.load(parent/target['state_file'],allow_pickle=False) as z:
+        differences={k:float(np.max(np.abs(np.asarray(actual[k],float)-np.asarray(z[k],float)),initial=0)) for k in z.files}
+        exact=all(np.array_equal(actual[k],z[k]) for k in z.files)
+    return dict(index=index,parent_sha256=raw['steps'][index-1]['state_sha256'],reference_state_sha256=target['state_sha256'],
+        replay_state_sha256=digest(out),all_saved_arrays_bitwise_equal=exact,array_maximum_absolute_differences=differences,
+        original_events=target.get('face_events',[]),replayed_events=row.get('face_events',[]),
+        parent_nonzero_material_history=bool(np.any(s['material_metric']!=np.eye(s['material_metric'].shape[-1]))),
+        parent_new_cohesive_history=bool(np.any(s['history'][~p.precracked_faces]>0)))
+
+
 @runtime_entry
 def run(parent,parent_audit,out,stop_depth,seconds=1800,*,runtime=None):
     if not 30<=seconds<=2400:raise ValueError('Bounded continuation requires 30..2400 seconds')
