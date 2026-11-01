@@ -19,8 +19,11 @@ BASE_FINISH=route.finish
 
 def problem(config):
     c=config.copy();control=c.pop('coupled_control')
-    if set(control)-{'material_layer','solve_tolerance_n','depth_step_caps','maximum_consecutive_rejections'}:raise ValueError('Unknown coupled controls')
+    if set(control)-{'material_layer','solve_tolerance_n','depth_step_caps','maximum_consecutive_rejections','nonlinear_error_policy'}:raise ValueError('Unknown coupled controls')
     p=core_problem(c,control['material_layer'],control['solve_tolerance_n'])
+    if 'nonlinear_error_policy' in control:
+        from nonlinear_accuracy import validate_policy
+        p.nonlinear_error_policy=validate_policy(control['nonlinear_error_policy'])
     caps=control.get('depth_step_caps',[])
     if caps:
         ends=[v['through_mm'] for v in caps]
@@ -36,7 +39,7 @@ def problem(config):
 
 def sources():
     q=window_sources();root=Path(__file__).resolve().parents[1]
-    for name in ('coupled_cohesive.py','tools/run_coupled_growth.py'):q[name]=digest(root/name)
+    for name in ('coupled_cohesive.py','nonlinear_accuracy.py','tools/run_coupled_growth.py'):q[name]=digest(root/name)
     return q
 
 

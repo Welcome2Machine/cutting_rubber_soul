@@ -76,7 +76,16 @@ def independent_balance(p,s,*,require_force_gate=True):
     # Free residual work is the only allowed algebraic remainder, not a hidden
     # energy source. The independent material assembly may differ at roundoff.
     np.testing.assert_allclose(closure,-eqwork,rtol=1e-4,atol=1e-10)
-    return dict(residual_n=force,impulse_residual_n_s=h*force,
+    accuracy={}
+    if getattr(p,'nonlinear_error_policy',None):
+        from nonlinear_accuracy import residual_budget
+        accuracy['nonlinear_error_budget']=residual_budget(p,x,residual.ravel())
+        if force>p.force_tolerance_n*np.sqrt(2):
+            from nonlinear_accuracy import inspect as inspect_accuracy
+            certificate=inspect_accuracy(p,x)
+            if not certificate['passed']:raise ValueError('Independent nonlinear error certificate failed: '+certificate.get('reason',''))
+            accuracy['nonlinear_accuracy_certificate']=certificate
+    return dict(**accuracy,residual_n=force,impulse_residual_n_s=h*force,
         independent_fz_n=-2*float((n+f)[p.n:,1].sum()),
         blade_normal_impulse_n_s=-2*h*float(n[p.n:,1].sum()),blade_friction_impulse_n_s=-2*h*float(f[p.n:,1].sum()),
         independent_external_work_n_mm=W,independent_friction_n_mm=Df,

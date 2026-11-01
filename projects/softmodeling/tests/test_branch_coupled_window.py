@@ -18,3 +18,16 @@ def test_audited_window_branch_restores_shared_history_and_predictors(tmp_path,m
         audit=branch.audit(case,tmp_path/(name+'.audit.json'),30,**rt);assert audit['passed'],audit.get('error')
     with np.load(tmp_path/'restore/parent_state.npz') as a,np.load(tmp_path/'hold/parent_state.npz') as b:
         for k in a.files:np.testing.assert_array_equal(a[k],b[k])
+
+
+def test_own_initial_parent_branch_binds_exact_predictor_pair(tmp_path,monkeypatch):
+    import pytest
+    monkeypatch.setattr(route,'problem',growth.problem);monkeypatch.setattr(route,'sources',growth.sources);monkeypatch.setattr(route,'finish',growth.finish)
+    rt=dict(ipc_threads=2,blas_threads=1);parent=tmp_path/'path';raw=route.run(control(),parent,30,stop_depth=.001,**rt)
+    proof=tmp_path/'path.audit.json';assert growth.audit(parent,proof,30,**rt)['passed']
+    plan=tmp_path/'plan.json';plan.write_text(json.dumps(dict(coupled_window=dict(parent_state_index=len(raw['steps'])-1,dt_s=[.0005],window_s=.001,solve_tolerance_n=1e-7))))
+    case=tmp_path/'child';q=branch.run(parent,proof,len(raw['steps'])-1,plan,case,.0005,30,**rt)
+    assert q['branch_control']['parent_own_initial_state'] and q['conditional_comparison'] and not q['production_continuation']
+    assert branch.audit(case,tmp_path/'audit.json',30,**rt)['passed']
+    (case/'predictor_parent_0.npz').write_bytes(b'wrong parent')
+    with pytest.raises(ValueError,match='predictor identity'):branch.audit(case,tmp_path/'bad.json',30,**rt)

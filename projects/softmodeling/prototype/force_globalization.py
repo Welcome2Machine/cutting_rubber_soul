@@ -53,6 +53,7 @@ def solve(problem, x, depth, deadline):
     tolerance = getattr(problem, 'force_tolerance_n', BASELINE['force_tolerance_n'])
     if not 0 < tolerance <= BASELINE['force_tolerance_n']:
         raise ValueError('Specialized force acceptance may only be tightened')
+    problem.nonlinear_accuracy_certificate=None
     counters = dict(method='newton_lm', iterations=0, trials=0, newton_updates=0,
                     lm_updates=0, tolerance_n=tolerance, physical_damping=False)
     problem.force_globalization_summary = counters
@@ -126,7 +127,11 @@ def solve(problem, x, depth, deadline):
         if not accepted:
             if primary:
                 problem.set_primary_increment(x, increment)
+            from nonlinear_accuracy import try_stop
+            if try_stop(problem,x,deadline):return x,iteration
             raise LoadStepFailure(f'Fresh-residual Newton/LM stagnation at {depth:g} mm: {norm:g} N')
+    from nonlinear_accuracy import try_stop
+    if try_stop(problem,x,deadline):return x,iteration
     raise LoadStepFailure(f'Fresh-residual Newton/LM iteration limit at {depth:g} mm')
 
 
@@ -142,6 +147,7 @@ def solve_increment_ptc(problem, x, depth, deadline):
     tolerance=problem.force_tolerance_n
     if not 0<tolerance<=BASELINE['force_tolerance_n']:
         raise ValueError('Force acceptance may only be tightened')
+    problem.nonlinear_accuracy_certificate=None
     increment=problem.step_increment(x).copy();shift=.1
     counters=dict(method='primary_increment_ptc',iterations=0,trials=0,physical_damping=False)
     problem.force_globalization_summary=counters
@@ -191,7 +197,11 @@ def solve_increment_ptc(problem, x, depth, deadline):
             shift=max(.1,2*shift)
         else:
             problem.set_primary_increment(x,increment)
+            from nonlinear_accuracy import try_stop
+            if try_stop(problem,x,deadline):return x,iteration
             raise LoadStepFailure(f'Primary-increment PTC model mismatch at {depth:g} mm: {norm:g} N')
+    from nonlinear_accuracy import try_stop
+    if try_stop(problem,x,deadline):return x,iteration
     raise LoadStepFailure(f'Primary-increment PTC iteration limit at {depth:g} mm')
 
 
@@ -223,6 +233,7 @@ def solve_friction_continuation(problem, x, depth, deadline):
                     phases.append(dict(factor=1.,method=method.__name__,accepted=False,error=str(exc)))
         value=seed.copy();problem.set_primary_increment(value,seed_increment)
         for factor in (1000.,100.,10.,1.):
+            problem._friction_homotopy_factor=factor
             problem.friction=(friction if factor==1. else problem.ipc.FrictionPotential(
                 problem.friction_velocity_epsilon*problem.material_dt*factor))
             stage=value.copy();increment=problem.step_increment(stage).copy()
@@ -238,7 +249,21 @@ def solve_friction_continuation(problem, x, depth, deadline):
             total+=n+1
             phases.append(dict(factor=factor,method=method,iterations=n,accepted=True))
         return value,total
+    except (LoadStepFailure,TimeoutError):
+        # An auxiliary homotopy phase can hit the floating-point floor before
+        # the original model is revisited. Inspect that REAL original equation,
+        # never certify the softened phase or change the physical time step.
+        problem.friction=friction
+        problem._friction_homotopy_factor=1.
+        if not getattr(problem,'nonlinear_error_policy',None):raise
+        candidate=getattr(problem,'_primary_positions',getattr(problem,'trial',seed)).copy()
+        from nonlinear_accuracy import try_stop
+        if time.monotonic()<deadline and try_stop(problem,candidate,deadline):
+            phases.append(dict(factor=1.,method='verified_original_error_budget',accepted=True))
+            return candidate,total
+        raise
     finally:
         problem.friction=friction
+        problem._friction_homotopy_factor=1.
         problem.max_iterations=maximum
         problem.friction_continuation_summary['original_friction_restored']=True

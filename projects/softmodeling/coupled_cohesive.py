@@ -25,6 +25,7 @@ class CoupledCohesiveProblem(CoupledContactProblem):
         return candidate
 
     def step(self,x,old,depth,deadline):
+        self.nonlinear_accuracy_certificate=None
         try:return super().step(x,old,depth,deadline)
         except (LoadStepFailure,TimeoutError) as exc:
             if isinstance(exc,(EnergyResolutionRequired,GlobalComputeBudgetExhausted)) or time.monotonic()>=getattr(self,'global_compute_deadline',float('inf')):raise
@@ -67,6 +68,19 @@ class CoupledCohesiveProblem(CoupledContactProblem):
     def acceptance(self,x,depth,iterations,outer_iterations):
         endpoint=check_connected_endpoint(self,x)
         rec=super().acceptance(x,depth,iterations,outer_iterations)
+        if getattr(self,'nonlinear_error_policy',None):
+            from nonlinear_accuracy import binding,residual_budget
+            g=self.evaluate(x,self.lag(x),tangent=False)[1]
+            certificate=getattr(self,'nonlinear_accuracy_certificate',None)
+            if rec['residual_n']>self.force_tolerance_n*np.sqrt(2):
+                if not certificate or not certificate['passed'] or certificate['binding_sha256']!=binding(x,self.step_increment(x)):
+                    # Restored-state audits must rebuild the certificate, not
+                    # trust a saved producer Boolean or require live metadata.
+                    from nonlinear_accuracy import inspect as inspect_accuracy
+                    certificate=inspect_accuracy(self,x)
+                    if not certificate['passed']:
+                        raise PhysicalSolveAccuracyIncomplete('Nonlinear error certificate failed: '+certificate.get('reason',''))
+            rec['nonlinear_accuracy']=dict(preferred_goal_met=rec['residual_n']<=self.force_tolerance_n*np.sqrt(2),certificate=certificate,**residual_budget(self,x,g))
         q=self.cohesive_response(x);failed=self.active_faces&np.all(q['history']>=2*self.toughness/self.strength,axis=1)
         rec.update(endpoint,fracture_route='coupled_backward_euler_continuous_face',
             active_faces=int(self.active_faces.sum()),fully_failed_faces=int(failed.sum()),
