@@ -18,26 +18,74 @@ from prototype.ipc_reference import LoadStepFailure
 from run_support import write_json
 
 
-def controller_increment(p,raw):
-    base=raw['config']['base'];inc=base['increment_mm'];depth=p.start;attempts=iter(raw['attempts']);pending=next(attempts,None)
-    for row in raw['steps']:
-        while pending is not None and abs(pending['from_mm']-depth)<=1e-12:
-            if not physical_cutback(pending['failure_kind']):raise ValueError('Nonphysical rejection cannot precede accepted suffix')
-            inc=reduced_increment(p,base,pending['target_mm']-pending['from_mm'],pending['failure_kind'])
-            pending=next(attempts,None)
-        expected=p.next_loading_depth(depth,inc,raw['requested_stop_depth_mm']) if hasattr(p,'next_loading_depth') else min(depth+inc,raw['requested_stop_depth_mm'])
-        if abs(expected-row['depth_mm'])>1e-12:raise ValueError('Cannot reconstruct exact accepted controller schedule')
-        inc=max(base['minimum_increment_mm'],min(base['increment_mm'],inc*route.driver.accepted_step_growth(base,row)))
-        depth=row['depth_mm']
-    if pending is not None:
-        # A global timeout can occur after physical cutbacks at the final parent.
+def stage_records(raw):
+    """Recover stage targets without rewriting any accepted/rejected record.
+
+    Legacy single-stage paths are supported. Legacy continuations require the
+    hash-bound parent result; otherwise their earlier truncations are unknown.
+    """
+    if 'continuation_stages' in raw:return copy.deepcopy(raw['continuation_stages'])
+    prior=[];begin=attempt_begin=0;link=raw.get('continuation')
+    if link:
+        file=Path(link['parent_directory'])/'result.json'
+        if digest(file)!=link['parent_result_sha256']:raise ValueError('Legacy stage parent identity mismatch')
+        parent=json.loads(file.read_text());begin=len(parent['steps']);attempt_begin=len(parent['attempts'])
+        if raw['steps'][:begin]!=parent['steps'] or raw['attempts'][:attempt_begin]!=parent['attempts']:
+            raise ValueError('Legacy stage prefix changed')
+        prior=stage_records(parent)
+    prior.append(dict(stage_index=len(prior),requested_stop_depth_mm=raw['requested_stop_depth_mm'],
+        inherited_states=begin,state_range=[begin,len(raw['steps'])],attempt_range=[attempt_begin,len(raw['attempts'])],
+        config_sha256=raw['config_sha256'],source_hashes=raw['source_hashes'],
+        parent_result_sha256=link['parent_result_sha256'] if link else None,
+        parent_audit_sha256=link['parent_audit_sha256'] if link else None,
+        initial_controller_increment_mm=link['restored_controller_increment_mm'] if link else raw['config']['base']['increment_mm'],
+        final_controller_increment_mm=raw.get('next_increment_mm'),
+        status=raw['status'],record_origin='legacy hash-bound reconstruction'))
+    return prior
+
+
+def controller_history(p,raw):
+    base=raw['config']['base'];inc=base['increment_mm'];depth=p.start;end=attempt_end=0
+    stages=stage_records(raw)
+    for order,stage in enumerate(stages):
+        begin,stop=stage['state_range'];ab,ae=stage['attempt_range']
+        if stage['stage_index']!=order or begin!=end or ab!=attempt_end or not begin<=stop<=len(raw['steps']) or not ab<=ae<=len(raw['attempts']):
+            raise ValueError('Invalid or incomplete ordered stage ranges')
+        if stage['inherited_states']!=begin or stage['config_sha256']!=raw['config_sha256'] or stage['source_hashes']!=raw['source_hashes']:
+            raise ValueError('Stage input/prefix identity mismatch')
+        if abs(inc-stage['initial_controller_increment_mm'])>1e-14:raise ValueError('Stage controller handoff mismatch')
+        target=stage['requested_stop_depth_mm']
+        if target<=depth:raise ValueError('Stage target must advance')
+        if begin:
+            parent_ref=stage.get('parent_state')
+            if parent_ref and parent_ref!={k:raw['steps'][begin-1][k] for k in ('state_file','state_sha256')}:
+                raise ValueError('Stage accepted parent identity mismatch')
+            if not stage.get('parent_result_sha256') or not stage.get('parent_audit_sha256'):raise ValueError('Unbound inherited stage')
+        attempts=iter(raw['attempts'][ab:ae]);pending=next(attempts,None)
+        for row in raw['steps'][begin:stop]:
+            while pending is not None and abs(pending['from_mm']-depth)<=1e-12:
+                if not physical_cutback(pending['failure_kind']):raise ValueError('Nonphysical rejection cannot precede accepted suffix')
+                inc=reduced_increment(p,base,pending['target_mm']-pending['from_mm'],pending['failure_kind']);pending=next(attempts,None)
+            expected=p.next_loading_depth(depth,inc,target) if hasattr(p,'next_loading_depth') else min(depth+inc,target)
+            if abs(expected-row['depth_mm'])>1e-12:raise ValueError('Cannot reconstruct exact accepted controller schedule')
+            inc=max(base['minimum_increment_mm'],min(base['increment_mm'],inc*route.driver.accepted_step_growth(base,row)));depth=row['depth_mm']
         while pending is not None:
             if abs(pending['from_mm']-depth)>1e-12:raise ValueError('Unordered terminal attempts')
             if physical_cutback(pending['failure_kind']):inc=reduced_increment(p,base,pending['target_mm']-pending['from_mm'],pending['failure_kind'])
             elif pending['failure_kind']!='global_compute_budget_exhausted':raise ValueError('Unresolved nonbudget failure is not resumable')
             pending=next(attempts,None)
+        if stage['status'].startswith('completed') and abs(depth-target)>1e-12:raise ValueError('Stage endpoint mismatch')
+        saved=stage.get('final_controller_increment_mm')
+        if saved is not None and abs(inc-saved)>1e-14:raise ValueError('Saved/replayed stage controller mismatch')
+        stage['final_controller_increment_mm']=inc
+        end=stop;attempt_end=ae
+    if end!=len(raw['steps']) or attempt_end!=len(raw['attempts']):raise ValueError('Stage ledger does not cover complete prefix')
+    if abs(stages[-1]['requested_stop_depth_mm']-raw['requested_stop_depth_mm'])>1e-12:raise ValueError('Final stage target mismatch')
     if 'next_increment_mm' in raw and abs(inc-raw['next_increment_mm'])>1e-14:raise ValueError('Saved/replayed controller mismatch')
-    return inc
+    return inc,stages
+
+
+def controller_increment(p,raw):return controller_history(p,raw)[0]
 
 
 def restore(p,state,records):
@@ -96,7 +144,7 @@ def run(parent,parent_audit,out,stop_depth,seconds=1800,*,runtime=None):
     signature=hashlib.sha256(json.dumps(original['config'],sort_keys=True).encode()).hexdigest()
     if signature!=original['config_sha256']:raise ValueError('Configuration identity mismatch')
     if original['status'] not in ('completed_pilot','completed_2mm') and original.get('failure_kind')!='global_compute_budget_exhausted':raise ValueError('Only completed stage or global budget stop can continue')
-    p=growth.problem(original['config']);base=original['config']['base'];increment=controller_increment(p,original)
+    p=growth.problem(original['config']);base=original['config']['base'];increment,stages=controller_history(p,original)
     if not original['steps'][-1]['depth_mm']<stop_depth<=min(1.,base['target_mm']):raise ValueError('Explicit increasing round scope <=1 mm required')
     records=[]
     for row in original['steps'][-2:]:
@@ -112,6 +160,15 @@ def run(parent,parent_audit,out,stop_depth,seconds=1800,*,runtime=None):
     if index.exists():
         saved=json.loads(index.read_text());store.signatures=copy.deepcopy(saved['signatures']);store.omitted_signatures=saved['omitted_new_signatures'];shutil.copyfile(index,out/'witnesses/representatives.json')
     result=copy.deepcopy(original)
+    stages.append(dict(stage_index=len(stages),requested_stop_depth_mm=stop_depth,
+        inherited_states=len(original['steps']),state_range=[len(original['steps']),len(original['steps'])],
+        attempt_range=[len(original['attempts']),len(original['attempts'])],config_sha256=signature,source_hashes=source,
+        parent_result_sha256=digest(parent/'result.json'),parent_audit_sha256=digest(Path(parent_audit)),
+        parent_state={k:original['steps'][-1][k] for k in ('state_file','state_sha256')},
+        restored_accepted_array_sha256=array_hash(accepted_fields(p,x)),
+        predictor_states=[{k:r[k] for k in ('depth_mm','state_file','state_sha256')} for r in original['steps'][-2:]],
+        initial_controller_increment_mm=increment,final_controller_increment_mm=None,status='running',record_origin='explicit continuation'))
+    result['continuation_stages']=stages
     for key in ('error','failure_kind','next_increment_mm','summary'):result.pop(key,None)
     result.update(status='running',requested_stop_depth_mm=stop_depth,seconds=seconds,thread_runtime=runtime,
         continuation=dict(parent_directory=str(parent.resolve()),parent_result_sha256=digest(parent/'result.json'),parent_audit_sha256=digest(Path(parent_audit)),
@@ -141,6 +198,7 @@ def run(parent,parent_audit,out,stop_depth,seconds=1800,*,runtime=None):
         result['status']='completed_pilot'
     except (RuntimeError,ValueError,TimeoutError,FloatingPointError) as exc:
         result.update(status='stopped',error=str(exc),failure_kind=failure_kind(exc,deadline),next_increment_mm=increment)
+    stages[-1].update(state_range=[stages[-1]['inherited_states'],len(result['steps'])],attempt_range=[stages[-1]['attempt_range'][0],len(result['attempts'])],final_controller_increment_mm=increment,status=result['status'])
     result.update(elapsed_s=time.monotonic()-start,source_unchanged=source==growth.sources() and helper==digest(Path(__file__)))
     growth.finish(out,result);return result
 
