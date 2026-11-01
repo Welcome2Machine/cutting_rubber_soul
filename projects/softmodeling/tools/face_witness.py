@@ -83,7 +83,9 @@ class WitnessStore:
         elif kind=='activation_after':
             if self.activations:self.activations[-1][1].update(native(data))
         elif kind=='energy':
-            self.last_energy=native(data['ledger']);self.energy_fields={k:np.array(v,copy=True) for k,v in data.items() if k!='ledger'}
+            # Keep this evaluation's ledger until the subclass finishes its
+            # in-place BE/Maxwell corrections; _save takes the immutable copy.
+            self.last_energy=data['ledger'];self.energy_fields={k:np.array(v,copy=True) for k,v in data.items() if k!='ledger'}
             self.energy_positions=x.copy()
         elif kind=='failed':
             fields=trial_fields(p,x)

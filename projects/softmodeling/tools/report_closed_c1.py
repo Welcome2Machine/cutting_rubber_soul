@@ -25,6 +25,8 @@ def run(case,audit_file,out,seconds=500,*,runtime=None):
         initial=dict(full_mass_n_s2_mm=float(2*p.mass.sum()),precrack_area_mm2=float(p.rule['face_area_mm2'][p.precracked_faces].sum()),precrack_gc_excluded_n_mm=p.initial_fracture_energy_n_mm,
             top_node=top,tip_node=tip,top_released=bool(p.released[-1]),top_full_opening_mm=0.,maximum_initial_speed_mm_s=float(np.linalg.norm(p.velocity,axis=1).max())),
         status=q['status'],failure_kind=q.get('failure_kind'),error=q.get('error'),accepted_states=len(q['steps']),first_blade_contact=None,first_internal_contact=None,first_internal_outside_endpoint_neighborhood=None,first_new_failed_connected_contact=None,first_new_fully_failed=None,
+        first_crack_interior_contact=a.get('first_entry_bracket'),
+        crack_interior_definition='Existing strict_contacts gate: reference seam strictly between physical crack ends, opened x; includes interior seam mesh vertices. first_internal_contact below is the stronger body-EDGE projection-interior gate.',
         first_activation=a.get('first_activation_bracket'),first_new_damage=a.get('first_new_damage'),time_converged=False,mesh_converged=False)
     rows=[];points=[];contacts=[];selected={0,len(q['steps'])-1};last=None
     for i,(row,check) in enumerate(zip(q['steps'],a['states'])):
