@@ -17,7 +17,7 @@ from .contact_time_schedule import requested_schedule
 
 def sources():
     s=parent_route.sources();root=Path(__file__).resolve().parents[1]
-    for name in ('coupled_contact.py','tools/run_coupled_contact.py','tools/contact_time_schedule.py','tools/event_partition.py'):
+    for name in ('coupled_contact.py','tools/run_coupled_contact.py','tools/contact_time_schedule.py','tools/event_partition.py','tools/window_journal.py'):
         s[name]=digest(root/name)
     return s
 
@@ -104,6 +104,8 @@ def run(parent,parent_audit,state_index,preregister,out,dt,layer,seconds=600,*,r
     from .event_partition import Partition
     partition=Partition(offsets,limits['adaptive_dyadic']) if 'adaptive_dyadic' in limits else None
     pending=list(map(float,offsets))
+    from .window_journal import Journal
+    journal=Journal(out,native(result))
     while (partition.pending if partition else pending):
         offset=partition.pending[0][1] if partition else pending[0]
         i=len(result['steps'])
@@ -120,6 +122,7 @@ def run(parent,parent_audit,state_index,preregister,out,dt,layer,seconds=600,*,r
             rec.update(state_file=name,state_sha256=digest(out/name));result['steps'].append(native(rec))
             if partition:partition.decision('accepted')
             else:pending.pop(0)
+            journal.append('accepted',dict(record=native(rec),partition_decision=partition.trace[-1] if partition else None))
             write_json(out/'progress.json',dict(accepted=len(result['steps']),depth_mm=depth,time_s=rec['time_s']))
         except (RuntimeError,ValueError,TimeoutError,AssertionError,FloatingPointError) as exc:
             if array_hash(accepted_fields(p,x))!=before:raise RuntimeError('Failed coupled step committed history') from exc
@@ -131,11 +134,14 @@ def run(parent,parent_audit,state_index,preregister,out,dt,layer,seconds=600,*,r
             result['attempts'].append(dict(from_mm=depth,target_mm=target,dt_s=p.material_dt,error=str(exc),failure_kind=failure_kind(exc,deadline),
                 rollback_verified=True,parent_hash=before,parent_state_file=result['steps'][-1]['state_file'] if result['steps'] else 'parent_state.npz',rejection_measurement=rejection_measurement(exc,energy,p),trial_file=rejected_name,trial_sha256=digest(out/rejected_name),energy=energy,
                 nonlinear_summary=getattr(p,'force_globalization_summary',{})))
-            if partition and partition.decision('rejected',failure_kind(exc,deadline)):continue
+            recover=partition.decision('rejected',failure_kind(exc,deadline)) if partition else False
+            journal.append('rejected',dict(record=native(result['attempts'][-1]),partition_decision=partition.trace[-1] if partition else None))
+            if recover:continue
             break
     else:result['status']='completed_window'
     if partition:result['time_schedule']=partition.saved()
     result.update(elapsed_s=time.monotonic()-start,source_unchanged=source==sources())
+    journal.append('terminal',dict(status=result['status'],elapsed_s=result['elapsed_s'],source_unchanged=result['source_unchanged']))
     finish(out,result);return result
 
 
