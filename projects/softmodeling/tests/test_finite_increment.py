@@ -217,3 +217,20 @@ def test_small_dt_failed_direct_restores_primary_seed_before_continuation(monkey
     monkeypatch.setattr(fg,'solve',solve)
     fg.solve_friction_continuation(p,x,p.start,time.monotonic()+1)
     assert calls==[1.,1000.,100.,10.,1.]
+
+
+def test_auxiliary_failure_returns_to_original_ptc_before_failure(monkeypatch):
+    import prototype.force_globalization as fg
+    import nonlinear_accuracy
+    p=problem(dict(config(),nonlinear_solver='friction_continuation'));p.material_dt=1e-8
+    p.nonlinear_error_policy={'diagnostic':True};original=p.friction;calls=[]
+    monkeypatch.setattr(nonlinear_accuracy,'try_stop',lambda *a:False)
+    def failed(*a):raise TimeoutError('auxiliary failure')
+    def ptc(obj,x,depth,deadline):
+        calls.append(obj._friction_homotopy_factor)
+        if obj._friction_homotopy_factor!=1.:raise TimeoutError('auxiliary plateau')
+        assert obj.friction is original
+        return x,3
+    monkeypatch.setattr(fg,'solve',failed);monkeypatch.setattr(fg,'solve_increment_ptc',ptc)
+    x,n=fg.solve_friction_continuation(p,p.rest.copy(),p.start,time.monotonic()+1)
+    assert calls==[1000.,1.] and p.friction is original and n==3

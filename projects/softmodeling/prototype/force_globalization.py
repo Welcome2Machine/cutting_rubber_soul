@@ -294,6 +294,13 @@ def solve_friction_continuation(problem, x, depth, deadline):
         if time.monotonic()<deadline and try_stop(problem,candidate,deadline):
             phases.append(dict(factor=1.,method='verified_original_error_budget',accepted=True))
             return candidate,total
+        # Auxiliary plateau is not a completed solve of the physical equation.
+        # A bounded original PTC attempt must precede any propagated failure.
+        if time.monotonic()<deadline:
+            problem.max_iterations=maximum
+            value,n=solve_increment_ptc(problem,candidate.copy(),depth,min(deadline,time.monotonic()+10.))
+            phases.append(dict(factor=1.,method='original_ptc_after_auxiliary_failure',iterations=n,accepted=True))
+            return value,total+n
         raise
     finally:
         problem.friction=friction
