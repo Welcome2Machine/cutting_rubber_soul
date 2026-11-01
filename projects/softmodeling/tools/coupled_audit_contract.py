@@ -35,6 +35,8 @@ class TimeChain:
             accepted=[z for z in schedule['trace'] if z['status']=='accepted']
             rejected=[z for z in schedule['trace'] if z['status']=='rejected']
             if len(accepted)!=len(raw['steps']) or len(rejected)!=len(raw['attempts']):raise ValueError('Partition decisions lack states/rejections')
+            for trial,record in zip(accepted,raw['steps']):
+                if 'resolution_ratio' in trial:close(trial['resolution_ratio'],record['event_resolution']['maximum_ratio'],'Step recovery evidence')
             for trial,record in zip(rejected,raw['attempts']):
                 close(record['dt_s'],trial['right_s']-trial['left_s'],'Rejected physical partition dt')
                 close(record['target_mm'],raw['initial_depth_mm']+rate*trial['right_s'],'Rejected partition target')

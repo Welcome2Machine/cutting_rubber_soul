@@ -100,7 +100,13 @@ def audit(case,out,seconds=500,*,runtime=None):
         if digest(case/'parent_state.npz')!=raw['parent']['state_sha256']:raise ValueError('Parent identity mismatch')
         planfile=case/'preregistration.json'
         if digest(planfile)!=raw['preregistration_sha256']:raise ValueError('Plan changed')
-        clock=TimeChain(raw,parent,p.loading_rate,p.start,json.loads(planfile.read_text())['coupled_window'])
+        plan=json.loads(planfile.read_text())['coupled_window']
+        clock=TimeChain(raw,parent,p.loading_rate,p.start,plan)
+        resolution=plan.get('event_resolution',{}).get(str(raw['dt_requested_s']))
+        if resolution is not None:
+            from .event_resolution import bind_reference
+            resolution=bind_reference(plan,raw['dt_requested_s'])
+        previous_resolution=dict(parent,blade_force_components_n=[json.loads((case/'parent_record.json').read_text())[k] for k in ('reaction_normal_fz_n','reaction_friction_fz_n')])
         restore_parent(p,parent)
         initial_failed=parent['active_faces']&np.all(parent['history']>=2*p.toughness/p.strength,axis=1)
         report['entry_present_at_parent']=bool(strict_contacts(p,parent['positions'],p.connected_length(initial_failed)))
@@ -117,6 +123,14 @@ def audit(case,out,seconds=500,*,runtime=None):
             tick=clock.advance(s,row);fresh=route.restore_audit(p,s,row)
             if not fresh['accepted_chord_ccd_safe']:raise ValueError('Full chord unsafe')
             balance=independent_balance(p,s)
+            if resolution is not None:
+                from .event_resolution import enforce
+                independent_record=p.acceptance(s['positions'],float(s['depth_mm']),0,0)
+                check=enforce(p,s['positions'],independent_record,previous_resolution,resolution)
+                for group in ('values','allowances','ratios'):
+                    for k,v in check[group].items():np.testing.assert_allclose(v,row['event_resolution'][group][k],rtol=1e-8,atol=1e-13)
+                previous_resolution=dict(s,blade_force_components_n=[independent_record[k] for k in ('reaction_normal_fz_n','reaction_friction_fz_n')])
+                balance['event_resolution']=check
             failed=s['active_faces']&np.all(s['history']>=2*p.toughness/p.strength,axis=1)
             contacts=strict_contacts(p,s['positions'],p.connected_length(failed));check_entry_flag(contacts,row['blade_entered_surface_channel'])
             if contacts and not report['entry_present_at_parent'] and 'first_entry_bracket' not in report:report['first_entry_bracket']=dict(previous_nonentry=previous,first_entry=dict(**tick,state_file=row['state_file']))

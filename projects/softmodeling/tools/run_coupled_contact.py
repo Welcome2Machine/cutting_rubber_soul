@@ -1,5 +1,5 @@
 """Explicit fixed/partitioned conditional FE window; no history splice into a production path."""
-import argparse,csv,json,shutil,sys,time
+import argparse,csv,json,os,shutil,sys,time
 from pathlib import Path
 import numpy as np
 from coupled_contact import problem
@@ -17,7 +17,7 @@ from .contact_time_schedule import requested_schedule
 
 def sources():
     s=parent_route.sources();root=Path(__file__).resolve().parents[1]
-    for name in ('coupled_contact.py','tools/run_coupled_contact.py','tools/contact_time_schedule.py','tools/event_partition.py','tools/window_journal.py'):
+    for name in ('coupled_contact.py','tools/run_coupled_contact.py','tools/contact_time_schedule.py','tools/event_partition.py','tools/window_journal.py','tools/event_resolution.py'):
         s[name]=digest(root/name)
     return s
 
@@ -91,6 +91,18 @@ def run(parent,parent_audit,state_index,preregister,out,dt,layer,seconds=600,*,r
     np.testing.assert_allclose(depth,float(s['depth_mm']),rtol=0,atol=1e-12)
     np.testing.assert_allclose(t0,(depth-p.start)/p.loading_rate,rtol=0,atol=1e-12)
     source=sources();start=time.monotonic();deadline=start+seconds-5
+    if 'SOFTCUT_WORKER_DEADLINE_EPOCH' in os.environ:
+        deadline=min(deadline,start+float(os.environ['SOFTCUT_WORKER_DEADLINE_EPOCH'])-time.time()-5)
+    resolution=limits.get('event_resolution',{}).get(str(dt))
+    previous_resolution=dict(s,blade_force_components_n=[row['reaction_normal_fz_n'],row['reaction_friction_fz_n']])
+    if resolution is not None:
+        from .event_resolution import enforce,bind_reference
+        resolution=bind_reference(limits,dt);original_acceptance=p.acceptance
+        def guarded_acceptance(y,*args):
+            rec=original_acceptance(y,*args)
+            enforce(p,y,rec,previous_resolution,resolution)
+            return rec
+        p.acceptance=guarded_acceptance
     result=dict(schema='softcut-coupled-contact-window/1',config=raw['config'],source_hashes=source,source_unchanged=False,
         interpreter=sys.executable,execution_identity=driver.execution_identity(),thread_runtime=runtime,
         conditional_comparison=True,production_continuation=False,material_layer=layer,solve_tolerance_n=solve_tolerance,physical_acceptance_n=1e-4,
@@ -120,8 +132,9 @@ def run(parent,parent_audit,state_index,preregister,out,dt,layer,seconds=600,*,r
             route.observables(p,x,rec)
             state=route.snapshot(p,x,oldreleased,depth);name=f'state_{i:05d}.npz';np.savez_compressed(out/name,**state)
             rec.update(state_file=name,state_sha256=digest(out/name));result['steps'].append(native(rec))
-            if partition:partition.decision('accepted')
+            if partition:partition.decision('accepted',resolution_ratio=rec.get('event_resolution',{}).get('maximum_ratio'))
             else:pending.pop(0)
+            previous_resolution=dict(state,blade_force_components_n=[rec['reaction_normal_fz_n'],rec['reaction_friction_fz_n']])
             journal.append('accepted',dict(record=native(rec),partition_decision=partition.trace[-1] if partition else None))
             write_json(out/'progress.json',dict(accepted=len(result['steps']),depth_mm=depth,time_s=rec['time_s']))
         except (RuntimeError,ValueError,TimeoutError,AssertionError,FloatingPointError) as exc:

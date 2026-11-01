@@ -28,7 +28,7 @@ def numerical_policy_parent(raw,proof,parent,audit_file,manifest,current):
     """Explicit conditional numerical-policy comparison; never source-equivalent production."""
     q=json.loads(Path(manifest).read_text())
     changes={k for k in set(raw['source_hashes'])|set(current) if raw['source_hashes'].get(k)!=current.get(k)}
-    allowed={'nonlinear_accuracy.py','prototype/force_globalization.py','tools/run_coupled_contact.py','tools/event_partition.py'}
+    allowed={'nonlinear_accuracy.py','prototype/force_globalization.py','tools/run_coupled_contact.py','tools/event_partition.py','tools/window_journal.py','tools/event_resolution.py','tools/contact_time_schedule.py'}
     if not changes or not changes<=allowed:raise ValueError('Physical-equation source change cannot use numerical-policy parent')
     expected=dict(parent_result_sha256=digest(Path(parent)/'result.json'),parent_audit_sha256=digest(audit_file),parent_source_hashes=raw['source_hashes'],child_source_hashes=current,changed_files=sorted(changes))
     if any(q.get(k)!=v for k,v in expected.items()) or q.get('production_continuation') is not False or not q.get('reviewed_numerical_strategy_diff'):
@@ -98,7 +98,7 @@ def audit(case,out,seconds=500,**runtime):
         from .run_coupled_growth import sources as current_sources
         old=raw['parent']['source_hashes'];current=current_sources()
         changes={k for k in set(old)|set(current) if old.get(k)!=current.get(k)}
-        if not changes or not changes<={'nonlinear_accuracy.py','prototype/force_globalization.py','tools/run_coupled_contact.py','tools/event_partition.py'} or saved['parent_source_hashes']!=old or saved['child_source_hashes']!=current:raise ValueError('Physical equation changed in conditional audit')
+        if not changes or not changes<={'nonlinear_accuracy.py','prototype/force_globalization.py','tools/run_coupled_contact.py','tools/event_partition.py','tools/window_journal.py','tools/event_resolution.py','tools/contact_time_schedule.py'} or saved['parent_source_hashes']!=old or saved['child_source_hashes']!=current:raise ValueError('Physical equation changed in conditional audit')
         if raw['production_continuation'] or not raw['conditional_comparison']:raise ValueError('False production claim')
     with source_context():return growth_window.audit(case,out,seconds,**runtime)
 
