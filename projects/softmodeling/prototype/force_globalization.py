@@ -240,6 +240,20 @@ def solve_friction_continuation(problem, x, depth, deadline):
     softening=float(np.max(2*problem.seam_area*problem.strength/(2*problem.toughness/problem.strength)))
     switch=10*np.sqrt(problem.mass.min()/softening)
     try:
+        if problem.material_dt<=switch:
+            # A small physical dt alone does not prove that the original
+            # equation needs smoothing. Try a bounded original-model Newton
+            # solve; failure restores the exact seed for the unchanged path.
+            problem.max_iterations=min(maximum,8)
+            problem._friction_homotopy_factor=1.
+            problem.set_primary_increment(seed,seed_increment)
+            try:
+                value,n=solve(problem,seed.copy(),depth,min(deadline,time.monotonic()+.5))
+                phases.append(dict(factor=1.,method='bounded_direct_small_dt',iterations=n,accepted=True))
+                return value,n
+            except (LoadStepFailure,TimeoutError) as exc:
+                phases.append(dict(factor=1.,method='bounded_direct_small_dt',accepted=False,error=str(exc)))
+                problem.set_primary_increment(seed,seed_increment)
         if problem.material_dt>switch:
             for method,cap,wall in ((solve,25,1.),(solve_increment_ptc,60,2.)):
                 problem.max_iterations=min(maximum,cap)

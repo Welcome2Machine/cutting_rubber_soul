@@ -189,3 +189,31 @@ def test_reference_constraint_traction_matches_uniform_first_piola_patch(spacing
     expected=frozen_response(f[None],np.eye(3)[None],.14,1.24,p.config.bulk_modulus_n_mm2)['P'][0,0,0]
     np.testing.assert_allclose(measured,expected,rtol=1e-10,atol=1e-11)
     assert p.seam_area.sum()==pytest.approx(100.)
+
+
+def test_small_dt_tries_original_model_before_auxiliary_smoothing(monkeypatch):
+    import prototype.force_globalization as fg
+    p=problem(dict(config(),nonlinear_solver='friction_continuation'));p.material_dt=1e-8
+    original=p.friction;before=p.material_metric.copy();calls=[]
+    def solved(obj,x,depth,deadline):
+        calls.append(obj._friction_homotopy_factor);assert obj.friction is original
+        return x,1
+    monkeypatch.setattr(fg,'solve',solved)
+    fg.solve_friction_continuation(p,p.rest.copy(),p.start,time.monotonic()+1)
+    assert calls==[1.] and p.friction is original
+    np.testing.assert_array_equal(before,p.material_metric)
+
+
+def test_small_dt_failed_direct_restores_primary_seed_before_continuation(monkeypatch):
+    import prototype.force_globalization as fg
+    p=problem(dict(config(),nonlinear_solver='friction_continuation'));p.material_dt=1e-8
+    x=p.rest.copy();du=p.step_increment(x).copy();calls=[]
+    def solve(obj,y,depth,deadline):
+        factor=obj._friction_homotopy_factor;calls.append(factor)
+        if len(calls)==1:
+            obj.set_primary_increment(y+1e-6,du+1e-6);raise TimeoutError('bounded direct failed')
+        np.testing.assert_array_equal(obj.step_increment(y),du)
+        return y,1
+    monkeypatch.setattr(fg,'solve',solve)
+    fg.solve_friction_continuation(p,x,p.start,time.monotonic()+1)
+    assert calls==[1.,1000.,100.,10.,1.]
