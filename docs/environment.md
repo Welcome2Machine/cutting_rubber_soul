@@ -563,3 +563,20 @@ Elapsed和/运行并集1.098仅表示实际重叠，未作为同工作量加速�
 等同，映射在publication/commit_map.json；没有reset或覆盖main。
 打包后核账、最终发布映射和finalization作为包旁`server_1101_round9_*`附件，
 避免把打包尚未结束的资源统计写成包内最终值。
+
+
+第十二轮最终交付（含打包）：保守运行并集4535 s（75分35秒），调度Start/End并集4499 s，
+物理申请核时3.565556（调度3.531111）。全部任务已结束，全部Req/AllocTRES核对一致；
+峰6物理核/6计算线程预算/16 GiB申请，最大单worker采样405.28 MiB；无单任务扩展性
+新结论，累计作业Elapsed/运行并集1.3027为实测重叠，TotalCPU/物理申请核时间53.03%。
+72分钟加载截止后仅做审查/回归/打包，没有重开加载。最终accounting_final.json、sacct_final.psv
+保留每任务/步骤统计、排队879 s、退出状态及采样范围。
+
+最小可传输审查包（含全部三档局部窗口、代表失败、必要父态和源码bundle，3867份NPZ，
+完整初态前缀仍在服务器）路径：
+`/LARGE1/gr10578/Zhao_Guorui/SoftCutting/1029/runs/deliverables/server_1101_round12_review_20261101.tar.gz`
+428213471 bytes；4744成员逐一校验通过。
+SHA256：`e505c6c93d89fc27e66eeb08be31e2af73d07f7377a6a567416e6c5b708f8bc5`。
+包内README_REPLAY.md、jobs.json、source_changes.bundle、publication_map.json与SHA256SUMS
+给出精确源码/输入/命令；包外最终核账与发布身份在同目录review_final_metadata附件另校验。
+服务器完整结果：`/LARGE1/gr10578/Zhao_Guorui/SoftCutting/1029/runs/server_1101_round12`。
