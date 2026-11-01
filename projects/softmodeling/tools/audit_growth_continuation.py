@@ -22,18 +22,39 @@ from run_support import write_json
 
 
 @runtime_entry
-def audit(case,parent,parent_audit,out,seconds=500,*,runtime=None):
+def audit(case,parent,parent_audit,out,seconds=500,*,resume_partial=False,runtime=None):
     case=Path(case);parent=Path(parent);out=Path(out);start=time.monotonic();deadline=start+seconds
     if out.exists() or not 0<seconds<=540:raise ValueError('New bounded continuation audit required')
     raw=json.loads((case/'result.json').read_text());old=json.loads((parent/'result.json').read_text());proof=json.loads(Path(parent_audit).read_text());source=growth.sources();helper=digest(Path(__file__))
     report=dict(schema='softcut-coupled-growth-audit/1',passed=False,result_sha256=digest(case/'result.json'),source_hashes=source,auditor_sha256=helper,thread_runtime=runtime,states=[],witnesses=[],
         verification_mode='All prefix state hashes rechecked; independent mechanical prefix proof reused; suffix and all retained witnesses freshly assembled')
     try:
-        link=raw['continuation'];n=len(old['steps'])
-        if not proof['passed'] or proof['result_sha256']!=digest(parent/'result.json') or proof['source_hashes']!=source or len(proof['states'])!=n:raise ValueError('Unbound parent audit')
+        partial=False
+        if resume_partial:
+            if (case.resolve()!=parent.resolve() or proof.get('passed') or proof.get('schema')!='softcut-coupled-growth-audit/1'
+                    or proof.get('error')!='Independent growth audit budget' or not proof.get('source_unchanged')
+                    or proof.get('auditor_sha256')!=digest(Path(growth.__file__))):
+                raise ValueError('Only an original same-source growth audit stopped by its budget may be completed')
+            n=len(proof['states'])
+            if not 0<n<len(raw['steps']):raise ValueError('Incomplete nonempty checked prefix required')
+            old=copy.deepcopy(raw);old['steps']=old['steps'][:n];partial=True
+            # The old JSON stays failed. These derived fields only initialize
+            # the suffix checker after rebinding the virgin state and prefix.
+            initial_problem=growth.problem(raw['config'])
+            initial=dict(positions=initial_problem.rest,velocity=initial_problem.velocity,material_metric=initial_problem.material_metric,history=initial_problem.history,released=initial_problem.released,active_contact=initial_problem.active_contact,active_faces=initial_problem.active_faces)
+            with np.load(case/'initial_state.npz',allow_pickle=False) as z:
+                for key in z.files:np.testing.assert_array_equal(z[key],initial[key])
+            proof['initial_state_sha256']=digest(case/'initial_state.npz')
+            proof['terminal_time_s']=(old['steps'][-1]['depth_mm']-initial_problem.start)/initial_problem.loading_rate
+            close(proof['terminal_time_s'],proof['states'][-1]['time_s'],'Checked prefix clock')
+            report['verification_mode']='Complete original budget-stopped audit: rebind initial state and every checked NPZ; assemble remaining states and ALL witnesses. Original partial report remains failed.'
+        else:n=len(old['steps'])
+        if (not proof['passed'] and not partial) or proof['result_sha256']!=digest(parent/'result.json') or proof['source_hashes']!=source or len(proof['states'])!=n:raise ValueError('Unbound parent audit')
         if raw['source_hashes']!=source or old['source_hashes']!=source or not raw['source_unchanged']:raise ValueError('Source mismatch')
         if not raw.get('own_initial_state') or raw.get('conditional_comparison') or raw['config']!=old['config']:raise ValueError('Not same own-initial-state path')
-        if link['parent_result_sha256']!=proof['result_sha256'] or link['parent_audit_sha256']!=digest(Path(parent_audit)) or link['inherited_states']!=n:raise ValueError('Wrong continuation parent')
+        if not partial:
+            link=raw['continuation']
+            if link['parent_result_sha256']!=proof['result_sha256'] or link['parent_audit_sha256']!=digest(Path(parent_audit)) or link['inherited_states']!=n:raise ValueError('Wrong continuation parent')
         if raw['steps'][:n]!=old['steps']:raise ValueError('Inherited records changed')
         if digest(case/'initial_state.npz')!=proof['initial_state_sha256'] or digest(parent/'initial_state.npz')!=proof['initial_state_sha256']:raise ValueError('Initial state identity mismatch')
         for row,checked in zip(old['steps'],proof['states']):
@@ -83,4 +104,4 @@ def audit(case,parent,parent_audit,out,seconds=500,*,runtime=None):
 
 
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('case');p.add_argument('parent');p.add_argument('parent_audit');p.add_argument('--out',required=True);p.add_argument('--seconds',type=float,default=500);add_thread_arguments(p);a=p.parse_args();q=audit(a.case,a.parent,a.parent_audit,a.out,a.seconds,**thread_arguments(a));print(json.dumps({k:q.get(k) for k in ('passed','error','elapsed_s','terminal_depth_mm')}))
+    p=argparse.ArgumentParser();p.add_argument('case');p.add_argument('parent');p.add_argument('parent_audit');p.add_argument('--out',required=True);p.add_argument('--resume-partial',action='store_true');p.add_argument('--seconds',type=float,default=500);add_thread_arguments(p);a=p.parse_args();q=audit(a.case,a.parent,a.parent_audit,a.out,a.seconds,resume_partial=a.resume_partial,**thread_arguments(a));print(json.dumps({k:q.get(k) for k in ('passed','error','elapsed_s','terminal_depth_mm')}))

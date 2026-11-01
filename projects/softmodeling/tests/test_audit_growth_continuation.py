@@ -26,3 +26,22 @@ def test_bound_prefix_reuse_matches_full_audit_and_rejects_tampering(tmp_path,mo
     with pytest.raises(ValueError,match='trial schedule'):cont.controller_history(model,stopped,terminal_accuracy_audit=True)
     (child/raw['steps'][0]['state_file']).write_bytes(b'tampered')
     bad=suffix.audit(child,p,pa,tmp_path/'invalid.json',30,**rt);assert not bad['passed'] and 'Inherited state bytes' in bad['error']
+
+
+def test_complete_budget_stopped_audit_without_reassembling_checked_prefix(tmp_path,monkeypatch):
+    import copy,json
+    from test_coupled_growth_window import control
+    from tools import run_coupled_growth as growth,run_fracture_route as route
+    from tools.audit_growth_continuation import audit
+    monkeypatch.setattr(route,'problem',growth.problem);monkeypatch.setattr(route,'sources',growth.sources);monkeypatch.setattr(route,'finish',growth.finish)
+    rt=dict(ipc_threads=2,blas_threads=1);case=tmp_path/'case';route.run(control(),case,30,stop_depth=.002,**rt)
+    complete=growth.audit(case,tmp_path/'full.json',30,**rt);assert complete['passed']
+    complete=json.loads((tmp_path/'full.json').read_text())
+    partial=copy.deepcopy(complete);partial.update(passed=False,error='Independent growth audit budget',states=partial['states'][:2]);file=tmp_path/'partial.json';file.write_text(json.dumps(partial))
+    result=audit(case,case,file,tmp_path/'completed.json',30,resume_partial=True,**rt)
+    assert result['passed'],result.get('error')
+    assert result['states']==complete['states'] and result['inherited_independent_proof']['states']==2
+    assert not json.loads(file.read_text())['passed']
+    partial['error']='Real mechanical failure';file.write_text(json.dumps(partial))
+    bad=audit(case,case,file,tmp_path/'bad.json',30,resume_partial=True,**rt)
+    assert not bad['passed'] and 'budget' in bad['error']
