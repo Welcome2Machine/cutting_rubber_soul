@@ -44,7 +44,7 @@ def stage_records(raw):
     return prior
 
 
-def controller_history(p,raw):
+def controller_history(p,raw,*,terminal_accuracy_audit=False):
     base=raw['config']['base'];inc=base['increment_mm'];depth=p.start;end=attempt_end=0
     stages=stage_records(raw)
     for order,stage in enumerate(stages):
@@ -72,7 +72,18 @@ def controller_history(p,raw):
         while pending is not None:
             if abs(pending['from_mm']-depth)>1e-12:raise ValueError('Unordered terminal attempts')
             if physical_cutback(pending['failure_kind']):inc=reduced_increment(p,base,pending['target_mm']-pending['from_mm'],pending['failure_kind'])
-            elif pending['failure_kind']!='global_compute_budget_exhausted':raise ValueError('Unresolved nonbudget failure is not resumable')
+            elif pending['failure_kind']!='global_compute_budget_exhausted':
+                # An audit can verify an accepted prefix without certifying the
+                # last failed solve or making that path resumable. Default stays strict.
+                allowed=(terminal_accuracy_audit and pending['failure_kind']=='physical_solver_accuracy_incomplete'
+                         and order==len(stages)-1 and stage['status']=='stopped'
+                         and raw.get('failure_kind')==pending['failure_kind'] and raw['status']=='stopped')
+                expected=p.next_loading_depth(depth,inc,target) if hasattr(p,'next_loading_depth') else min(depth+inc,target)
+                if not allowed:raise ValueError('Unresolved nonbudget failure is not resumable')
+                if abs(pending['target_mm']-expected)>1e-12 or abs(pending['dt_s']-(expected-depth)/p.loading_rate)>1e-12:
+                    raise ValueError('Terminal accuracy trial schedule mismatch')
+                if next(attempts,None) is not None:raise ValueError('Accuracy stop must be terminal')
+                break
             pending=next(attempts,None)
         if stage['status'].startswith('completed') and abs(depth-target)>1e-12:raise ValueError('Stage endpoint mismatch')
         saved=stage.get('final_controller_increment_mm')

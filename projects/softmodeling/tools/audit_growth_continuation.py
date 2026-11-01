@@ -14,7 +14,7 @@ from .audit_coupled_contact import independent_balance
 from .audit_precrack_entry import strict_contacts,check_entry_flag
 from .audit_face_witness import inspect_one
 from .face_activation_chain import transition
-from .continue_coupled_growth import controller_increment
+from .continue_coupled_growth import controller_history
 from .coupled_audit_contract import close
 from .frozen_scene import digest
 from .face_witness import native
@@ -40,7 +40,9 @@ def audit(case,parent,parent_audit,out,seconds=500,*,runtime=None):
             if time.monotonic()>deadline:raise TimeoutError('Prefix hash budget')
             path=case/row['state_file']
             if path.resolve().parent!=case.resolve() or row['state_file']!=checked['state_file'] or row['state_sha256']!=checked['state_sha256'] or digest(path)!=checked['state_sha256']:raise ValueError('Inherited state bytes changed')
-        p=growth.problem(raw['config']);controller_increment(p,raw)
+        p=growth.problem(raw['config']);controller_history(p,raw,terminal_accuracy_audit=True)
+        report['continuation_eligible']=raw['status'].startswith('completed') or raw.get('failure_kind')=='global_compute_budget_exhausted'
+        report['terminal_failure_not_accepted']=raw.get('failure_kind')
         report['states']=copy.deepcopy(proof['states']);report['inherited_independent_proof']=dict(directory=str(parent.resolve()),result_sha256=proof['result_sha256'],audit_file=str(Path(parent_audit).resolve()),audit_sha256=digest(Path(parent_audit)),states=n)
         for key in ('first_entry_bracket','first_activation_bracket','first_new_damage'):
             if key in proof:report[key]=copy.deepcopy(proof[key])
