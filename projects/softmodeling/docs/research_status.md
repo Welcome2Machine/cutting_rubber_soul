@@ -57,6 +57,12 @@
 共同窗；同时以预登记累计绝对能量上限约束事件配额，避免均匀时间配额耗尽计算。**
 不能只追求更小根残差，也不能平移事件、添加阻尼或修改物理参数。
 最终核账与精简包SHA见环境文档及本运行目录accounting_final.json。
+本轮含打包保守并集79分16秒、5.107222物理核时；峰8核/32GiB申请，单作业RSS采样
+峰1.535GiB，全部作业结束。
+[精简审查包](../../../runs/deliverables/server_1102_round13_review_20261102.tar.gz)、
+[SHA256](../../../runs/deliverables/server_1102_round13_review_20261102.tar.gz.sha256)、
+[最终核账](../../../runs/server_1102_round13/accounting_final.json)已保存。
+
 
 ## 服务器第十二轮：闭合C1精度停点修复与未通过的完整事件（2026-11-01）
 
