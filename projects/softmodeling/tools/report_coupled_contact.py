@@ -136,3 +136,83 @@ def run(root):
 
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('root',type=Path);run(p.parse_args().root)
+
+
+def common_time_review(cases,legacy):
+    """Three-level common clock/denominator, retaining finer samples and old gates.
+
+    A difference between discrete solutions is not an upper error bound. The
+    all-sample peak/extra-pair tables prevent shared coarse sampling concealing
+    a finer transient. Inputs must already pass the independent identity audit.
+    """
+    import itertools
+    identity=common_inputs(cases)
+    if len(cases)!=3:raise ValueError('Exactly three bound levels required')
+    offsets=[registered_offsets(q,a) for _,q,a in cases]
+    maps=[{i:j for i,j in common_offset_indices(o,offsets[0],require_all=False)} for o in offsets]
+    shared=sorted(set(maps[0]).intersection(maps[1],maps[2]))
+    if not shared:raise ValueError('No three-way common physical times')
+    indices=[[m[i] for i in shared] for m in maps]
+    loaded=[]
+    for path,raw,audit in cases:
+        states=[];total=None
+        for row in audit['states']:
+            with np.load(path/row['state_file'],allow_pickle=False) as z:
+                m=z['mass'].copy();v=z['velocity'][:len(m)].copy()
+                impulse=z['impulse_normal'][:len(m)]+z['impulse_friction'][:len(m)]
+                total=impulse.copy() if total is None else total+impulse
+            states.append(dict(time_s=row['time_s'],state_file=row['state_file'],mass=m,v=v,I=total.copy(),
+                velocity_norm=float(np.sqrt(np.sum(m[:,None]*v*v))),impulse_norm=float(np.sqrt(np.sum(total*total/m[:,None])))))
+        loaded.append(states)
+    m=loaded[0][0]['mass']
+    for rows in loaded:
+        for row in rows:np.testing.assert_array_equal(row['mass'],m)
+    scales={key:max(loaded[2][i][field] for i in indices[2]) for key,field in [('velocity','velocity_norm'),('impulse','impulse_norm')]}
+    if min(scales.values())<=0:raise ValueError('Positive common normalization required')
+    def pair(i,j,ii,jj):
+        errors=[];impulse_errors=[]
+        for a,b in zip(ii,jj):
+            dv=loaded[j][b]['v']-loaded[i][a]['v'];di=loaded[j][b]['I']-loaded[i][a]['I']
+            errors.append(float(np.sqrt(np.sum(m[:,None]*dv*dv))));impulse_errors.append(float(np.sqrt(np.sum(di*di/m[:,None]))))
+        if not errors:return None
+        k=int(np.argmax(errors));a,b=ii[k],jj[k];dv=loaded[j][b]['v']-loaded[i][a]['v'];contribution=m[:,None]*dv**2
+        ranking=np.argsort(contribution.ravel())[::-1][:10];den=float(contribution.sum())
+        contributions=[dict(node=int(v//2),dof='xy'[v%2],delta_velocity_mm_s=float(dv.ravel()[v]),mass_n_s2_mm=float(m[v//2]),
+            squared_norm_contribution_n_mm=float(contribution.ravel()[v]),fraction=float(contribution.ravel()[v]/den) if den else 0.) for v in ranking]
+        ki=int(np.argmax(impulse_errors))
+        return dict(levels=[i,j],sample_count=len(ii),maximum_velocity_difference_sqrt_nmm=max(errors),
+            common_normalized_velocity_difference=max(errors)/scales['velocity'],worst_velocity_time_s=loaded[i][a]['time_s'],
+            independently_reconstructed_other_time_s=loaded[j][b]['time_s'],largest_dof_contributions=contributions,
+            maximum_contact_impulse_mass_difference_sqrt_nmm=max(impulse_errors),
+            common_normalized_impulse_difference=max(impulse_errors)/scales['impulse'],
+            worst_impulse_time_s=loaded[i][ii[ki]]['time_s'],
+            times_s=[loaded[i][k]['time_s'] for k in ii],velocity_differences_sqrt_nmm=errors,impulse_differences_sqrt_nmm=impulse_errors)
+    pairs=[pair(i,j,indices[i],indices[j]) for i,j in itertools.combinations(range(3),2)]
+    original=[]
+    for i,j in ((0,1),(1,2)):
+        match=common_offset_indices(offsets[j],offsets[i]);ii=[a for a,b in match];jj=[b for a,b in match]
+        q=pair(i,j,ii,jj);q['original_velocity_denominator_sqrt_nmm']=max(loaded[j][b]['velocity_norm'] for b in jj)
+        q['original_impulse_denominator_sqrt_nmm']=max(loaded[j][b]['impulse_norm'] for b in jj)
+        q['original_velocity_relative']=q['maximum_velocity_difference_sqrt_nmm']/q['original_velocity_denominator_sqrt_nmm']
+        q['original_impulse_relative']=q['maximum_contact_impulse_mass_difference_sqrt_nmm']/q['original_impulse_denominator_sqrt_nmm']
+        original.append(q)
+    common_mid=set(indices[1]);extra=common_offset_indices(offsets[2],offsets[1]);extra=[(a,b) for a,b in extra if a not in common_mid]
+    extra_pair=pair(1,2,[a for a,b in extra],[b for a,b in extra])
+    peaks=[]
+    for level,rows in enumerate(loaded):
+        record=dict(level=level,all_sample_count=len(rows))
+        for field in ('velocity_norm','impulse_norm'):
+            for scope,ids in [('all',list(range(len(rows)))),('shared',indices[level]),('outside_shared',[i for i in range(len(rows)) if i not in set(indices[level])])]:
+                k=max(ids,key=lambda i:rows[i][field]) if ids else None
+                record[scope+'_'+field+'_peak']=None if k is None else dict(value=rows[k][field],time_s=rows[k]['time_s'],state_file=rows[k]['state_file'])
+        peaks.append(record)
+    p01,p02,p12=pairs
+    return dict(schema='softcut-common-time-review/1',input_identity=identity,
+        scope='Same registered absolute-time samples and one finest-level common peak; no event shifts, interpolation or continuous error bound. Legacy results retained.',
+        common_sample_count=len(shared),common_times_s=[loaded[0][i]['time_s'] for i in indices[0]],
+        common_velocity_scale_sqrt_nmm=scales['velocity'],common_impulse_scale_sqrt_nmm=scales['impulse'],pairs=pairs,
+        velocity_difference_decreases=p12['maximum_velocity_difference_sqrt_nmm']<p01['maximum_velocity_difference_sqrt_nmm'],
+        impulse_difference_decreases=p12['maximum_contact_impulse_mass_difference_sqrt_nmm']<p01['maximum_contact_impulse_mass_difference_sqrt_nmm'],
+        fine_pair_velocity_5percent=p12['common_normalized_velocity_difference']<=.05,
+        original_pairs_reconstructed=original,extra_middle_fine_common_times=extra_pair,all_sample_peaks=peaks,
+        original_comparison=legacy,original_flags_preserved=True)
