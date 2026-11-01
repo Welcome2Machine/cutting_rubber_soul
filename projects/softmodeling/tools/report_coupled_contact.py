@@ -138,7 +138,7 @@ if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('root',type=Path);run(p.parse_args().root)
 
 
-def common_time_review(cases,legacy):
+def common_time_review(cases,legacy,*,allow_unmatched_partition_points=False):
     """Three-level common clock/denominator, retaining finer samples and old gates.
 
     A difference between discrete solutions is not an upper error bound. The
@@ -149,6 +149,12 @@ def common_time_review(cases,legacy):
     identity=common_inputs(cases)
     if len(cases)!=3:raise ValueError('Exactly three bound levels required')
     offsets=[registered_offsets(q,a) for _,q,a in cases]
+    return common_time_data(cases,legacy,identity,offsets,allow_unmatched_partition_points=allow_unmatched_partition_points)
+
+
+def common_time_data(cases,legacy,identity,offsets,*,allow_unmatched_partition_points=False):
+    import itertools
+    # Caller must have independently bound each complete trajectory/phase chain.
     maps=[{i:j for i,j in common_offset_indices(o,offsets[0],require_all=False)} for o in offsets]
     shared=sorted(set(maps[0]).intersection(maps[1],maps[2]))
     if not shared:raise ValueError('No three-way common physical times')
@@ -190,13 +196,13 @@ def common_time_review(cases,legacy):
     pairs=[pair(i,j,indices[i],indices[j]) for i,j in itertools.combinations(range(3),2)]
     original=[]
     for i,j in ((0,1),(1,2)):
-        match=common_offset_indices(offsets[j],offsets[i]);ii=[a for a,b in match];jj=[b for a,b in match]
+        match=common_offset_indices(offsets[j],offsets[i],require_all=not allow_unmatched_partition_points);ii=[a for a,b in match];jj=[b for a,b in match]
         q=pair(i,j,ii,jj);q['original_velocity_denominator_sqrt_nmm']=max(loaded[j][b]['velocity_norm'] for b in jj)
         q['original_impulse_denominator_sqrt_nmm']=max(loaded[j][b]['impulse_norm'] for b in jj)
         q['original_velocity_relative']=q['maximum_velocity_difference_sqrt_nmm']/q['original_velocity_denominator_sqrt_nmm']
         q['original_impulse_relative']=q['maximum_contact_impulse_mass_difference_sqrt_nmm']/q['original_impulse_denominator_sqrt_nmm']
         original.append(q)
-    common_mid=set(indices[1]);extra=common_offset_indices(offsets[2],offsets[1]);extra=[(a,b) for a,b in extra if a not in common_mid]
+    common_mid=set(indices[1]);extra=common_offset_indices(offsets[2],offsets[1],require_all=not allow_unmatched_partition_points);extra=[(a,b) for a,b in extra if a not in common_mid]
     extra_pair=pair(1,2,[a for a,b in extra],[b for a,b in extra])
     peaks=[]
     for level,rows in enumerate(loaded):
@@ -214,5 +220,5 @@ def common_time_review(cases,legacy):
         velocity_difference_decreases=p12['maximum_velocity_difference_sqrt_nmm']<p01['maximum_velocity_difference_sqrt_nmm'],
         impulse_difference_decreases=p12['maximum_contact_impulse_mass_difference_sqrt_nmm']<p01['maximum_contact_impulse_mass_difference_sqrt_nmm'],
         fine_pair_velocity_5percent=p12['common_normalized_velocity_difference']<=.05,
-        original_pairs_reconstructed=original,extra_middle_fine_common_times=extra_pair,all_sample_peaks=peaks,
+        pairwise_sampling='Intersection of actual saved points' if allow_unmatched_partition_points else 'Original nested pair samples',original_pairs_reconstructed=original,extra_middle_fine_common_times=extra_pair,all_sample_peaks=peaks,
         original_comparison=legacy,original_flags_preserved=True)

@@ -29,7 +29,7 @@ def run(root):
     if any(r['source_hashes']!=reports[0]['source_hashes'] or r['config']!=reference['config'] for r in reports):raise ValueError('Reference/config mismatch')
     try:legacy=compare(cases,limits,entry_required=False)
     except ValueError as exc:legacy=dict(passed=False,error=str(exc),gates={})
-    common=common_time_review(cases,legacy);forces=review([a for _,_,a in cases],limits['mechanism_force_absolute_n'],raw_cases=[q for _,q,_ in cases])
+    common=common_time_review(cases,legacy,allow_unmatched_partition_points=True);forces=review([a for _,_,a in cases],limits['mechanism_force_absolute_n'],raw_cases=[q for _,q,_ in cases])
     p01,p02,p12=common['pairs'];energy=[]
     for name,r in zip(('coarse','middle','fine'),reports):
         e=r['energy_n_mm'];energy.append(dict(case=name,**e,reference_scale_n_mm=ref['value_n_mm'],absolute_numerical_fraction=e['absolute_numerical_including_equation_work_n_mm']/ref['value_n_mm'],absolute_equation_work_n_mm=r['absolute_equation_work_n_mm'],absolute_equation_fraction=r['absolute_equation_work_n_mm']/ref['value_n_mm'],residual_impulse_mass_norm_sum_sqrt_nmm=r['residual_impulse_mass_norm_sum_sqrt_nmm'],residual_impulse_over_common_velocity=r['residual_impulse_mass_norm_sum_sqrt_nmm']/common['common_velocity_scale_sqrt_nmm'],old_absolute_numerical_over_blade_work=r['old_absolute_numerical_over_blade_work']))

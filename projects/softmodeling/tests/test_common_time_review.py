@@ -27,3 +27,20 @@ def test_common_scale_keeps_large_finer_peaks_and_old_failure(tmp_path,monkeypat
     assert q['pairs'][0]['largest_dof_contributions'][0]['node']==0
     assert q['original_pairs_reconstructed'][1]['sample_count']==4
     assert q['original_pairs_reconstructed'][1]['original_velocity_relative']>.05
+
+
+def test_adaptive_extra_points_are_retained_without_fabricating_pairs(tmp_path,monkeypatch):
+    monkeypatch.setattr(report,'common_inputs',lambda cases:{'verified_by_test_fixture':True})
+    monkeypatch.setattr(report,'registered_offsets',lambda q,a:np.array([s['time_s'] for s in a['states']]))
+    cases=[]
+    for level,times in enumerate(([1.,1.3,2.],[.5,1.,1.5,2.],[.25,.5,.75,1.,1.25,1.5,1.75,2.])):
+        path=tmp_path/str(level);path.mkdir();rows=[]
+        for k,t in enumerate(times):
+            f=f'{k}.npz';np.savez(path/f,mass=[1.],velocity=[[1.+level*.01,0.]],impulse_normal=[[.1,0.]],impulse_friction=[[0.,0.]])
+            rows.append(dict(time_s=t,state_file=f))
+        cases.append((path,{},dict(states=rows)))
+    with pytest.raises(ValueError,match='No identical'):report.common_time_review(cases,{})
+    q=report.common_time_review(cases,{},allow_unmatched_partition_points=True)
+    assert q['common_sample_count']==2
+    assert q['all_sample_peaks'][0]['outside_shared_velocity_norm_peak']['time_s']==1.3
+    assert q['original_pairs_reconstructed'][0]['sample_count']==2
