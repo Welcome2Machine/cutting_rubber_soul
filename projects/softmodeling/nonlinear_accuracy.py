@@ -86,7 +86,8 @@ def inspect(p,x,deadline=float('inf')):
         if not np.isfinite(d).all() or condition>q['condition_limit'] or relative>1e-6:raise ValueError('Unreliable tangent solve')
         direction=np.zeros(p.total);direction[idx]=d;direction=direction.reshape(x.shape)
         sig=signature(p,x,g);f0=float(g.reshape(-1,2)[p.n:,1].sum());v0=p.endpoint_velocity(x);k0=p.cohesive_response(x)['history'];A0=p.material_response(x)['metric']
-        for amp in (1.,16.,256.):
+        resolved=[]
+        for amp in (1.,16.,256.,4096.,65536.):
             if time.monotonic()>=deadline:raise TimeoutError('Nonlinear error verification budget')
             delta=amp*direction;inc=du+delta;y=p.previous+inc
             if p.safe_step(x,delta)<1-1e-10 or not p.accepted_chord_is_safe(y):raise ValueError('Correction trajectory unsafe')
@@ -102,7 +103,12 @@ def inspect(p,x,deadline=float('inf')):
             if jy<=0 or not record['contact_and_mirror_sets_unchanged']:raise ValueError('Probe changes contact, slip branch or unilateral active set')
             if vchange>report['velocity_change_allowance_sqrt_nmm'] or fchange>q['force_change_n']:raise ValueError('Observed correction exceeds allocation')
             if kh>1e-6*(2*p.toughness/p.strength) or ma>1e-8:raise ValueError('Correction changes history appreciably')
-            if amp>1 and mismatch>q['resolved_prediction_rtol']:raise ValueError('Resolved correction disagrees with tangent')
+            if amp>1:
+                if mismatch<=q['resolved_prediction_rtol']:resolved.append(amp)
+                else:resolved=[]
+                if len(resolved)==2:break
+        report['resolved_amplifiers']=resolved
+        if len(resolved)!=2:raise ValueError('No two consecutive resolved corrections agree with tangent')
         if report['residual_impulse_mass_norm_sqrt_nmm']>report['residual_impulse_allowance_sqrt_nmm'] or report['absolute_equation_work_n_mm']>report['equation_work_allowance_n_mm']:raise ValueError('Residual impulse/work exceeds allocation')
         report['passed']=True
     except (RuntimeError,ValueError,FloatingPointError,TimeoutError) as e:report['reason']=str(e)

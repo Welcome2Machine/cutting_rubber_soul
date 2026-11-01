@@ -59,3 +59,46 @@ def test_optional_policy_does_not_change_legacy_solve():
     for key,value in [('nonlinear_fraction',.11),('time_error_fraction',.06),('force_change_n',1e-5),('condition_limit',1e12)]:
         q=policy();q[key]=value
         with pytest.raises(ValueError):validate_policy(q)
+
+
+def test_probe_search_requires_two_consecutive_resolved_amplitudes():
+    p,x=control();original=p.evaluate
+    def noisy(x,lag,tangent=True,projected=False):
+        e,g,H,j=original(x,lag,tangent,projected)
+        if x[0,1]<0:g[1]+=2e-10
+        return e,g,H,j
+    p.evaluate=noisy
+    a=inspect(p,x)
+    assert a['passed'],a.get('reason')
+    assert a['probes'][1]['relative_prediction_error']>.05
+    assert a['resolved_amplifiers']==[256.,4096.]
+    assert a['probes'][1]['amplifier']==16
+
+
+def test_plateau_only_requests_original_equation_certificate(monkeypatch):
+    import nonlinear_accuracy
+    from prototype.force_globalization import accuracy_plateau
+    from prototype.ipc_reference import LoadStepFailure
+    p,x=control();h=[];calls=[]
+    monkeypatch.setattr(nonlinear_accuracy,'try_stop',lambda *a:calls.append(a) or False)
+    for i in range(8):assert not accuracy_plateau(p,x,1e-8,1e-9,h,1e10)
+    assert not calls
+    assert not accuracy_plateau(p,x,1e-8,1e-9,h,1e10) and len(calls)==1
+    p._friction_homotopy_factor=10
+    with pytest.raises(LoadStepFailure,match='original-equation'):accuracy_plateau(p,x,1e-8,1e-9,h,1e10)
+    assert len(calls)==1
+
+
+def test_policy_parent_rejects_physical_source_change_and_missing_declaration(tmp_path):
+    import json
+    from tools.branch_coupled_window import numerical_policy_parent
+    from tools.frozen_scene import digest
+    (tmp_path/'result.json').write_text('{}');audit=tmp_path/'audit.json';audit.write_text('{}')
+    raw=dict(source_hashes={'nonlinear_accuracy.py':'old','coupled_contact.py':'same'})
+    proof=dict(passed=True,source_hashes=raw['source_hashes']);current={**raw['source_hashes'],'nonlinear_accuracy.py':'new'}
+    q=dict(parent_result_sha256=digest(tmp_path/'result.json'),parent_audit_sha256=digest(audit),parent_source_hashes=raw['source_hashes'],child_source_hashes=current,changed_files=['nonlinear_accuracy.py'],production_continuation=False,reviewed_numerical_strategy_diff='Bounded probe selection only')
+    manifest=tmp_path/'policy.json';manifest.write_text(json.dumps(q))
+    assert numerical_policy_parent(raw,proof,tmp_path,audit,manifest,current)['production_continuation'] is False
+    with pytest.raises(ValueError,match='Physical-equation'):numerical_policy_parent(raw,proof,tmp_path,audit,manifest,{**current,'coupled_contact.py':'changed'})
+    q['parent_result_sha256']='wrong';manifest.write_text(json.dumps(q))
+    with pytest.raises(ValueError,match='Unbound'):numerical_policy_parent(raw,proof,tmp_path,audit,manifest,current)

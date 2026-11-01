@@ -28,6 +28,17 @@ class TimeChain:
         if schedule is None:
             n=int(round(self.window/self.h));close(n*self.h,self.window,'Fixed window/count')
             self.offsets=np.arange(1,n+1)*self.h;self.kind='fixed'
+        elif schedule['kind']=='bounded_dyadic_partition':
+            from .event_partition import verify
+            if plan is None:raise ValueError('Adaptive partition requires independent registered control')
+            self.offsets,complete=verify(schedule,plan,self.h);self.kind=schedule['kind']
+            accepted=[z for z in schedule['trace'] if z['status']=='accepted']
+            rejected=[z for z in schedule['trace'] if z['status']=='rejected']
+            if len(accepted)!=len(raw['steps']) or len(rejected)!=len(raw['attempts']):raise ValueError('Partition decisions lack states/rejections')
+            for trial,record in zip(rejected,raw['attempts']):
+                close(record['dt_s'],trial['right_s']-trial['left_s'],'Rejected physical partition dt')
+                close(record['target_mm'],raw['initial_depth_mm']+rate*trial['right_s'],'Rejected partition target')
+                if record['failure_kind']!=trial['failure_kind'] or not record['rollback_verified']:raise ValueError('Unverified adaptive rejection')
         else:
             if schedule['kind']!='preregistered_partition' or not schedule.get('provenance'):raise ValueError('Unspecified variable schedule')
             self.offsets=np.asarray(schedule['end_offsets_s'],float);self.kind=schedule['kind']

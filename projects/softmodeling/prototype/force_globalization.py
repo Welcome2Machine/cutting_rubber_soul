@@ -48,6 +48,21 @@ def directions(jacobian, residual):
             yield f'lm_{damping:g}', p
 
 
+def accuracy_plateau(problem,x,norm,tolerance,history,deadline):
+    """Bounded recovery of a stable residual floor, never a physical cutback rule."""
+    history.append(norm)
+    if not getattr(problem,'nonlinear_error_policy',None) or len(history)<9 or norm<=tolerance:return False
+    recent=np.asarray(history[-9:])
+    if not np.isfinite(recent).all() or max(recent)>1.05*min(recent):return False
+    if getattr(problem,'_friction_homotopy_factor',1.)!=1.:
+        # The caller restores the original friction and verifies its equation.
+        # Do not waste the full iteration budget below an auxiliary force floor.
+        from .ipc_reference import LoadStepFailure
+        raise LoadStepFailure('Auxiliary residual plateau: original-equation certificate required')
+    from nonlinear_accuracy import try_stop
+    return try_stop(problem,x,deadline)
+
+
 def solve(problem, x, depth, deadline):
     from .ipc_reference import BASELINE, LoadStepFailure
     tolerance = getattr(problem, 'force_tolerance_n', BASELINE['force_tolerance_n'])
@@ -59,6 +74,7 @@ def solve(problem, x, depth, deadline):
     problem.force_globalization_summary = counters
     primary = hasattr(problem, 'set_primary_increment')
     increment = problem.step_increment(x).copy() if primary else None
+    accuracy_history=[]
     for iteration in range(problem.max_iterations+1):
         if time.monotonic() >= deadline:
             raise TimeoutError('Fresh-residual Newton/LM wall budget')
@@ -77,6 +93,7 @@ def solve(problem, x, depth, deadline):
             raise LoadStepFailure('Invalid fresh Newton/LM state')
         if norm <= tolerance:
             return x, iteration
+        if accuracy_plateau(problem,x,norm,tolerance,accuracy_history,deadline):return x,iteration
         if iteration == problem.max_iterations:
             break
         a = problem.coupled_friction_tangent(x, lag, hessian)[problem.free][:, problem.free]
@@ -151,6 +168,7 @@ def solve_increment_ptc(problem, x, depth, deadline):
     increment=problem.step_increment(x).copy();shift=.1
     counters=dict(method='primary_increment_ptc',iterations=0,trials=0,physical_damping=False)
     problem.force_globalization_summary=counters
+    accuracy_history=[]
     for iteration in range(problem.max_iterations+1):
         if time.monotonic()>=deadline:raise TimeoutError('Primary-increment PTC wall budget')
         problem.set_primary_increment(x,increment);problem.trial=x.copy()
@@ -161,6 +179,7 @@ def solve_increment_ptc(problem, x, depth, deadline):
         print('INCREMENT_PTC '+json.dumps(dict(depth_mm=float(depth),**counters)),flush=True)
         if not np.isfinite(norm) or j<=0:raise LoadStepFailure('Invalid increment PTC state')
         if norm<=tolerance:return x,iteration
+        if accuracy_plateau(problem,x,norm,tolerance,accuracy_history,deadline):return x,iteration
         if iteration==problem.max_iterations:break
         a=problem.coupled_friction_tangent(x,lag,h)[problem.free][:,problem.free]
         m=metric[problem.free][:,problem.free]+diags(np.full(len(r),BASELINE['hessian_regularization_n_mm']))

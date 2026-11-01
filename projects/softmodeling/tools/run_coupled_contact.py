@@ -17,7 +17,7 @@ from .contact_time_schedule import requested_schedule
 
 def sources():
     s=parent_route.sources();root=Path(__file__).resolve().parents[1]
-    for name in ('coupled_contact.py','tools/run_coupled_contact.py','tools/contact_time_schedule.py'):
+    for name in ('coupled_contact.py','tools/run_coupled_contact.py','tools/contact_time_schedule.py','tools/event_partition.py'):
         s[name]=digest(root/name)
     return s
 
@@ -101,7 +101,12 @@ def run(parent,parent_audit,state_index,preregister,out,dt,layer,seconds=600,*,r
         steps=[],attempts=[],status='running')
     offsets,schedule=requested_schedule(limits,dt)
     if schedule is not None:result['time_schedule']=schedule
-    for i,offset in enumerate(offsets):
+    from .event_partition import Partition
+    partition=Partition(offsets,limits['adaptive_dyadic']) if 'adaptive_dyadic' in limits else None
+    pending=list(map(float,offsets))
+    while (partition.pending if partition else pending):
+        offset=partition.pending[0][1] if partition else pending[0]
+        i=len(result['steps'])
         if time.monotonic()>deadline:result['status']='global_compute_budget_exhausted';break
         target=result['initial_depth_mm']+p.loading_rate*offset
         before=array_hash(accepted_fields(p,x));oldreleased=p.released.copy()
@@ -113,18 +118,23 @@ def run(parent,parent_audit,state_index,preregister,out,dt,layer,seconds=600,*,r
             route.observables(p,x,rec)
             state=route.snapshot(p,x,oldreleased,depth);name=f'state_{i:05d}.npz';np.savez_compressed(out/name,**state)
             rec.update(state_file=name,state_sha256=digest(out/name));result['steps'].append(native(rec))
+            if partition:partition.decision('accepted')
+            else:pending.pop(0)
             write_json(out/'progress.json',dict(accepted=len(result['steps']),depth_mm=depth,time_s=rec['time_s']))
         except (RuntimeError,ValueError,TimeoutError,AssertionError,FloatingPointError) as exc:
             if array_hash(accepted_fields(p,x))!=before:raise RuntimeError('Failed coupled step committed history') from exc
             failed=getattr(p,'failed_positions',x);fields,energy=rejected_fields(p,failed)
-            np.savez_compressed(out/'rejected_trial.npz',**fields)
+            rejected_name=f'rejected_trial_{len(result["attempts"]):05d}.npz' if partition else 'rejected_trial.npz'
+            np.savez_compressed(out/rejected_name,**fields)
             if array_hash(accepted_fields(p,x))!=before:raise RuntimeError('Rejection serialization changed accepted state')
             result['status']='rejected_fixed_step' if schedule is None else 'rejected_partition_step'
             result['attempts'].append(dict(from_mm=depth,target_mm=target,dt_s=p.material_dt,error=str(exc),failure_kind=failure_kind(exc,deadline),
-                rollback_verified=True,parent_hash=before,parent_state_file=result['steps'][-1]['state_file'] if result['steps'] else 'parent_state.npz',rejection_measurement=rejection_measurement(exc,energy,p),trial_file='rejected_trial.npz',trial_sha256=digest(out/'rejected_trial.npz'),energy=energy,
+                rollback_verified=True,parent_hash=before,parent_state_file=result['steps'][-1]['state_file'] if result['steps'] else 'parent_state.npz',rejection_measurement=rejection_measurement(exc,energy,p),trial_file=rejected_name,trial_sha256=digest(out/rejected_name),energy=energy,
                 nonlinear_summary=getattr(p,'force_globalization_summary',{})))
+            if partition and partition.decision('rejected',failure_kind(exc,deadline)):continue
             break
     else:result['status']='completed_window'
+    if partition:result['time_schedule']=partition.saved()
     result.update(elapsed_s=time.monotonic()-start,source_unchanged=source==sources())
     finish(out,result);return result
 
