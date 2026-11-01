@@ -580,3 +580,14 @@ SHA256：`e505c6c93d89fc27e66eeb08be31e2af73d07f7377a6a567416e6c5b708f8bc5`。
 包内README_REPLAY.md、jobs.json、source_changes.bundle、publication_map.json与SHA256SUMS
 给出精确源码/输入/命令；包外最终核账与发布身份在同目录review_final_metadata附件另校验。
 服务器完整结果：`/LARGE1/gr10578/Zhao_Guorui/SoftCutting/1029/runs/server_1101_round12`。
+
+
+第十三轮（2026-11-02）数值加载已结束。使用既有SysB/2022环境、gr10578b、sbatch
+--rsc及srun、--no-requeue，普通2核8GiB，独立审查批次最多4核16GiB，最多两作业。
+加载IPC1/BLAS1；审查每核独立worker，CPU亲和性不重叠，不能把四核申请当单求解器提速。
+运行库runs/server_1102_round13保存jobs/allocations/workers、配置与源码SHA、真实日程、
+失败与全部原始NPZ；活动数值源码在独立worktree冻结，未重置旧分支/现场。
+完整新窗口状态约1.8GiB，精简审查包只取完整父态/预测器、关键事件/峰值/代表拒绝态，
+保留全部原始曲线、逐态审查和SHA清单；全态重审需要服务器库，包内可重新计算窗口。
+最终sacct作业/步骤核账、打包消耗及SHA在本节后续及包外附件记录；不把包制作前统计
+冒称本轮最终统计。新预算90分钟并集，加载已停止，后续仅审查、打包和核账。
