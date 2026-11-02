@@ -1,77 +1,38 @@
-# 主体代码地图
+# 当前科研原型代码地图
 
-完整体计算主线为 P1 三角形、原生 improved-max IPC 接触与有限应变 Maxwell 材料，行程上限为 2 mm。2026-10-28 新增独立的保存态起裂诊断和 0° 有限间隙内聚界面研究分支；原完整体算法与基线保持。
+更新：2026-11-02。这里只描述活跃调用关系；执行范围见[科研原型任务](../../../researchtopic/research_prototype_task.md)。
 
-先读[当前研究状态](../docs/research_status.md)、[任务要求](../docs/task_requirements.md)和[模型规格](../docs/current_model_spec.md)。
+## 活跃路径
 
-[数学模型说明](../docs/mathematical_model.md)集中推导平衡、本构演化与一致切线、法向/摩擦残差和PTC算法；其中代码索引与配套数值核查用于解释当前实现，不能替代真实路径审查或实验标定。
+| 研究输出 | 入口 | 核心模块 |
+|---|---|---|
+| 完整体受力、变形和接触 | `tools.run_material_candidate` | `material_case`、`model_config`、`geometry`、`ipc_viscoelastic`、`ipc_reference`、`material`、`mechanics/finite_strain` |
+| 起裂候选指标与危险位置 | `tools.fracture_onset` | `workbench.results.saved_state_fields`、已有应力/能量恢复和邻域平均 |
+| 裂后分离、新面接触与载荷传递 | `tools.run_coupled_growth` | `coupled_cohesive`、`coupled_contact`、`face_cut`、`face_cohesive_quadrature`及其既有基类 |
 
-| 模块 | 职责 |
-|---|---|
-| `model_config.py` | 几何、材料及 P1 网格配置；保留原路径的配置签名兼容性 |
-| `zero_gap_cut.py` | 独立居中0°实际刀具控制：初始刚性mode-I连接、镜像单边接触、二维物理惯性、独立增量算术与分项能量账；非原s=7 mm/自由裂路模型 |
-| `energy_cut.py`、`../mechanics/discrete_gradient.py` | 独立C空间离散功/真实Maxwell分裂、内聚路径功、原生接触时间求积与显式theta数值耗散；局部及邻域强度规则仅为待验证假设 |
-| `geometry.py` | 刀具和试样几何、分级 P1 网格；可选直刃碰撞边细分保留原轮廓和刀尖编号 |
-| `material.py`、`../mechanics/finite_strain.py` | 平衡 Ogden 材料、有限应变 Maxwell 更新及切线；另保留 2023 论文复现所需材料律 |
-| `ipc_reference.py` | P1 力与切线装配、刀具及自接触、CCD、正 J 检查与 PTC 非线性求解 |
-| `ipc_viscoelastic.py` | 黏弹性增量问题、材料历史及耗散管理 |
-| `cohesive.py`、`cohesive_cut.py` | 未标定的径向双线性界面、两侧独立网格、完整裂面接触和共同历史提交；限预设 0° 路径 |
-| `cohesive_mixed.py` | 共转四节点、两Gauss点的混合模式强度/共同Gc势；不可逆损伤、解析残量/切线，非比例加载能量闭合 |
-| `cohesive_closure.py` | 可选双侧有限线段距离闭合势的解析几何导数；修正远距滑开配对仍承压的缺陷，仍需独立切割/间隙/能量验证 |
-| `cohesive_network.py` | 所有内部网格边的候选界面拓扑；独立三角形、真实IPC面、参考间隙/滑移、底面身份和面积损失 |
-| `material_case.py` | 完整体加载流程、检查点、独立物理审查与 CSV 输出 |
-| `material_performance.py` | 可选材料分块及线性后端配置；单独记录性能策略签名 |
-| `pardiso.py`、`linear_solve.py` | 稀疏线性求解与后端选择 |
-| `tip_contact.py`、`contact_trace.py` | 刀尖接触的参考材料位置、整刃支撑区域及轨迹输出 |
+面级P1内聚与真实历史已接入当前耦合机制路线；旧“尚未接入”的说明属于历史阶段。
+当前裂后路线限0°居中、预设mode-I路径，不能直接替代s=7 mm多角度完整体。
 
-Maxwell 加载入口为 `python -m tools.run_material_candidate`，参数与串行队列说明见[工具入口](../tools/README.md)。
-起裂后处理入口为 `python -m tools.fracture_onset`，耦合代表算例为 `python -m tools.run_cohesive_cut`；均要求独立输出和预算。合并桌面/API 的显式入口及证据见[断裂实现说明](../../../docs/fracture_implementation.md)。`tools.fracture_labels`区分物理起裂、可见裂口、力变化代理及组截止；不自动配准试次或标定阈值。
-本地HTML入口为 `python -m tools.workbench --background --open`，只将已核查配置转换为同一加载命令。`workbench/config.py`负责输入，`server.py`负责单任务与预算，`results.py`负责保存场导出；没有复制核心求解器。`material_case.make_problem()`及`IPCProblem`可接收刀具厚度/楔角、圆鼻和网格参数，未传参数时保留原路径默认值。
-`python -m prototype.ipc_reference` 是弹性参考入口；其 `ipc_baseline.json` 不能替代 Maxwell 共同材料基线。
+## 当前构造依赖与整理边界
 
-`intact_2mm_baseline.json` 定义共同材料基线，并索引本地 `outputs/baseline/angle0`、`angle33`、`angle57` 的结果及审查指纹。结果文件不随代码发布，使用前需检查其实际存在性与签名。
+现行耦合构造仍通过`tools.run_precrack_entry`、`tools.run_endpoint_face_route`、`tools.run_fracture_route`、`tools.run_zero_gap_cut`复用工厂，含运行时换类和模块函数替换。
+这些依赖是已知维护问题；本轮固定一条已使用路径，不再叠加新派生层，不把清理变成重写求解器。
 
-每个非线性增量固定上一接受态的位置和材料度量，仅在物理验收后提交新历史。原生接触保留完整 EV/VV、自接触及 CCD；性能实现由独立原生对象审查，不以近似残差替代物理验收。运行期间不得编辑参与计算的源码；记录源码指纹，不复制冻结源码树。
+`zero_gap_cut`、`energy_cut`等历史模块仍是现行基类和来源哈希的一部分。冻结FFM/旧径向/全网络等研究用途，不等于删除其源码。
+若某个真实原型阻断必须整理构造，限于最小工厂/参数传递调整，物理方程与历史提交同时保持回归。
 
-旧混合元、相位场、接触替代及一次性诊断脚本已从当前入口移除。历史结论见[研究历史](../docs/research_history.md)，文献导读见 [references](../references/README.md)，独立论文复现保留在 [reproductions](../reproductions/dammass2023/README.md)。
+## 保留的基础能力
 
-专项研究内核（默认切割不切换）：`force_globalization.py`为可选真实残差Newton/LM，仍需全物理审查；`extrinsic_topology.py`为零间隙连接/释放算子，未接入零距离裂面接触；`cohesive_dynamics.py`为标量惯性内聚能量验证，非二维切割动力学。验证与限制见合并仓库断裂说明第18–19节。
+- `ipc_reference`：P1装配、原生EV/VV/自接触、CCD、正J和真实非线性残差。
+- `ipc_viscoelastic`、`material`、`mechanics`：有限应变Maxwell、物理时间和接受后历史提交。
+- `face_cut`、`face_cohesive_quadrature`：精确完整连接、固定面求积历史、参考面积、Gc和新裂面身份。
+- `material_case`及现有独立审查：来源、状态链、物理量重组和能量分账。
+- `tip_contact`、`contact_trace`：接触材料迁移；不能自动称为真实界面滑移。
 
-`finite_increment_cut.py`在零间隙实际刀具支路实现冻结A/κ的成对虚拟平衡、同一有限裂段的强度与能量减摩擦双条件，以及真实动态CZM插入。虚拟值不覆盖物理历史；PTC/后备载荷延续只用于求根。`mechanics/discrete_gradient.frozen_response`提供瞬时冻结历史能量/应力/完整切线，区别于两端点离散梯度。独立证据审查入口为`tools.audit_finite_increment`；适用边界、节点面积与摩擦路径假设见第22节。
+基线索引仍为`intact_2mm_baseline.json`，结果不随Git发布；使用前检查存在性与签名。
+数学与参数见[数学模型](../docs/mathematical_model.md)和[当前规格](../docs/current_model_spec.md)。
 
-第二轮可靠性内核：`../virtual_path_geometry.py`定义虚拟直线的几何分区；
-`../virtual_path_probe.py`只选择原生CCD查询安排，不能代替CCD证书；
-`../virtual_friction_work.py`以完整分区误差之和控制自适应积分，将经验不确定性传播到
-三态能量判据。接触功先平移再仿射插值以避免近间隙全局坐标消减，原根/历史不变；
-`../virtual_constrained_root.py`为求根方向施加最近完整弦特征的线性间隙
-约束，最终仍用原方程、原力门与完整原生CCD验收，不引入物理反力或新虚拟路径。
-`tools.virtual_work_audit`使用扩展精度相对插值及独立复合Legendre规则。`tools.frozen_scene`仅允许核查后的
-旧方程诊断，不能用于物理续算。`../numerical_runtime.py`管理显式IPC/BLAS线程及记录。
-`../face_cohesive_quadrature.py`为尚未接入生产释放拓扑的面级P1独立验证核；不将它的
-规定开口场验证称为完整切割网格收敛。方法与限制见合并仓库断裂说明第24节。
+## 历史地图
 
-第四轮`../release_dynamics.py`是独立过程组织与核查层：真实状态/速度的摩擦交接、
-零开口条件激活及不同时间求积；所有物理方程复用本表中的`energy_cut.py`。
-`tools.dynamic_release run|audit`显式选择已接受或未决真实初值；候选条件激活不构成
-新的起裂判据，也不更新生产路径。定义与限定见合并方法第26节。
-
-
-第五轮完整动量时间对照在上层`stiff_contact.py`、`endpoint_friction.py`显式安装，
-不改变本目录默认生产算法。约束冲量、端点BE数值损失及端点摩擦时间功差单列；
-`tools.dynamic_release`保存实际dt、状态/源码哈希并以原动力学/CCD/历史门验收。
-实际局部算例尚未给出2 mm、起裂选择或网格资格，见方法第27节。
-
-### 第六轮实际几何连续内聚控制
-
-`face_cut.py`定义零间隙P1面约束、固定面求积/历史、暴露接触边及一致面力/切线；
-`tools.face_events`区分算法平均牵引与松弛后瞬时端点牵引。
-`python -m tools.run_endpoint_face_route run configs/face_intact_control.json --out NEW_DIRECTORY --seconds 3000 --ipc-threads 2 --blas-threads 1 --physical-core-affinity`
-仅在已获授权的计算节点作业中执行，脚本内用srun。将配置换为
-`configs/face_precrack_control.json`为独立0.5 mm预裂控制；不是完整材料起裂预测。
-`audit DIRECTORY --out NEW_AUDIT.json --seconds 540`采用相同入口，独立重建动量、
-历史/几何身份、CCD和接触路径功。所有输出目录必须新建，禁止覆盖或移植历史。
-
-旧`tools.run_fracture_route`仍是平均连接力事件的数值对照；它在实际状态中会漏过
-瞬时强度越界，不能作为默认连续起裂方案。原FFM继续由`tools.run_zero_gap_cut`
-维护，两条物理假设不等价。共同物性、质量、摩擦和速度保持；进度、真实裂口、
-刀具进入、完整事件及能量/时间/网格资格分别列示，见当前研究状态与方法第28节。
+[调整前代码地图](https://github.com/Welcome2Machine/cutting_rubber_soul/blob/78405e242bc4246d269dda5ff5bdf11814b1c0fa/projects/softmodeling/prototype/README.md)保留各专项路线与阶段性说明。
+详细事实仍在[研究状态](../docs/research_status.md)和[方法说明](../../../docs/fracture_implementation.md)；不以历史“下一步”覆盖当前用户目标。

@@ -1,5 +1,14 @@
 # Repository requirements
 
+## Current user priority: research prototype (2026-11-02)
+
+Read the current `../../researchtopic/research_prototype_task.md` and project review before applying historical round priorities.
+Keep three active research paths: intact response, existing onset diagnostics, and the current face-CZM coupled prototype.
+Closed-C1 controller/energy-quota/precision optimization is paused; its strict transient gates are not prerequisites for all other research outputs or bounded C2 feasibility.
+Keep physical equations, residuals, CCD/J, boundaries, irreversible histories, rollback and Gc/energy accounting. Preserve old failure labels; qualify mechanism demonstrations, quantitative observables and experimental predictions separately.
+Do not create new solver/framework/audit layers or bulk-move/delete legacy dependencies. Modify code only for a concrete research output or a blocking defect, within the current task's budget.
+Historical permissions, budgets and "next priority" paragraphs below or in reports do not override this current user direction.
+
 Read [research status](docs/research_status.md), [task requirements](docs/task_requirements.md),
 [model specification](docs/current_model_spec.md), and [code map](prototype/README.md).
 Directory ownership, naming and publication rules are in [README](README.md).
