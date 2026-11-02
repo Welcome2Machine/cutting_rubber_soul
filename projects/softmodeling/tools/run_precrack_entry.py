@@ -32,7 +32,11 @@ def reference_problem(config, *, require_pure=True):
     if gap and c['precrack_mm']<=0:raise ValueError('Positive notch requires a prescribed precrack')
     p=endpoint.problem(c)
     p.__class__=PurePrecrackProblem
-    p.entry_reference_geometry='actual closed 0.5 mm precrack' if gap==0 else 'prescribed stress-free tapered notch; diagnostic geometry only'
+    length=float(c['precrack_mm'])
+    p.entry_reference_geometry=(
+        'intact C2 initial geometry; zero precrack and zero initial slit' if length==0 else
+        f'actual closed {length:g} mm precrack' if gap==0 else
+        f'prescribed stress-free tapered notch; precrack {length:g} mm, halfwidth {gap:g} mm; diagnostic geometry only')
     if gap:
         xy=p.mesh.reference_xy.copy();centre=p.config.drop_s_mm;tip=p.config.height_mm-c['precrack_mm']
         xy[:,0]+=gap*np.maximum(0.,(xy[:,1]-tip)/c['precrack_mm'])*np.maximum(0.,1-(xy[:,0]-centre)/.5)

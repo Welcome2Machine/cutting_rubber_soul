@@ -107,6 +107,41 @@ def test_own_path_depth_caps_do_not_jump_over_declared_refinement_interval():
     assert p.next_loading_depth(.366,.005,2.)==pytest.approx(.3661)
 
 
+def test_c2_initial_geometry_has_no_free_crack_or_initial_gc():
+    c=dict(config(),precrack_mm=0.,initial_slit_halfwidth_mm=0.)
+    p=problem(c)
+    assert 'intact C2' in p.entry_reference_geometry
+    assert not p.precracked_faces.any() and not p.active_faces.any()
+    assert not p.released.any() and not p.history.any()
+    assert p.initial_fracture_energy_n_mm==0.
+    assert p.rule['face_area_mm2'][p.precracked_faces].sum()==0.
+    assert not p.velocity.any()
+    np.testing.assert_allclose(p.deformation(p.rest),np.broadcast_to(np.eye(2),(len(p.mesh.triangles),2,2)),atol=1e-12)
+    closed=problem(dict(config(),initial_slit_halfwidth_mm=0.))
+    np.testing.assert_array_equal(p.rest,closed.rest)
+    np.testing.assert_array_equal(p.mass,closed.mass)
+    assert p.material==closed.material
+    assert '0.5 mm precrack' in closed.entry_reference_geometry
+
+
+def test_c2_own_initial_short_path_audit_and_report(tmp_path,monkeypatch):
+    from tools import run_coupled_growth as growth,run_fracture_route as route
+    from tools.report_coupled_growth import run as report
+    c=dict(config(),precrack_mm=0.,initial_slit_halfwidth_mm=0.,
+        coupled_control=dict(material_layer='maxwell',solve_tolerance_n=1e-8))
+    for name in ('problem','sources','finish'):monkeypatch.setattr(route,name,getattr(growth,name))
+    r=route.run(c,tmp_path/'run',30,stop_depth=.001,ipc_threads=1,blas_threads=1)
+    assert r['status']=='completed_pilot' and r['own_initial_state']
+    a=growth.audit(tmp_path/'run',tmp_path/'audit.json',30,ipc_threads=1,blas_threads=1)
+    assert a['passed'],a.get('error')
+    s=report(tmp_path/'run',tmp_path/'audit.json',tmp_path/'report',ipc_threads=1,blas_threads=1)
+    assert 'intact C2' in s['scope'] and 'wide-notch' not in s['scope']
+    assert s['initial_geometry']==dict(precrack_mm=0.,initial_slit_halfwidth_mm=0.,precracked_face_count=0,precracked_reference_area_mm2=0.)
+    assert s['preexisting_dissipation_excluded_n_mm']==0.
+    assert s['terminal']['new_fully_failed_faces']==0
+    assert s['first_entry_into_new_failed_connected_face'] is None
+
+
 def test_analytical_blade_boundary_does_not_accumulate_increment_roundoff():
     p=problem(config());x=p.rest.copy();old=p.start;records=[]
     for i in range(4000):

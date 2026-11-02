@@ -3,7 +3,7 @@
 No resampling or failure extrapolation. Fully failed means ALL quadrature
 histories reach 2 Gc/Tmax; contact at a seam vertex is not face-interior entry.
 """
-import argparse,csv,json
+import argparse,csv,json,html
 from pathlib import Path
 import numpy as np
 from numerical_runtime import runtime_entry,add_thread_arguments,thread_arguments
@@ -172,7 +172,11 @@ def run(case,audit,out,*,runtime=None):
     faces=sorted(set(z['face'] for z in lastpoints));closest=None
     if faces:
         closest=max(faces,key=lambda f:min(z['history_to_failure_ratio'] for z in lastpoints if z['face']==f))
-    summary=dict(scope='Own-initial-state prescribed wide-notch diagnostic; no closed-C1, mesh or experiment prediction qualification',
+    summary=dict(scope=f'Own-initial-state {p.entry_reference_geometry}; preset mode-I path; no mesh or experiment prediction qualification',
+        initial_geometry=dict(precrack_mm=float(raw['config']['precrack_mm']),
+            initial_slit_halfwidth_mm=float(raw['config']['initial_slit_halfwidth_mm']),
+            precracked_face_count=int(p.precracked_faces.sum()),
+            precracked_reference_area_mm2=float(p.rule['face_area_mm2'][p.precracked_faces].sum())),
         case=str(case.resolve()),result_sha256=digest(case/'result.json'),audit_sha256=digest(Path(audit)),reporter_sha256=digest(Path(__file__)),
         source_hashes=raw['source_hashes'],config_sha256=raw['config_sha256'],status=raw['status'],error=raw.get('error'),failure_kind=raw.get('failure_kind'),
         accepted_states=len(rows),terminal=rows[-1],activation_event_count=sum(bool(e.get('activation')) for e in events),
@@ -216,7 +220,7 @@ def run(case,audit,out,*,runtime=None):
             ax.plot(2*p.config.drop_s_mm-x[nodes,0],x[nodes,1],color=color,lw=2)
         ax.scatter(x[p.n:,0],x[p.n:,1],s=2,color='k');ax.set(xlim=(p.config.drop_s_mm-.65,p.config.drop_s_mm+.65),ylim=(p.config.height_mm-1.3,p.config.height_mm+.2),aspect='equal',title=f"{row['depth_mm']:.9f} mm; blue initial / orange softening / red failed",xlabel='x (mm)',ylabel='y (mm)')
         fig.tight_layout();fig.savefig(out/f'geometry_{i:05d}.png',dpi=140);plt.close(fig)
-    (out/'index.html').write_text('<!doctype html><meta charset="utf-8"><h1>Audited prescribed-notch face growth</h1><img src="force_and_faces.png" width="1200"><p><a href="raw_force_energy.csv">Raw force/energy</a> <a href="face_points.csv">All new face quadrature histories</a> <a href="contact_identities.json">Independent contact identities</a></p><pre>'+json.dumps(native(summary),indent=2)+'</pre>')
+    (out/'index.html').write_text('<!doctype html><meta charset="utf-8"><h1>Audited face growth</h1><p>'+html.escape(summary['scope'])+'</p><img src="force_and_faces.png" width="1200"><p><a href="raw_force_energy.csv">Raw force/energy</a> <a href="face_points.csv">All new face quadrature histories</a> <a href="contact_identities.json">Independent contact identities</a></p><pre>'+html.escape(json.dumps(native(summary),indent=2))+'</pre>')
     print(json.dumps(native({k:summary[k] for k in ['accepted_states','terminal','first_new_full_failure','first_entry_into_new_failed_connected_face','closest_face_to_all_point_failure']})))
     return summary
 
