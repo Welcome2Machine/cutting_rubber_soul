@@ -190,3 +190,11 @@
 - [资源与第十三轮最终核账](https://github.com/Welcome2Machine/cutting_rubber_soul/blob/15bbae8fba2a70fa52ee9187b7a662be45b94395/docs/environment.md)
 - [历史任务与未被替代的物理约束](fracture_agent_tasks_20261031.md)
 - [原始科研目标](oblique_cutting_experiment_and_research.md)
+
+### 执行登记（2026-11-02）
+
+已在服务器从干净40d23a8、空本人队列接续。三父态真实步加倍和两场四分之一步已执行；
+原方程与历史链逐步审查。控制实验登记及唯一修正见方法第36节和
+`runs/server_1102_round14/control_registration.json`、`control_correction.json`。
+所有物性冻结；一次修正后的8μs对照仍无联合精度/成本收益，触发方法停止条件，未启动正式矩阵。
+最终数据及资格已写入既有research_status和方法第36节，原任务要求及旧失败标记不变。
