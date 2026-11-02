@@ -1,6 +1,6 @@
 # 当前研究状态
 
-> **2026-10-31 任务入口**：[负责人审查与分工](../../../researchtopic/README.md)、[下一轮远程断裂任务](../../../researchtopic/fracture_agent_tasks_20261031.md)。服务器已接续执行第十三轮闭合C1有界事件与时间控制核查；最新结果及资格见下方，历史结果保持原义。
+> **2026-11-02 任务入口**：[负责人审查与分工](../../../researchtopic/README.md)、[第十四轮远程断裂任务](../../../researchtopic/fracture_agent_tasks_round14_20261102.md)。第十三轮已结项；第十四轮任务已发布，尚无执行结果。最新结果及资格见下方，历史结果保持原义。
 
 更新：2026-11-02。任务与参数分别以[任务要求](task_requirements.md)和[模型规格](current_model_spec.md)为准；过去的运行授权不构成新的启动指令。
 
