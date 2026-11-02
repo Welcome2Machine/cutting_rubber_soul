@@ -4,6 +4,7 @@
 
 Read the current `../../researchtopic/research_prototype_task.md` and project review before applying historical round priorities.
 Keep three active research paths: intact response, existing onset diagnostics, and the current face-CZM coupled prototype.
+The current follow-up assigns intact/onset postprocessing to the local data owner; do not block it on full-state upload or finished fitting. The server may perform only the bounded existing-policy C2 check and conditional single own-initial mechanism run defined in the current task; no new certificate/controller development or retroactive acceptance.
 Closed-C1 controller/energy-quota/precision optimization is paused; its strict transient gates are not prerequisites for all other research outputs or bounded C2 feasibility.
 Keep physical equations, residuals, CCD/J, boundaries, irreversible histories, rollback and Gc/energy accounting. Preserve old failure labels; qualify mechanism demonstrations, quantitative observables and experimental predictions separately.
 Do not create new solver/framework/audit layers or bulk-move/delete legacy dependencies. Modify code only for a concrete research output or a blocking defect, within the current task's budget.
