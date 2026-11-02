@@ -47,6 +47,8 @@ def inspect(case,out,seconds,first,stop,runtime):
         if digest(case/'preregistration.json')!=raw['preregistration_sha256']:raise ValueError('Plan changed')
         plan=json.loads((case/'preregistration.json').read_text())['coupled_window'];clock=TimeChain(raw,parent,p.loading_rate,p.start,plan)
         resolution=bind_reference(plan,raw['dt_requested_s']) if 'event_resolution' in plan else None
+        from .event_resolution import initial_spent,absolute_work
+        spent=initial_spent(plan,resolution,clock.t0)
         base.restore_parent(p,parent)
         failed=parent['active_faces']&np.all(parent['history']>=2*p.toughness/p.strength,axis=1)
         report['entry_present_at_parent']=bool(base.strict_contacts(p,parent['positions'],p.connected_length(failed)))
@@ -65,7 +67,7 @@ def inspect(case,out,seconds,first,stop,runtime):
                 if not fresh['accepted_chord_ccd_safe']:raise ValueError('Full accepted chord unsafe')
                 balance=base.independent_balance(p,s)
                 if resolution is not None:
-                    old=dict(parent,blade_force_components_n=[old_record[k] for k in ('reaction_normal_fz_n','reaction_friction_fz_n')])
+                    old=dict(parent,blade_force_components_n=[old_record[k] for k in ('reaction_normal_fz_n','reaction_friction_fz_n')],absolute_numerical_spent_n_mm=spent)
                     rec=p.acceptance(s['positions'],float(s['depth_mm']),0,0)
                     control=enforce(p,s['positions'],rec,old,resolution)
                     for group in ('values','allowances','ratios'):
@@ -74,6 +76,9 @@ def inspect(case,out,seconds,first,stop,runtime):
                 failed=s['active_faces']&np.all(s['history']>=2*p.toughness/p.strength,axis=1)
                 contacts=base.strict_contacts(p,s['positions'],p.connected_length(failed));base.check_entry_flag(contacts,row['blade_entered_surface_channel'])
                 report['states'].append(dict(state_file=row['state_file'],state_sha256=row['state_sha256'],**tick,**balance,strict_contacts=contacts,activation_chain=activation,min_j=fresh['min_j'],accepted_chord_ccd_safe=True,maximum_speed_mm_s=float(np.linalg.norm(s['velocity'][:p.n],axis=1).max()),mass_velocity_norm_sqrt_nmm=float(np.sqrt(p.mass@np.sum(s['velocity'][:p.n]**2,axis=1)))))
+            # Out-of-range producer energy is checked by the complementary
+            # chunk; compose requires complete coverage and identical hashes.
+            spent+=absolute_work(rec['energy'] if first<=index<stop and resolution is not None else row['energy'])
             previous=dict(**tick,state_file=row['state_file']);parent=s;parent_ref=dict(file=row['state_file'],sha256=row['state_sha256']);old_record=row
         report['time_chain']=clock.finish()
         activations=[ref for row in raw['steps'] for ref in row.get('activation_witnesses',[])]

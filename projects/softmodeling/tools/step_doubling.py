@@ -106,15 +106,28 @@ def compare(a, b):
     if not ra['completed'] or not rb['completed']:return dict(comparable=False,reason='Incomplete actual branch')
     if ra['parent_hash']!=rb['parent_hash'] or ra['config']!=rb['config'] or ra['h_s']!=rb['h_s']:
         raise ValueError('Different branch parent, equation or physical endpoint')
+    for directory,result in ((da,ra),(db,rb)):
+        for row,check in zip(result['steps'],result['independent_audit']):
+            if digest(directory/row['state_file'])!=row['state_sha256'] or check['state_sha256']!=row['state_sha256']:
+                raise ValueError('Changed branch state or independent review')
     sa=read_state(da/ra['steps'][-1]['state_file']);sb=read_state(db/rb['steps'][-1]['state_file'])
     np.testing.assert_array_equal(sa['depth_mm'],sb['depth_mm'])
     m=sa['mass'];n=len(m);dv=sa['velocity'][:n]-sb['velocity'][:n]
     norm=lambda v:float(np.sqrt(m@np.sum(v*v,axis=1)))
     impulses=lambda r:np.sum([[s['dt_s']*s[k] for k in ('reaction_normal_fz_n','reaction_friction_fz_n')] for s in r['steps']],axis=0)
+    contact=[]
+    for directory,result in ((da,ra),(db,rb)):
+        terms={key:np.zeros((n,2)) for key in ('normal','friction')}
+        for row in result['steps']:
+            s=read_state(directory/row['state_file'])
+            for key in terms:terms[key]+=s['impulse_'+key][:n]
+        terms['total']=terms['normal']+terms['friction'];contact.append(terms)
+    contact_difference={key:float(np.sqrt(np.sum((contact[0][key]-contact[1][key])**2/m[:,None]))) for key in contact[0]}
     return dict(comparable=True,velocity_absolute_sqrt_nmm=norm(dv),velocity_scale_sqrt_nmm=norm(sb['velocity'][:n]),
         velocity_relative=norm(dv)/max(norm(sb['velocity'][:n]),1e-30),position_max_mm=float(np.max(np.abs(sa['positions']-sb['positions']))),
         force_difference_n={k:ra['steps'][-1][k]-rb['steps'][-1][k] for k in ('reaction_fz_n','reaction_normal_fz_n','reaction_friction_fz_n')},
         impulse_components_n_s=[impulses(ra).tolist(),impulses(rb).tolist()],
+        body_contact_impulse_mass_difference_sqrt_nmm=contact_difference,
         history_max_difference={k:float(np.max(np.abs(sa[k].astype(float)-sb[k].astype(float)))) for k in ('material_metric','history','active_faces','active_contact','released')},
         absolute_numerical_n_mm=[sum(s['absolute_numerical_including_equation_work_n_mm'] for s in r['independent_audit']) for r in (ra,rb)],
         elapsed_s=[ra['elapsed_s'],rb['elapsed_s']],strict_error_bound=False)

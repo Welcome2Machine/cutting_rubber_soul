@@ -96,8 +96,10 @@ def run(parent,parent_audit,state_index,preregister,out,dt,layer,seconds=600,*,r
     resolution=limits.get('event_resolution',{}).get(str(dt))
     previous_resolution=dict(s,blade_force_components_n=[row['reaction_normal_fz_n'],row['reaction_friction_fz_n']])
     if resolution is not None:
-        from .event_resolution import enforce,bind_reference
+        from .event_resolution import enforce,bind_reference,initial_spent,absolute_work
         resolution=bind_reference(limits,dt);original_acceptance=p.acceptance
+        spent=initial_spent(limits,resolution,t0)
+        previous_resolution['absolute_numerical_spent_n_mm']=spent
         def guarded_acceptance(y,*args):
             rec=original_acceptance(y,*args)
             enforce(p,y,rec,previous_resolution,resolution)
@@ -134,7 +136,8 @@ def run(parent,parent_audit,state_index,preregister,out,dt,layer,seconds=600,*,r
             rec.update(state_file=name,state_sha256=digest(out/name));result['steps'].append(native(rec))
             if partition:partition.decision('accepted',resolution_ratio=rec.get('event_resolution',{}).get('maximum_ratio'))
             else:pending.pop(0)
-            previous_resolution=dict(state,blade_force_components_n=[rec['reaction_normal_fz_n'],rec['reaction_friction_fz_n']])
+            if resolution is not None:spent+=absolute_work(rec['energy'])
+            previous_resolution=dict(state,blade_force_components_n=[rec['reaction_normal_fz_n'],rec['reaction_friction_fz_n']],absolute_numerical_spent_n_mm=spent if resolution is not None else 0.)
             journal.append('accepted',dict(record=native(rec),partition_decision=partition.trace[-1] if partition else None))
             write_json(out/'progress.json',dict(accepted=len(result['steps']),depth_mm=depth,time_s=rec['time_s']))
         except (RuntimeError,ValueError,TimeoutError,AssertionError,FloatingPointError) as exc:

@@ -107,6 +107,9 @@ def audit(case,out,seconds=500,*,runtime=None):
             from .event_resolution import bind_reference
             resolution=bind_reference(plan,raw['dt_requested_s'])
         previous_resolution=dict(parent,blade_force_components_n=[json.loads((case/'parent_record.json').read_text())[k] for k in ('reaction_normal_fz_n','reaction_friction_fz_n')])
+        from .event_resolution import initial_spent,absolute_work
+        spent=initial_spent(plan,resolution,clock.t0)
+        previous_resolution['absolute_numerical_spent_n_mm']=spent
         restore_parent(p,parent)
         initial_failed=parent['active_faces']&np.all(parent['history']>=2*p.toughness/p.strength,axis=1)
         report['entry_present_at_parent']=bool(strict_contacts(p,parent['positions'],p.connected_length(initial_failed)))
@@ -129,7 +132,8 @@ def audit(case,out,seconds=500,*,runtime=None):
                 check=enforce(p,s['positions'],independent_record,previous_resolution,resolution)
                 for group in ('values','allowances','ratios'):
                     for k,v in check[group].items():np.testing.assert_allclose(v,row['event_resolution'][group][k],rtol=1e-8,atol=1e-13)
-                previous_resolution=dict(s,blade_force_components_n=[independent_record[k] for k in ('reaction_normal_fz_n','reaction_friction_fz_n')])
+                spent+=absolute_work(independent_record['energy'])
+                previous_resolution=dict(s,blade_force_components_n=[independent_record[k] for k in ('reaction_normal_fz_n','reaction_friction_fz_n')],absolute_numerical_spent_n_mm=spent)
                 balance['event_resolution']=check
             failed=s['active_faces']&np.all(s['history']>=2*p.toughness/p.strength,axis=1)
             contacts=strict_contacts(p,s['positions'],p.connected_length(failed));check_entry_flag(contacts,row['blade_entered_surface_channel'])
