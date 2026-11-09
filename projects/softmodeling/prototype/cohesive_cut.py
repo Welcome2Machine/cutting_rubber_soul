@@ -7,6 +7,7 @@ the legacy branch remains a mode-I mechanism demonstrator.  The explicit
 mixed-mode branch uses objective four-node, two-point interface elements.
 """
 from dataclasses import replace
+import copy
 import hashlib
 import json
 import time
@@ -14,7 +15,7 @@ import numpy as np
 from scipy.sparse import diags
 from scipy.spatial import Delaunay
 from .ipc_viscoelastic import ViscoelasticProblem
-from .ipc_reference import determinant_step
+from .ipc_reference import determinant_step, IPCProblem, LoadStepFailure
 from .model_config import FEMMesh, local_to_lab
 from .cohesive import CohesiveLaw, bonds_response
 from .cohesive_mixed import MixedModeLaw, interface_response
@@ -397,16 +398,161 @@ class CohesiveCutProblem(ViscoelasticProblem):
             return np.all(d >= 1-1e-10, axis=1)
         return (d[:-1] >= 1-1e-10) & (d[1:] >= 1-1e-10)
 
+    def configure_event(self, density_kg_m3, friction_velocity_mm_s):
+        """Explicit full-domain BE mode; no mirror factors or replacement classes."""
+        if (not self.is_mixed_mode or self.fracture_topology != 'prescribed_seam'
+                or self.cohesive_law.compression_kinematics != 'finite_faces'):
+            raise ValueError('BE event requires the full-domain mixed finite-face seam')
+        if not np.isfinite([density_kg_m3, friction_velocity_mm_s]).all() or min(density_kg_m3, friction_velocity_mm_s)<=0:
+            raise ValueError('Positive density and physical velocity regularization required')
+        self.event_density_kg_m3=float(density_kg_m3)
+        self.event_friction_velocity_mm_s=float(friction_velocity_mm_s)
+        self.event_mode=True
+        self.mass=np.zeros(self.n)
+        # Same reference-volume lumping as zero_gap_cut, on the FULL mesh once.
+        np.add.at(self.mass,self.mesh.triangles.ravel(),
+            np.repeat(self.material_integration_weights()*density_kg_m3*1e-12/3,3))
+        if np.any(self.mass<=0):raise ValueError('Every material node requires positive physical mass')
+        self.mass_dof=np.r_[np.repeat(self.mass,2),np.zeros(self.total-2*self.n)]
+        self.velocity=np.zeros_like(self.rest);self.previous_velocity=self.velocity.copy()
+        self.event_time_s=0.;self.previous_event_time_s=0.
+
+    def set_event_friction(self, dt):
+        if not np.isfinite(dt) or dt<=0:raise ValueError('Positive BE event dt required')
+        self.friction_smoothing_mm=self.event_friction_velocity_mm_s*dt
+        self.friction=self.ipc.FrictionPotential(self.friction_smoothing_mm)
+
+    def stored_bulk(self, x, metric):
+        """Same principal stored law as the Maxwell return map, no A projection."""
+        from mechanics.finite_strain import principal
+        F=np.tile(np.eye(3),(len(self.mesh.triangles),1,1))
+        F[:,:2,:2]=np.eye(2)+np.einsum('eai,eaJ->eiJ',
+            (x[:self.n]-self.mesh.reference_xy)[self.mesh.triangles],self.grad)
+        eq=.5*np.log(np.linalg.eigvalsh(F@F.transpose(0,2,1)))
+        ov=.5*np.log(np.linalg.eigvalsh(F@metric@F.transpose(0,2,1)))
+        return float(self.material_integration_weights()@
+            (principal(eq,self.material)[0]+principal(ov,self.material,True)[0]))
+
+    def event_energy(self, x):
+        h=self.material_dt;du=x-self.previous;v=du/h;dv=v-self.previous_velocity
+        lag=self.lag(x);q=self.material_response(x);c=self.cohesive_response(x)
+        old_c=self.cohesive_response(self.previous)
+        bulk0=self.stored_bulk(self.previous,self.previous_material_metric)
+        bulk1=float(self.material_integration_weights()@q['energy'])
+        Dv=h*float(self.material_integration_weights()@q['viscous_rate'])
+        local,_,dofs,_,_=self.material_bulk((x[:self.n]-self.mesh.reference_xy).ravel(),with_tangent=False)
+        bw=float(np.sum(local*du[:self.n].ravel()[dofs]))
+        cw=float(c['gradient']@du.ravel())
+        new_contact=self.collisions(x);old_contact=self.collisions(self.previous)
+        barrier0=float(self.barrier(old_contact,self.cmesh,self.previous[self.surface]))
+        barrier1=float(self.barrier(new_contact,self.cmesh,x[self.surface]))
+        gn=self.barrier.gradient(new_contact,self.cmesh,x[self.surface])
+        gf=self.friction.gradient(lag,self.cmesh,du[self.surface])
+        nw=float(gn@du[self.surface].ravel());Df=float(gf@du[self.surface].ravel())
+        Uc=c['stored_energy_n_mm']-old_c['stored_energy_n_mm']
+        Dc=c['fracture_dissipation_n_mm']-old_c['fracture_dissipation_n_mm']
+        K0=.5*float(self.mass@np.sum(self.previous_velocity[:self.n]**2,axis=1))
+        K1=.5*float(self.mass@np.sum(v[:self.n]**2,axis=1))
+        loss=.5*float(self.mass@np.sum(dv[:self.n]**2,axis=1))
+        g=self.evaluate(x,lag,tangent=False)[1]
+        external=float(np.sum(g.reshape(-1,2)[self.n:]*du[self.n:]))
+        equation_work=float(g[self.free]@du.ravel()[self.free])
+        defects=dict(bulk_endpoint_defect_n_mm=bw-(bulk1-bulk0)-Dv,
+            cohesive_endpoint_defect_n_mm=cw-Uc-Dc,
+            barrier_endpoint_defect_n_mm=nw-(barrier1-barrier0))
+        physical=external-(K1-K0)-(bulk1-bulk0)-Uc-(barrier1-barrier0)-Dv-Dc-Df
+        return dict(external_endpoint_work_n_mm=external,kinetic_old_n_mm=K0,
+            kinetic_energy_n_mm=K1,kinetic_delta_n_mm=K1-K0,
+            bulk_old_n_mm=bulk0,bulk_stored_n_mm=bulk1,bulk_stored_delta_n_mm=bulk1-bulk0,
+            cohesive_stored_n_mm=c['stored_energy_n_mm'],cohesive_stored_delta_n_mm=Uc,
+            closure_stored_n_mm=c['compression_stored_energy_n_mm'],
+            closure_stored_delta_n_mm=c['compression_stored_energy_n_mm']-old_c['compression_stored_energy_n_mm'],
+            ipc_stored_n_mm=barrier1,ipc_stored_delta_n_mm=barrier1-barrier0,
+            maxwell_dissipation_n_mm=Dv,fracture_dissipation_n_mm=Dc,
+            friction_dissipation_n_mm=Df,backward_euler_loss_n_mm=loss,
+            physical_balance_defect_n_mm=physical,equation_residual_work_n_mm=equation_work,
+            absolute_numerical_terms_n_mm=loss+sum(abs(z) for z in defects.values())+abs(equation_work),
+            algebraic_remainder_n_mm=physical-loss-sum(defects.values())+equation_work,**defects)
+
+    def acceptance(self,x,depth,iterations,outer_iterations):
+        # QS defaults retain their original acceptance semantics; BE checks its
+        # complete physical chord BEFORE either history or velocity is committed.
+        rec=super().acceptance(x,depth,iterations,outer_iterations)
+        if not getattr(self,'event_mode',False):return rec
+        if (not np.array_equal(x[self.mesh.bottom_nodes],self.rest[self.mesh.bottom_nodes])
+                or not np.allclose(x[self.n:],self.prescribed_blade_positions(depth),rtol=0,
+                    atol=self.blade_boundary_roundoff_tolerance(depth))):
+            raise LoadStepFailure('BE event prescribed boundary mismatch')
+        fraction=float(self.safe_step(self.previous,x-self.previous))
+        if not np.isfinite(fraction) or fraction<1.:
+            raise LoadStepFailure(f'BE physical chord unsafe: fraction={fraction:.17g}')
+        energy=self.event_energy(x)
+        if not np.isfinite(list(energy.values())).all():raise LoadStepFailure('Nonfinite event energy')
+        if min(energy[k] for k in ['maxwell_dissipation_n_mm','fracture_dissipation_n_mm','friction_dissipation_n_mm']) < -1e-12:
+            raise LoadStepFailure('Negative event physical dissipation')
+        v=(x-self.previous)/self.material_dt
+        rec['event']=dict(time_integrator='full_domain_backward_euler',
+            time_s=self.previous_event_time_s+self.material_dt,dt_s=self.material_dt,
+            density_kg_m3=self.event_density_kg_m3,total_mass_n_s2_mm=float(self.mass.sum()),
+            epsilon_v_mm_s=self.event_friction_velocity_mm_s,epsilon_u_mm=self.friction_smoothing_mm,
+            momentum_residual_n=rec['residual_n'],physical_chord_safe_fraction=fraction,
+            mass_weighted_speed=float(np.sqrt(self.mass@np.sum(v[:self.n]**2,axis=1))),
+            max_speed_mm_s=float(np.linalg.norm(v[:self.n],axis=1).max()),
+            mass_weighted_rms_speed_mm_s=float(np.sqrt((self.mass@np.sum(v[:self.n]**2,axis=1))/self.mass.sum())),
+            blade_normal_impulse_n_s=self.material_dt*rec['reaction_normal_fz_n'],
+            blade_friction_impulse_n_s=self.material_dt*rec['reaction_friction_assembled_fz_n'],
+            blade_total_impulse_n_s=self.material_dt*rec['reaction_fz_n'],energy=energy)
+        return rec
+
+    def event_step(self,x,old,depth,dt,deadline):
+        """One prescribed BE step, no cutback/controller; exact rollback on failure."""
+        if not getattr(self,'event_mode',False):raise ValueError('Explicit BE event mode required')
+        if not np.isclose(depth-old,self.loading_rate*dt,rtol=1e-10,atol=1e-14):
+            raise ValueError('Physical dt and blade motion differ')
+        names=('previous','material_metric','previous_material_metric','material_dt','material_dissipation',
+               'cohesive_maximum','previous_cohesive_maximum','cohesive_energy_ledger',
+               'velocity','previous_velocity','event_time_s','previous_event_time_s',
+               'friction','friction_smoothing_mm','_accepted_predictor_history')
+        saved={k:copy.deepcopy(getattr(self,k)) for k in names if hasattr(self,k) and k!='friction'}
+        saved['friction']=self.friction
+        self.previous=x.copy();self.previous_material_metric=self.material_metric.copy()
+        self.previous_cohesive_maximum=self.cohesive_maximum.copy()
+        self.previous_velocity=self.velocity.copy();self.previous_event_time_s=self.event_time_s
+        self.material_dt=float(dt);self.set_event_friction(dt);self.trial=x.copy()
+        try:
+            value,rec=IPCProblem.step(self,x,old,depth,deadline)
+            q=self.material_response(value);c=self.cohesive_response(value)
+            self.material_metric=q['metric'].copy()
+            self.material_dissipation+=rec['material']['viscous_dissipation_increment_n_mm']
+            rec['material']['cumulative_viscous_dissipation_n_mm']=self.material_dissipation
+            self.cohesive_maximum=c['history'].copy();self.cohesive_energy_ledger=self._mixed_energy_record(c)
+            self.velocity=(value-x)/dt;self.event_time_s+=dt
+            return value,rec
+        except Exception:
+            trial=getattr(self,'trial',x).copy()
+            self.event_failed_state=dict(self.checkpoint_data(),positions=trial,previous_positions=x.copy(),
+                depth_mm=depth,reference_xy=self.rest,triangles=self.mesh.triangles,body_nodes=self.n,
+                attempted_velocity=(trial-x)/dt,failed_step=True)
+            for k,val in saved.items():setattr(self,k,val)
+            raise
+
     def evaluate(self, x, lag=None, tangent=True, projected=True, *, with_metric=False):
         base = super().evaluate(x, lag, tangent, projected, with_metric=with_metric)
         q = self.cohesive_response(x, tangent=tangent)
         energy, gradient, hessian, minj = base[:4]
         energy += q['stored_energy_n_mm']+q['fracture_dissipation_n_mm']
         gradient = gradient+q['gradient']
+        inertia=None
+        if getattr(self,'event_mode',False):
+            inertia=self.mass_dof/self.material_dt**2
+            delta=(x-self.previous-self.material_dt*self.previous_velocity).ravel()
+            energy+=.5*float(inertia@(delta*delta));gradient+=inertia*delta
+            if tangent:hessian=hessian+diags(inertia)
         if tangent:
             hessian = hessian+(q['metric'] if projected else q['hessian'])
         if with_metric:
             metric = base[4]+q['metric']
+            if inertia is not None:metric=metric+diags(inertia)
             if self.network_topology is not None:
                 # Intrinsic separated triangles have nearly unconstrained
                 # relative normal motions while cohesive compression is inactive
@@ -647,6 +793,7 @@ class CohesiveCutProblem(ViscoelasticProblem):
         return sorted(visited)
 
     def step(self, x, old, depth, deadline):
+        if getattr(self,'event_mode',False):raise ValueError('BE mode uses explicit event_step, not QS cutbacks')
         self.previous_cohesive_maximum = self.cohesive_maximum.copy()
         value, record = super().step(x, old, depth, deadline)
         # No trial damage was committed by the nonlinear residual evaluations.
@@ -719,6 +866,7 @@ class CohesiveCutProblem(ViscoelasticProblem):
         checked_material = {key: fresh['material'][key] for key in material_keys}
         compare(checked_material, {key: record['material'].get(key) for key in material_keys}, 'material')
         compare(fresh['friction_work_n_mm'], record['friction_work_n_mm'], 'friction_work_n_mm')
+        if getattr(self,'event_mode',False):compare(fresh['event'],record.get('event'),'event')
         # The hash binds the whole saved record after fresh verification. It is
         # an integrity check, not a replacement for force/history recomputation.
         digest = hashlib.sha256(json.dumps(record, sort_keys=True, separators=(',', ':'),
@@ -760,6 +908,12 @@ class CohesiveCutProblem(ViscoelasticProblem):
                     network_max_iterations=self.max_iterations)
         if self.nonlinear_solver != 'ptc':
             result['nonlinear_solver'] = self.nonlinear_solver
+        if getattr(self,'event_mode',False):
+            result.update(time_integrator='full_domain_backward_euler',velocity=self.velocity,
+                previous_velocity=self.previous_velocity,event_time_s=self.event_time_s,
+                previous_event_time_s=self.previous_event_time_s,density_kg_m3=self.event_density_kg_m3,
+                friction_velocity_mm_s=self.event_friction_velocity_mm_s,
+                friction_epsilon_u_mm=self.friction_smoothing_mm)
         return result
 
     def audit_state(self, state, record):
@@ -801,6 +955,21 @@ class CohesiveCutProblem(ViscoelasticProblem):
             self.cohesive_history_response(state['previous_cohesive_maximum'])
         elif str(state.get('cohesive_kind', 'radial_mode_i')) != 'radial_mode_i':
             raise RuntimeError('Legacy checkpoint cannot restore mixed-mode history')
+        event_before=None
+        if getattr(self,'event_mode',False):
+            if str(state.get('time_integrator',''))!='full_domain_backward_euler':
+                raise ValueError('QS state is not a BE accepted state; conditional initialization is separate')
+            if (float(state['density_kg_m3'])!=self.event_density_kg_m3
+                    or float(state['friction_velocity_mm_s'])!=self.event_friction_velocity_mm_s):
+                raise ValueError('Event density/friction identity differs')
+            np.testing.assert_allclose(state['velocity'],
+                (state['positions']-state['previous_positions'])/float(state['material_dt_s']),rtol=1e-12,atol=1e-12)
+            np.testing.assert_allclose(state['friction_epsilon_u_mm'],
+                self.event_friction_velocity_mm_s*float(state['material_dt_s']),rtol=1e-14,atol=0)
+            event_before=(self.previous_velocity,self.previous_event_time_s,self.friction,self.friction_smoothing_mm)
+            self.previous_velocity=state['previous_velocity'].copy()
+            self.previous_event_time_s=float(state['previous_event_time_s'])
+            self.set_event_friction(float(state['material_dt_s']))
         before = self.previous_cohesive_maximum
         self.previous_cohesive_maximum = state['previous_cohesive_maximum'].copy()
         try:
@@ -824,6 +993,8 @@ class CohesiveCutProblem(ViscoelasticProblem):
                         cohesive_history_passed=True, max_damage=float(q['damage'].max()))
         finally:
             self.previous_cohesive_maximum = before
+            if event_before is not None:
+                self.previous_velocity,self.previous_event_time_s,self.friction,self.friction_smoothing_mm=event_before
 
 
 def make_cohesive_problem(config):
@@ -831,7 +1002,7 @@ def make_cohesive_problem(config):
     law_class = MixedModeLaw if kind == 'mixed_mode_energy' else CohesiveLaw
     law = law_class(**config['cohesive'])
     material, mesh = config['material'], config['mesh']
-    return CohesiveCutProblem(cohesive_law=law, cohesive_kind=kind,
+    p = CohesiveCutProblem(cohesive_law=law, cohesive_kind=kind,
         fracture_topology=config.get('fracture_topology', 'prescribed_seam'),
         network_metric_floor_n_per_mm=config.get('network_metric_floor_n_per_mm', 1.),
         network_predictor=config.get('network_predictor', 'body_stationary_if_safe'),
@@ -853,3 +1024,7 @@ def make_cohesive_problem(config):
         friction_smoothing_mm=config.get('friction_smoothing_mm',1e-5),
         tip_radius=config['tip_radius_mm'], fine_halfwidth=mesh.get('fine_halfwidth_mm', 3.), max_iterations=500,
         predictor='secant', hessian_mode='regularized')
+
+    if config.get('event') is not None:
+        p.configure_event(config['event']['density_kg_m3'],config['event']['epsilon_v_mm_s'])
+    return p

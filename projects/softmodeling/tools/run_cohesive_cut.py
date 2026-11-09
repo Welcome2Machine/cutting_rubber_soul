@@ -115,6 +115,22 @@ def read_config(path):
     solver = config.get('nonlinear_solver', 'ptc')
     if solver not in ('ptc', 'newton_lm') or (solver != 'ptc' and not regularized):
         raise ValueError('newton_lm requires version 3')
+    if config.get('event') is not None:
+        e=config['event']
+        if not regularized or config.get('fracture_topology')!='prescribed_seam' or config.get('angle_deg')!=0:
+            raise ValueError('Restricted BE event is full-domain 0-degree prescribed seam only')
+        if e['role'] not in ('pilot','window') or e['source_kind'] not in ('qs_condition','dynamic_seed'):
+            raise ValueError('Explicit event role and source kind required')
+        if (e['role']=='pilot' and (e['source_kind']!='qs_condition' or e['dt_s']!=.001 or not 0<e['duration_s']<=.2)
+                or e['role']=='window' and (e['source_kind']!='dynamic_seed' or e['dt_s'] not in (1e-5,5e-6) or not 0<e['duration_s']<=.005)):
+            raise ValueError('Event schedule exceeds the registered bounded modes')
+        if not np.isclose(e['duration_s']/e['dt_s'],round(e['duration_s']/e['dt_s']),rtol=0,atol=1e-9):
+            raise ValueError('Event duration must be an integer number of actual steps')
+        if not e.get('density_status') or e['epsilon_v_mm_s']!=.0004:
+            raise ValueError('Explicit density assumption and fixed .0004 mm/s friction required')
+        if e['role']=='pilot' and any(not np.isfinite(e[k]) or e[k]<=0 for k in
+                ['candidate_release_n_mm','candidate_motion_mm','startup_numerical_limit_n_mm','startup_kinetic_limit_n_mm']):
+            raise ValueError('Positive preregistered pilot screening scales required')
     law_from_config(config)
     return config
 
@@ -272,8 +288,176 @@ def energy_ledger(steps):
     return rows
 
 
+def initialize_event(p, config, sources):
+    """Bound a disclosed conditional seed; this is deliberately NOT exact resume."""
+    import subprocess
+    e=config['event'];source=Path(e['source_directory']).resolve()
+    report_path=source/'result.json';audit_path=Path(e['source_audit']).resolve()
+    digest=lambda f:hashlib.sha256(f.read_bytes()).hexdigest()
+    if digest(report_path)!=e['source_result_sha256'] or digest(audit_path)!=e['source_audit_sha256']:
+        raise ValueError('Conditional source result/audit SHA differs')
+    old=json.loads(report_path.read_text());checked=json.loads(audit_path.read_text())
+    index=e['source_index'];count=index+1
+    if (checked.get('result_sha256')!=digest(report_path)
+            or checked.get('qualified_prefix_states',0)<count or len(checked.get('rows',[]))<count):
+        raise ValueError('Conditional source lacks the complete requested qualified prefix')
+    for i in range(count):
+        row=checked['rows'][i]
+        if row.get('passed') is not True or digest(source/'states'/f'{i:04d}.npz')!=row['checkpoint_sha256']:
+            raise ValueError('Conditional source prefix state SHA/qualification differs')
+    ignored={'event','target_mm','increment_mm','minimum_increment_mm','label'}
+    physical=lambda c:{k:v for k,v in c.items() if k not in ignored}
+    if physical(old['configuration'])!=physical(config):raise ValueError('Conditional physical configuration differs')
+    with np.load(source/'states'/f'{index:04d}.npz',allow_pickle=False) as z:
+        seed={k:z[k].copy() for k in z.files}
+    np.testing.assert_array_equal(seed['reference_xy'],p.rest)
+    np.testing.assert_array_equal(seed['triangles'],p.mesh.triangles)
+    x=seed['positions'].copy();depth=float(seed['depth_mm'])
+    provenance=dict(source_result_sha256=digest(report_path),source_audit_sha256=digest(audit_path),
+        source_state_sha256=digest(source/'states'/f'{index:04d}.npz'),source_index=index,
+        source_directory=str(source),source_sources=old['source_sha256'],source_whole_path_passed=checked['passed'],
+        production_continuation=False,kind=e['source_kind'])
+    if e['source_kind']=='qs_condition':
+        if index<1 or not np.isclose(depth,.300,rtol=0,atol=1e-12):raise ValueError('Registered QS condition starts at .300 mm')
+        with np.load(source/'states'/f'{index-1:04d}.npz',allow_pickle=False) as z:
+            previous={k:z[k].copy() for k in z.files}
+        if not np.isclose(float(previous['depth_mm']),.295,rtol=0,atol=1e-12):raise ValueError('Registered velocity parent is .295 mm')
+        np.testing.assert_array_equal(seed['previous_positions'],previous['positions'])
+        dt=(depth-float(previous['depth_mm']))/p.loading_rate
+        np.testing.assert_allclose(dt,.025,rtol=0,atol=1e-12)
+        # Bind recorded producer files to an immutable Git object. New numerical
+        # sources remain separately recorded; never blank hashes to fake resume.
+        commit=e['source_producer_commit']
+        if len(commit)!=40 or any(c not in '0123456789abcdef' for c in commit):raise ValueError('Immutable producer commit required')
+        root=Path(__file__).resolve().parents[3]
+        for name,expected in old['source_sha256'].items():
+            data=subprocess.check_output(['git','show',commit+':projects/softmodeling/'+name],cwd=root)
+            if hashlib.sha256(data).hexdigest()!=expected:raise ValueError('Producer source identity differs: '+name)
+        p.velocity=(x-previous['positions'])/dt;p.event_time_s=0.;p.material_dissipation=0.
+        provenance.update(source_producer_commit=commit,velocity_parent_sha256=digest(source/'states'/f'{index-1:04d}.npz'),
+            velocity_formula='(x(.300)-x(.295))/.025 s; approximate QS-seeded initial velocity',
+            source_material_dissipation_n_mm=float(seed['cumulative_viscous_dissipation_n_mm']),
+            source_fracture_dissipation_n_mm=float(old['steps'][index]['fracture']['fracture_dissipation_n_mm']),
+            source_whole_path_passed=False,friction_initialization='new incremental anchor at x0; no copied old lag or QS friction displacement')
+    else:
+        if old['source_sha256']!=sources:raise ValueError('Dynamic branch requires identical numerical sources')
+        if (str(seed.get('time_integrator',''))!='full_domain_backward_euler'
+                or float(seed['density_kg_m3'])!=p.event_density_kg_m3
+                or float(seed['friction_velocity_mm_s'])!=p.event_friction_velocity_mm_s):
+            raise ValueError('Dynamic seed mode/density/friction differs')
+        p.velocity=seed['velocity'].copy();p.event_time_s=float(seed['event_time_s'])
+        p.material_dissipation=float(seed['cumulative_viscous_dissipation_n_mm'])
+        dt=float(seed['material_dt_s']);previous=dict(positions=seed['previous_positions'],depth_mm=depth-dt*p.loading_rate)
+        provenance.update(inherited_energy_ledger=old.get('energy_accounting'),
+            velocity_formula='actual accepted BE endpoint velocity; no QS finite-difference reset')
+    np.testing.assert_array_equal(p.velocity[p.mesh.bottom_nodes],np.zeros_like(p.velocity[p.mesh.bottom_nodes]))
+    np.testing.assert_allclose(p.velocity[p.n:],np.broadcast_to([0.,-p.loading_rate],p.velocity[p.n:].shape),rtol=0,atol=1e-10)
+    p.previous=x.copy();p.material_metric=seed['material_metric'].copy();p.previous_material_metric=p.material_metric.copy()
+    p.cohesive_maximum=seed['cohesive_maximum'].copy();p.previous_cohesive_maximum=p.cohesive_maximum.copy()
+    p.previous_velocity=p.velocity.copy();p.previous_event_time_s=p.event_time_s
+    p.material_dt=e['dt_s'];p.set_event_friction(e['dt_s'])
+    p.cohesive_energy_ledger=p._mixed_energy_record(p.cohesive_response(x))
+    p.seed_predictor_history([(float(previous['depth_mm']),previous['positions']),(depth,x)])
+    provenance.update(initial_kinetic_n_mm=.5*float(p.mass@np.sum(p.velocity[:p.n]**2,axis=1)),
+        initial_total_mass_n_s2_mm=float(p.mass.sum()),density_status=e['density_status'],
+        initial_depth_mm=depth,initial_event_time_s=p.event_time_s,
+        initial_physical_time_s=(depth-p.start)/p.loading_rate)
+    return x,depth,provenance
+
+
+def run_event(config_path, output, seconds, *, ipc_threads, blas_threads, physical_core_affinity):
+    config=read_config(config_path);e=config['event']
+    if not np.isfinite(seconds) or not 1<=seconds<=3540:raise ValueError('Event budget must leave scheduler grace below 3600 s')
+    out=Path(output).resolve();out.mkdir(parents=True,exist_ok=False);(out/'states').mkdir()
+    write_json(out/'config.json',config)
+    sources=source_hashes(packages=('prototype','mechanics'))
+    sources['tools/run_cohesive_cut.py']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+    report=dict(schema='softcut-cohesive-result/1',configuration=config,status='initializing',completed=False,
+        steps=[],source_sha256=sources,interpreter=sys.executable,input_sha256=hashlib.sha256(Path(config_path).read_bytes()).hexdigest(),
+        execution_budget_s=seconds,reserved_audit_budget_s=min(120.,seconds*.2),production_continuation=False,
+        assumptions=['conditional QS-seeded inertia experiment; not exact QS resumption',
+            'full-domain physical mass once; no mirror scaling or extra damping',
+            'finite gap and prescribed seam; fixed physical velocity friction regularization',
+            'BE loss and endpoint defects are numerical; algebraic closure is not physical qualification'],
+        events={},rejected_load_attempts=[],energy_accounting={})
+    started=time.monotonic();deadline=started+seconds-report['reserved_audit_budget_s'];p=None;initial=None
+    with (out/'run.log').open('w') as log,contextlib.redirect_stdout(log),numerical_runtime(ipc_threads,blas_threads,physical_core_affinity) as runtime:
+        try:
+            p=make_cohesive_problem(config);x,depth,origin=initialize_event(p,config,sources)
+            report.update(thread_runtime=runtime,resolved_model=resolved_model(p),conditional_initialization=origin,
+                initial_predictor_history=[dict(depth_mm=d) for d,_ in p._accepted_predictor_history],
+                mesh=dict(nodes=p.n,elements=len(p.mesh.triangles)),cohesive_law=p.cohesive_law.to_dict(),
+                status='running',last_depth_mm=depth)
+            initial=dict(p.checkpoint_data(),positions=x.copy(),previous_positions=x.copy(),depth_mm=depth,
+                reference_xy=p.rest,triangles=p.mesh.triangles,body_nodes=p.n,conditional_initialization_only=True)
+            save_npz(out/'initial_state.npz',**initial)
+            report['initial_state_sha256']=hashlib.sha256((out/'initial_state.npz').read_bytes()).hexdigest()
+            t0=p.event_time_s;d0=depth;count=round(e['duration_s']/e['dt_s']);cumulative=0.
+            for j in range(count):
+                target=d0+(j+1)*p.loading_rate*e['dt_s']
+                x,rec=p.event_step(x,depth,target,e['dt_s'],deadline);depth=target
+                index=len(report['steps'])
+                save_npz(out/'states'/f'{index:04d}.npz',positions=x,previous_positions=p.previous,
+                    depth_mm=depth,reference_xy=p.rest,triangles=p.mesh.triangles,body_nodes=p.n,**p.checkpoint_data())
+                report['steps'].append(rec);report['last_depth_mm']=depth
+                energy=rec['event']['energy'];cumulative+=energy['absolute_numerical_terms_n_mm']
+                print('EVENT_ACCEPT '+json.dumps(dict(index=index,depth_mm=depth,time_s=p.event_time_s,
+                    fz_n=rec['reaction_fz_n'],residual_n=rec['residual_n'],K=energy['kinetic_energy_n_mm'],
+                    numerical=energy['absolute_numerical_terms_n_mm'],connected_mm=rec['fracture']['surface_connected_crack_length_mm'])),flush=True)
+                write_json(out/'result.json',report)
+                if e['role']=='pilot':
+                    release=-(energy['bulk_stored_delta_n_mm']+energy['cohesive_stored_delta_n_mm']+energy['ipc_stored_delta_n_mm'])
+                    candidate=(release>e['candidate_release_n_mm'] or rec['fracture']['max_body_step_motion_mm']>e['candidate_motion_mm']
+                        or rec['fracture']['surface_connected_crack_length_mm']>0)
+                    if depth<=.310+1e-12 and (cumulative>e['startup_numerical_limit_n_mm'] or energy['kinetic_energy_n_mm']>e['startup_kinetic_limit_n_mm']):
+                        report.update(status='startup_dominated',stop_index=index);break
+                    if candidate:
+                        report.update(status='pilot_candidate',candidate_index=index,preceding_seed_index=index-1,
+                            candidate_release_n_mm=release);break
+            else:report.update(status='completed_window',completed=True)
+        except Exception as exc:
+            report.update(status='budget_exhausted' if isinstance(exc,TimeoutError) else 'failed',error=f'{type(exc).__name__}: {exc}')
+            traceback.print_exc(file=log)
+            if p is not None and hasattr(p,'event_failed_state'):
+                save_npz(out/'failed_trial.npz',**p.event_failed_state)
+                report['failed_attempt']=dict(depth_mm=float(p.event_failed_state['depth_mm']),dt_s=float(p.event_failed_state['material_dt_s']),
+                    parent_accepted_index=len(report['steps'])-1,history_rolled_back=True)
+        if p is not None and initial is not None and report['steps']:
+            try:
+                checked=audit(make_cohesive_problem(config),out,report,destination=out/'audit.json',initial_state=initial,deadline=started+seconds)
+                report['verification']=dict(accepted_prefix_audited=checked['passed'],qualified_prefix_states=checked['qualified_prefix_states'],
+                    scope='fresh full-domain momentum, physical chord CCD/J, exact dynamic/material/CZM chain; not time accuracy or physical event completion')
+            except Exception as exc:
+                report.update(audit_error=f'{type(exc).__name__}: {exc}')
+                report['verification']=dict(accepted_prefix_audited=False)
+                write_json(out/'audit.json',dict(passed=False,error=report['audit_error']));traceback.print_exc(file=log)
+    rows=[dict(index=i,depth_mm=q['depth_mm'],time_s=q['event']['time_s'],fz_n=q['reaction_fz_n'],
+        residual_n=q['residual_n'],max_speed_mm_s=q['event']['max_speed_mm_s'],
+        connected_length_mm=q['fracture']['surface_connected_crack_length_mm'],**q['event']['energy']) for i,q in enumerate(report['steps'])]
+    if rows:
+        energykeys=report['steps'][0]['event']['energy'].keys()
+        cumulative={k:sum(q['event']['energy'][k] for q in report['steps']) for k in energykeys
+            if k.endswith(('delta_n_mm','dissipation_n_mm','work_n_mm','loss_n_mm','defect_n_mm','terms_n_mm','remainder_n_mm'))}
+        report['energy_accounting']=dict(window_start_event_time_s=t0,window_end_event_time_s=p.event_time_s,
+            cumulative=cumulative,physical_event_qualified=False,
+            note='Endpoint external work; friction endpoint increment work; closure included once in cohesive storage. Separate BE loss, endpoint defects and equation work.')
+        for filename in ['curves.csv','energy_ledger.csv']:
+            with (out/filename).open('w',newline='') as f:w=csv.DictWriter(f,list(rows[0]));w.writeheader();w.writerows(rows)
+    report['elapsed_s']=time.monotonic()-started
+    write_json(out/'result.json',report)
+    if (out/'audit.json').exists():
+        checked=json.loads((out/'audit.json').read_text());checked.update(result_sha256=hashlib.sha256((out/'result.json').read_bytes()).hexdigest(),
+            initial_state_sha256=report.get('initial_state_sha256'),config_sha256=hashlib.sha256((out/'config.json').read_bytes()).hexdigest())
+        write_json(out/'audit.json',checked)
+    render(out,report)
+    print(json.dumps(dict(output=str(out),status=report['status'],steps=len(report['steps']),last_depth_mm=report.get('last_depth_mm'),audit=report.get('verification'))))
+    return 0 if report.get('verification',{}).get('accepted_prefix_audited') else 1
+
+
 def run(config_path, output, seconds, *, ipc_threads=2, blas_threads=1, physical_core_affinity=False):
     config = read_config(config_path)
+    if config.get('event') is not None:
+        return run_event(config_path,output,seconds,ipc_threads=ipc_threads,blas_threads=blas_threads,physical_core_affinity=physical_core_affinity)
     if not np.isfinite(seconds) or not 1 <= seconds <= 3600:
         raise ValueError('seconds must be in [1,3600]')
     out = Path(output).resolve();out.mkdir(parents=True, exist_ok=False);(out/'states').mkdir()

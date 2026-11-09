@@ -70,3 +70,25 @@ class CumulativeReportingAuditTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+import json
+import pytest
+from unittest.mock import patch
+from prototype.material_case import resume
+
+@pytest.mark.parametrize('passed,prefix,states', [(False, 2, 2), (True, 1, 2), (True, 2, 1)])
+def test_resume_rejects_failed_or_short_audit_before_copy_or_history(tmp_path, passed, prefix, states):
+    source=tmp_path/'source';out=tmp_path/'out';source.mkdir();out.mkdir()
+    report=dict(signature={},source_sha256={},steps=[{'depth_mm':0.}, {'depth_mm':.01}])
+    (source/'result.json').write_text(json.dumps(report))
+    host=SimpleNamespace(material_metric=np.eye(3),previous=np.ones((3,2)))
+    metric=host.material_metric.copy();previous=host.previous.copy()
+    with patch('prototype.material_case.audit',return_value=dict(passed=passed,
+            qualified_prefix_states=prefix,states=states)), patch('prototype.material_case.shutil.copy2') as copy_file:
+        with pytest.raises(ValueError,match='complete requested prefix'):
+            resume(host,source,out,copy.deepcopy(report))
+        copy_file.assert_not_called()
+    np.testing.assert_array_equal(host.material_metric,metric)
+    np.testing.assert_array_equal(host.previous,previous)
+    assert list(out.iterdir())==[]

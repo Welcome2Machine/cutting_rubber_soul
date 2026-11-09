@@ -38,9 +38,14 @@ def resolved_model(p):
     return dict(config=p.config.to_dict(), material=p.material.to_dict(),
         loading_rate_mm_s=p.loading_rate, initial_depth_mm=p.start,
         physical_time='dt=(depth-previous_depth)/loading_rate; elapsed=(depth-initial_depth)/loading_rate',
-        integrator='quasistatic force balance, implicit Maxwell material update; PTC is not physical time',
+        integrator=('full-domain backward Euler momentum, implicit Maxwell and CZM' if getattr(p,'event_mode',False)
+            else 'quasistatic force balance, implicit Maxwell material update; PTC is not physical time'),
+        inertia=(dict(density_kg_m3=p.event_density_kg_m3,total_mass_n_s2_mm=float(p.mass.sum()),
+            mirror_factor=1,blade_mass=0) if getattr(p,'event_mode',False) else None),
         friction=dict(coefficient=p.config.friction_coefficient,
-            smoothing_kind='fixed_increment_displacement',epsilon_u_mm=p.friction_smoothing_mm,
+            smoothing_kind=('fixed_velocity' if getattr(p,'event_mode',False) else 'fixed_increment_displacement'),
+            epsilon_u_mm=p.friction_smoothing_mm,
+            epsilon_v_mm_s=(p.event_friction_velocity_mm_s if getattr(p,'event_mode',False) else None),
             scope='same coefficient for blade and body self-contact; closure penalty excluded from IPC friction load'),
         contact=dict(formulation=p.contact_formulation,dhat_mm=p.dhat,
             ccd=getattr(p,'network_ccd_policy',{'mode':'toolkit_default'})),
@@ -189,9 +194,16 @@ def make_problem(*,angle,equilibrium_shear,maxwell_shear,relaxation_s,loading_ra
         p.material=replace(p.material,mu_ov=(2*maxwell_shear/maxwell_alpha,),alpha_ov=(float(maxwell_alpha),))
     return p
 
-def audit(p,out,report,*,destination=None,progress=None,deadline=None):
+def audit(p,out,report,*,destination=None,progress=None,deadline=None,initial_state=None):
     rows=[];prior_x=p.rest;prior_metric=np.tile(np.eye(3),p.material_metric.shape[:1]+(1,1))
     prior_depth=p.start;total_dissipation=0.
+    if initial_state is not None:
+        if not getattr(p,'event_mode',False):raise ValueError('Explicit initial state only for conditional BE audit')
+        prior_x=initial_state['positions'].copy();prior_metric=initial_state['material_metric'].copy()
+        prior_depth=float(initial_state['depth_mm'])
+        total_dissipation=float(initial_state['cumulative_viscous_dissipation_n_mm'])
+        prior_velocity=initial_state['velocity'].copy();prior_time=float(initial_state['event_time_s'])
+        prior_cohesive=initial_state['cohesive_maximum'].copy()
     for i,record in enumerate(report['steps']):
         if deadline is not None and time.monotonic()>deadline:raise TimeoutError('Independent audit wall budget')
         path=out/'states'/f'{i:04d}.npz'
@@ -202,6 +214,14 @@ def audit(p,out,report,*,destination=None,progress=None,deadline=None):
         np.testing.assert_allclose(float(state['depth_mm']),record['depth_mm'],rtol=0,atol=1e-12)
         np.testing.assert_allclose(float(state['material_dt_s']),
             (record['depth_mm']-prior_depth)/p.loading_rate,rtol=1e-12,atol=1e-12)
+        if initial_state is not None:
+            np.testing.assert_array_equal(state['previous_velocity'],prior_velocity)
+            np.testing.assert_array_equal(state['previous_cohesive_maximum'],prior_cohesive)
+            np.testing.assert_allclose(float(state['previous_event_time_s']),prior_time,rtol=0,atol=1e-14)
+            np.testing.assert_allclose(float(state['event_time_s']),prior_time+float(state['material_dt_s']),rtol=0,atol=1e-14)
+            np.testing.assert_allclose(record['event']['time_s'],float(state['event_time_s']),rtol=0,atol=1e-14)
+            prior_velocity=state['velocity'].copy();prior_time=float(state['event_time_s'])
+            prior_cohesive=state['cohesive_maximum'].copy()
         row=p.audit_state(state,record)
         total_dissipation+=record['material']['viscous_dissipation_increment_n_mm']
         np.testing.assert_allclose(float(state['cumulative_viscous_dissipation_n_mm']),
@@ -247,7 +267,11 @@ def resume(p,source,out,report):
             raise ValueError('Current source fingerprint differs: '+name)
     if not old['steps']:raise ValueError('No accepted candidate prefix')
     print(f'RESUME_AUDIT source={source} accepted_states={len(old["steps"])}',flush=True)
-    audit(p,source,old,destination=out/'resume_audit.json')
+    checked=audit(p,source,old,destination=out/'resume_audit.json')
+    requested=len(old['steps'])
+    if (checked.get('passed') is not True or checked.get('states') != requested
+            or checked.get('qualified_prefix_states') != requested):
+        raise ValueError('Resume requires the complete requested prefix to pass independent audit')
     for i in range(len(old['steps'])):
         f=source/'states'/f'{i:04d}.npz';shutil.copy2(f,out/'states'/f.name)
     report['resume_provenance']=provenance

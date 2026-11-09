@@ -140,3 +140,69 @@ class CohesiveTests(unittest.TestCase):
 
 if __name__=='__main__':
     unittest.main()
+
+
+class FullDomainEventTests(unittest.TestCase):
+    def problem(self):
+        root=Path(__file__).resolve().parents[1]
+        config=json.loads((root/'configs/fracture_prescribed_reference.json').read_text())
+        p=make_cohesive_problem(config);p.configure_event(1000.,.0004)
+        p.velocity[p.n:,1]=-p.loading_rate;p.previous_velocity=p.velocity.copy()
+        return p
+
+    def test_reference_mass_and_actual_velocity_friction_scaling(self):
+        p=self.problem()
+        self.assertAlmostEqual(p.mass.sum(),2.9994e-6,places=18)
+        self.assertTrue(np.all(p.mass>0))
+        self.assertTrue(np.all(p.mass_dof[2*p.n:]==0))
+        constructor=p.ipc.FrictionPotential
+        with patch.object(p.ipc,'FrictionPotential',wraps=constructor) as create:
+            p.set_event_friction(1e-5);first=p.friction
+            self.assertAlmostEqual(create.call_args.args[0],4e-9,places=23)
+            p.set_event_friction(5e-6)
+            self.assertAlmostEqual(create.call_args.args[0],2e-9,places=23)
+            self.assertIsNot(first,p.friction)
+
+    def test_full_domain_BE_identity_and_energy_partition(self):
+        p=self.problem();h=.001;p.material_dt=h;p.set_event_friction(h)
+        p.previous=p.rest.copy();p.previous_material_metric=p.material_metric.copy()
+        p.previous_cohesive_maximum=p.cohesive_maximum.copy()
+        x=p.rest.copy();v=np.zeros_like(x);v[:p.n,0]=.01*np.sin(p.rest[:p.n,1]);v[p.n:,1]=-p.loading_rate
+        v[p.mesh.bottom_nodes]=0.;x+=h*v
+        p.previous_velocity=v*.3;p.previous_velocity[p.n:,1]=-p.loading_rate
+        e=p.event_energy(x);dv=v[:p.n]-p.previous_velocity[:p.n]
+        work=float(p.mass@np.sum(dv*v[:p.n],axis=1))
+        self.assertAlmostEqual(work,e['kinetic_delta_n_mm']+e['backward_euler_loss_n_mm'],places=16)
+        self.assertAlmostEqual(e['backward_euler_loss_n_mm'],.5*float(p.mass@np.sum(dv**2,axis=1)),places=16)
+        self.assertLess(abs(e['algebraic_remainder_n_mm']),1e-11)
+        self.assertGreaterEqual(e['absolute_numerical_terms_n_mm'],e['backward_euler_loss_n_mm'])
+
+    def test_actual_crossing_chord_rejected_before_history_commit(self):
+        p=self.problem();before=p.rest.copy();depth=100.;h=(depth-p.start)/p.loading_rate
+        after=before.copy();after[p.n:]=p.prescribed_blade_positions(depth)
+        # Both endpoints are collision-free: the entire knife ends below the
+        # specimen, but its actual connecting chord passes through the body.
+        self.assertFalse(p.ipc.has_intersections(p.cmesh,after[p.surface]))
+        self.assertLess(p.safe_step(before,after-before),1.)
+        old=(p.material_metric.copy(),p.cohesive_maximum.copy(),p.velocity.copy(),p.previous.copy())
+        with patch.object(p,'_loading_predictor',return_value=after), patch.object(p,'solve_friction',return_value=(after,0)):
+            with self.assertRaisesRegex(LoadStepFailure,'BE physical chord unsafe'):
+                p.event_step(before,p.start,depth,h,float('inf'))
+        for a,b in zip(old,(p.material_metric,p.cohesive_maximum,p.velocity,p.previous)):
+            np.testing.assert_array_equal(a,b)
+        self.assertEqual(p.event_time_s,0.)
+        self.assertIsNone(p.material_dt)
+        np.testing.assert_array_equal(p.event_failed_state['previous_positions'],before)
+        np.testing.assert_array_equal(p.event_failed_state['positions'],after)
+
+    def test_event_step_and_fresh_audit_reconstruct_same_velocity_history(self):
+        p=self.problem();h=.001;depth=p.start+h*p.loading_rate
+        x,rec=p.event_step(p.rest.copy(),p.start,depth,h,__import__('time').monotonic()+10)
+        state=dict(p.checkpoint_data(),positions=x,previous_positions=p.previous,depth_mm=depth,
+            reference_xy=p.rest,triangles=p.mesh.triangles,body_nodes=p.n)
+        self.assertAlmostEqual(p.event_time_s,h)
+        np.testing.assert_array_equal(state['velocity'],(x-state['previous_positions'])/h)
+        fresh=self.problem();checked=fresh.audit_state(state,rec)
+        self.assertTrue(checked['passed'])
+        self.assertTrue(checked['cohesive_history_passed'])
+        self.assertEqual(checked['physical_chord_safe_fraction'],1.)
