@@ -66,7 +66,14 @@ class CoupledCohesiveProblem(CoupledContactProblem):
         if np.sum(weights*q['dissipated'])>self.toughness*np.sum(weights)+1e-12:raise RuntimeError('Incorrect fracture area')
 
     def acceptance(self,x,depth,iterations,outer_iterations):
-        endpoint=check_connected_endpoint(self,x)
+        if not self.damage_enabled:
+            if (np.any(self.active_faces) or np.any(self.previous_active_faces) or np.any(self.history)
+                    or np.any(self.previous_history) or np.any(self.released) or np.any(self.precracked_faces)):
+                raise RuntimeError('Exact-tie damage-off requires a virgin zero-precrack history')
+            endpoint=dict(maximum_connected_endpoint_excess_half_n=None,
+                endpoint_strength_check='disabled for virgin exact-tie damage-off; physical acceptance retained')
+        else:
+            endpoint=check_connected_endpoint(self,x)
         rec=super().acceptance(x,depth,iterations,outer_iterations)
         if getattr(self,'nonlinear_error_policy',None):
             from nonlinear_accuracy import binding,residual_budget

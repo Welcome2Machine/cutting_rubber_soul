@@ -112,10 +112,12 @@ class CohesiveCutProblem(ViscoelasticProblem):
             preparation_clearance_mm = float(preparation_clearance_mm)
         self.preparation_clearance_mm = preparation_clearance_mm
         if ccd_tolerance_mm is not None:
-            if (fracture_topology != 'edge_network'
+            finite_seam = (self.is_mixed_mode and isinstance(cohesive_law, MixedModeLaw)
+                           and cohesive_law.compression_kinematics == 'finite_faces')
+            if ((fracture_topology != 'edge_network' and not finite_seam)
                     or isinstance(ccd_tolerance_mm, bool)
                     or not np.isfinite(ccd_tolerance_mm) or ccd_tolerance_mm <= 0.):
-                raise ValueError('Positive finite ccd_tolerance_mm is supported only by the edge network')
+                raise ValueError('Positive finite ccd_tolerance_mm requires edge network or finite-face mixed seam')
             ccd_tolerance_mm = float(ccd_tolerance_mm)
         self.ccd_tolerance_mm = ccd_tolerance_mm
         self.network_narrow_phase_ccd = None
@@ -834,10 +836,13 @@ def make_cohesive_problem(config):
         nonlinear_solver=config.get('nonlinear_solver', 'ptc'),
         inclination=config.get('angle_deg', 0.), gap_mm=config['reference_gap_mm'],
         seam_spacing_mm=mesh['seam_spacing_mm'], maxwell_shear=material['maxwell_shear_mpa'],
-        relaxation_s=material['relaxation_s'], loading_rate=.2,
+        relaxation_s=material['relaxation_s'], loading_rate=config['loading_rate_mm_s'],
         bulk_modulus=material['bulk_mpa'], shear_modulus=material['equilibrium_shear_mpa'],
         mu=config['friction_coefficient'], dhat=config['dhat_mm'],
         local_spacing=mesh['local_spacing_mm'], surface_spacing=mesh['surface_spacing_mm'],
         coarse_spacing=mesh['coarse_spacing_mm'], nose_facets=mesh['nose_facets'],
+        blade_angle=config.get('blade_angle_deg'),blade_thickness=config.get('blade_thickness_mm'),
+        drop_s=config.get('drop_s_mm'),blade_spacing=mesh.get('blade_spacing_mm'),
+        friction_smoothing_mm=config.get('friction_smoothing_mm',1e-5),
         tip_radius=config['tip_radius_mm'], fine_halfwidth=mesh.get('fine_halfwidth_mm', 3.), max_iterations=500,
         predictor='secant', hessian_mode='regularized')

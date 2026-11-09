@@ -13,7 +13,8 @@ import numpy as np
 from threadpoolctl import threadpool_limits
 from prototype.cohesive_cut import make_cohesive_problem
 from prototype.ipc_reference import adaptive_load_steps
-from prototype.material_case import signature, audit, failure_checkpoint
+from prototype.material_case import signature, audit, failure_checkpoint, resolved_model
+from numerical_runtime import numerical_runtime, add_thread_arguments, thread_arguments
 from run_support import write_json, save_npz, source_hashes
 
 
@@ -65,8 +66,8 @@ def read_config(path):
     if config.get('parameter_status') != 'demonstration_only_not_experimentally_calibrated':
         raise ValueError('This model cannot claim experimentally calibrated fracture parameters')
     if regularized:
-        if config.get('fracture_topology') != 'edge_network':
-            raise ValueError('Version 3 currently requires edge_network')
+        if config.get('fracture_topology') == 'prescribed_seam' and config.get('closure_regularization') != 'finite_face_bounded_compression_penalty':
+            raise ValueError('Version 3 prescribed_seam requires finite-face closure')
         closure = config.get('closure_regularization')
         if closure not in {'reversible_compression_penalty', 'bounded_reversible_compression_penalty',
                            'finite_face_bounded_compression_penalty'}:
@@ -271,7 +272,7 @@ def energy_ledger(steps):
     return rows
 
 
-def run(config_path, output, seconds):
+def run(config_path, output, seconds, *, ipc_threads=2, blas_threads=1, physical_core_affinity=False):
     config = read_config(config_path)
     if not np.isfinite(seconds) or not 1 <= seconds <= 3600:
         raise ValueError('seconds must be in [1,3600]')
@@ -311,9 +312,11 @@ def run(config_path, output, seconds):
                 'IPC Coulomb friction uses IPC normal loads only, not the additional reversible compression force; contact-load partition remains unqualified'])
     write_json(out/'result.json', report)
     started = time.monotonic();p = None;x = None
-    with (out/'run.log').open('w', encoding='utf-8') as log, contextlib.redirect_stdout(log), threadpool_limits(limits=1):
+    with (out/'run.log').open('w', encoding='utf-8') as log, contextlib.redirect_stdout(log), numerical_runtime(ipc_threads,blas_threads,physical_core_affinity) as runtime:
         try:
+            report['thread_runtime']=runtime
             p = make_cohesive_problem(config)
+            report['resolved_model']=resolved_model(p)
             physical_signature=signature(p)
             physical_signature['fracture']=dict(kind=config.get('cohesive_kind','radial_mode_i'),
                 topology=config.get('fracture_topology','prescribed_seam'), law=p.cohesive_law.to_dict(),
@@ -447,8 +450,9 @@ def main():
     parser.add_argument('--config', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--seconds', type=float, default=300.)
+    add_thread_arguments(parser)
     args=parser.parse_args()
-    return run(args.config, args.output, args.seconds)
+    return run(args.config, args.output, args.seconds, **thread_arguments(args))
 
 
 if __name__=='__main__':

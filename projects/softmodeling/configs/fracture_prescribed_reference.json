@@ -1,0 +1,50 @@
+{
+  "schema": "softcut-cohesive/3",
+  "label": "Shared A-low s7 prescribed-seam forward prototype",
+  "cohesive_kind": "mixed_mode_energy",
+  "fracture_topology": "prescribed_seam",
+  "angle_deg": 0,
+  "loading_rate_mm_s": 0.2,
+  "target_mm": 0.8,
+  "increment_mm": 0.005,
+  "reference_gap_mm": 0.006,
+  "dhat_mm": 0.0025,
+  "tip_radius_mm": 0.02,
+  "friction_coefficient": 0.35,
+  "parameter_status": "demonstration_only_not_experimentally_calibrated",
+  "no_experimental_force_fitting": true,
+  "parameter_source": "Frozen reference material and demonstration Tn/Ts/Gc from research_prototype_task S4; A-low measured included angle/thickness; radius 0.020 mm assumed. This single-seam configuration does not replace historical inputs.",
+  "material": {
+    "equilibrium_shear_mpa": 0.14,
+    "maxwell_shear_mpa": 1.24,
+    "relaxation_s": 1.7,
+    "bulk_mpa": 23.34333333333331
+  },
+  "cohesive": {
+    "normal_strength_mpa": 0.2,
+    "shear_strength_mpa": 0.25,
+    "normal_stiffness_mpa_per_mm": 5000.0,
+    "toughness_n_per_mm": 0.006,
+    "damage_enabled": true,
+    "compression_stiffness_mpa_per_mm": 5000.0,
+    "compression_regularization_mm": 0.006,
+    "compression_kinematics": "finite_faces"
+  },
+  "mesh": {
+    "local_spacing_mm": 0.4,
+    "surface_spacing_mm": 0.04,
+    "coarse_spacing_mm": 0.75,
+    "seam_spacing_mm": 0.1,
+    "nose_facets": 32,
+    "blade_spacing_mm": 0.025,
+    "fine_halfwidth_mm": 3.0
+  },
+  "blade_angle_deg": 13.31684633759535,
+  "blade_thickness_mm": 0.24577088241513723,
+  "drop_s_mm": 7.0,
+  "friction_smoothing_mm": 1e-05,
+  "preparation_clearance_mm": 0.02,
+  "minimum_increment_mm": 0.000625,
+  "ccd_tolerance_mm": 1e-09,
+  "closure_regularization": "finite_face_bounded_compression_penalty"
+}

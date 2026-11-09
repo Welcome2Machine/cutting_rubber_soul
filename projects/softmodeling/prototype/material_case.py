@@ -21,7 +21,40 @@ def signature(p):
                 mesh_sha256=hashlib.sha256(p.rest.tobytes()+p.mesh.triangles.tobytes()).hexdigest(),
                 contact_formulation=p.contact_formulation,dhat=p.dhat,
                 physical_force_tolerance_n=BASELINE['force_tolerance_n'])
+    if getattr(p,'friction_smoothing_mm',BASELINE['friction_smoothing_mm']) != BASELINE['friction_smoothing_mm']:
+        value['friction_smoothing_mm'] = p.friction_smoothing_mm
     return value
+
+
+def resolved_model(p):
+    """Actual constructed geometry and time/friction meaning, not input echo."""
+    blade = p.rest[p.n:]
+    arc = blade[2:p.nose_facets+3]
+    origin = arc.mean(axis=0); z = arc-origin
+    center_local = np.linalg.lstsq(2*z, np.sum(z*z,axis=1)-np.mean(np.sum(z*z,axis=1)), rcond=None)[0]
+    center = origin+center_local; radii = np.linalg.norm(arc-center,axis=1)
+    left = blade[1]-arc[0]; right = blade[p.nose_facets+3]-arc[-1]
+    angle = np.rad2deg(np.arccos(np.clip(left@right/np.linalg.norm(left)/np.linalg.norm(right),-1,1)))
+    return dict(config=p.config.to_dict(), material=p.material.to_dict(),
+        loading_rate_mm_s=p.loading_rate, initial_depth_mm=p.start,
+        physical_time='dt=(depth-previous_depth)/loading_rate; elapsed=(depth-initial_depth)/loading_rate',
+        integrator='quasistatic force balance, implicit Maxwell material update; PTC is not physical time',
+        friction=dict(coefficient=p.config.friction_coefficient,
+            smoothing_kind='fixed_increment_displacement',epsilon_u_mm=p.friction_smoothing_mm,
+            scope='same coefficient for blade and body self-contact; closure penalty excluded from IPC friction load'),
+        contact=dict(formulation=p.contact_formulation,dhat_mm=p.dhat,
+            ccd=getattr(p,'network_ccd_policy',{'mode':'toolkit_default'})),
+        geometry=dict(actual_wedge_included_angle_deg=float(angle),
+            actual_blade_thickness_mm=float(np.ptp(blade[:,0])),
+            actual_arc_radius_mm=float(radii.mean()),arc_fit_max_error_mm=float(np.max(abs(radii-radii.mean()))),
+            radius_status='assumed, not independently measured',
+            blade_reference_sha256=hashlib.sha256(blade.tobytes()).hexdigest(),
+            body_reference_sha256=hashlib.sha256(p.mesh.reference_xy.tobytes()).hexdigest(),
+            triangles_sha256=hashlib.sha256(p.mesh.triangles.tobytes()).hexdigest(),
+            nodes=p.n,triangles=len(p.mesh.triangles),nose_facets=p.nose_facets,
+            blade_spacing_mm=p.blade_spacing,reference_volume_mm3=float(p.mesh.bulk_data[0].sum()*p.config.width_mm)),
+        damage_off_semantics=('finite_stiffness_finite_gap_elastic_interface' if hasattr(p,'cohesive_law')
+            and not p.cohesive_law.damage_enabled else 'continuous_intact' if not hasattr(p,'cohesive_law') else 'damage_enabled'))
 
 
 def failure_checkpoint(p, x):
@@ -138,17 +171,19 @@ def make_problem(*,angle,equilibrium_shear,maxwell_shear,relaxation_s,loading_ra
                  equilibrium_alpha=2.,maxwell_alpha=2.,
                  volumetric='quadratic_j',blade_spacing=None,blade_thickness=None,blade_angle=None,
                  tip_radius=.02,local_spacing=.05,surface_spacing=.005,nose_facets=64,
-                 fine_halfwidth=3.,coarse_spacing=None):
+                 fine_halfwidth=3.,coarse_spacing=None,drop_s=None,dhat=.0025,
+                 preparation_clearance_mm=None,friction_smoothing_mm=1e-5):
     """Shared construction for actual-angle runs and completed-reference audits."""
     if not all(np.isfinite(a) and 1 <= a <= 4 for a in (equilibrium_alpha,maxwell_alpha)):
         raise ValueError('Explicit candidate exponents must be in [1, 4]')
     p=ViscoelasticProblem(maxwell_shear=maxwell_shear,relaxation_s=relaxation_s,
         loading_rate=loading_rate,bulk_modulus=bulk_modulus,volumetric=volumetric,case='oblique',mu=mu,
-        shear_modulus=equilibrium_shear,ogden_alpha=equilibrium_alpha,dhat=.0025,local_spacing=local_spacing,
+        shear_modulus=equilibrium_shear,ogden_alpha=equilibrium_alpha,dhat=dhat,local_spacing=local_spacing,
         surface_spacing=surface_spacing,nose_facets=nose_facets,inclination=angle,tip_radius=tip_radius,
         fine_halfwidth=fine_halfwidth,max_iterations=500,predictor='secant',hessian_mode='regularized',element='p1',
         blade_spacing=blade_spacing,blade_thickness=blade_thickness,blade_angle=blade_angle,
-        coarse_spacing=coarse_spacing)
+        coarse_spacing=coarse_spacing,drop_s=drop_s,preparation_clearance_mm=preparation_clearance_mm,
+        friction_smoothing_mm=friction_smoothing_mm)
     p.stagnation_window=40
     if maxwell_alpha != 2.:
         p.material=replace(p.material,mu_ov=(2*maxwell_shear/maxwell_alpha,),alpha_ov=(float(maxwell_alpha),))

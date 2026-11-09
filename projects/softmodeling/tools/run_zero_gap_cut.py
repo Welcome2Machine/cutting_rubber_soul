@@ -29,7 +29,9 @@ def problem(config):
         'time_integrator', 'barrier_quadrature', 'barrier_quadrature_rule', 'insertion_rule', 'nucleation_length_mm',
         'kinematic_theta', 'contact_activation_mm', 'blade_surface_spacing_mm',
         'fracture_criterion', 'ffm_virtual_seconds', 'ffm_friction_epsilon_mm', 'ffm_max_candidates',
-        'ffm_virtual_solver', 'ffm_ccd_tolerance', 'ffm_chord_max_queries', 'ffm_chord_partition', 'ffm_recovery_attempts'}
+        'ffm_virtual_solver', 'ffm_ccd_tolerance', 'ffm_chord_max_queries', 'ffm_chord_partition', 'ffm_recovery_attempts',
+        'blade_angle_deg','blade_thickness_mm','tip_radius_mm','drop_s_mm','angle_deg','material',
+        'loading_rate_mm_s','friction_coefficient'}
     if set(config)-allowed or config['schema'] != 'softcut-zero-gap-dynamics/1':
         raise ValueError('Unknown zero-gap configuration')
     if not 0 < config['target_mm'] <= 2 or not 0 < config['minimum_increment_mm'] <= config['increment_mm']:
@@ -62,7 +64,11 @@ def problem(config):
             'ffm_max_candidates', 'ffm_virtual_solver', 'ffm_ccd_tolerance', 'ffm_chord_max_queries', 'ffm_chord_partition', 'ffm_recovery_attempts') if key in config})
     elif criterion != 'local_or_neighbourhood' or any(key.startswith('ffm_') for key in config):
         raise ValueError('Unknown fracture criterion or unbound virtual options')
-    return cls(**extra, density_kg_m3=config['density_kg_m3'],
+    if config.get('drop_s_mm',15.) != 15. or config.get('angle_deg',0.) != 0.:
+        raise ValueError('Mirror control requires s=15 mm and angle=0; use the full-domain factory')
+    material=config.get('material',dict(equilibrium_shear_mpa=.14,maxwell_shear_mpa=1.24,relaxation_s=1.7,bulk_mpa=23.34333333333331))
+    geometry={k:config[v] for k,v in [('blade_angle','blade_angle_deg'),('blade_thickness','blade_thickness_mm'),('tip_radius','tip_radius_mm')] if v in config}
+    return cls(**extra, **geometry, density_kg_m3=config['density_kg_m3'],
         strength_mpa=config['strength_mpa'], toughness_n_mm=config['toughness_n_mm'],
         seam_spacing_mm=config['seam_spacing_mm'], damage_enabled=config['damage_enabled'],
         nonlinear_solver=config.get('nonlinear_solver', 'ptc'),
@@ -71,8 +77,8 @@ def problem(config):
         energy_absolute_tolerance=config.get('energy_absolute_tolerance_n_mm', 0.),
         cohesive_unloading=config.get('cohesive_unloading', 'secant'),
         friction_velocity_epsilon=config.get('friction_velocity_epsilon_mm_s', .0002),
-        maxwell_shear=1.24, relaxation_s=1.7, loading_rate=.2,
-        bulk_modulus=23.34333333333331, shear_modulus=.14, mu=.35, dhat=config.get('contact_activation_mm', .0025),
+        maxwell_shear=material['maxwell_shear_mpa'], relaxation_s=material['relaxation_s'], loading_rate=config.get('loading_rate_mm_s',.2),
+        bulk_modulus=material['bulk_mpa'], shear_modulus=material['equilibrium_shear_mpa'], mu=config.get('friction_coefficient',.35), dhat=config.get('contact_activation_mm', .0025),
         local_spacing=config['local_spacing_mm'], surface_spacing=config['surface_spacing_mm'],
         coarse_spacing=config['coarse_spacing_mm'], nose_facets=config['nose_facets'],
         blade_spacing=config.get('blade_surface_spacing_mm'),

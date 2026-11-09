@@ -160,3 +160,42 @@ def test_tip_refinement_width_is_explicit_positive_geometry(tmp_path, width):
     path.write_text(json.dumps(config))
     with pytest.raises(ValueError, match='fine_halfwidth'):
         read_config(path)
+
+
+def test_shared_factory_resolves_real_blade_time_and_finite_face_seam(tmp_path):
+    from prototype.cohesive_cut import make_cohesive_problem
+    from prototype.material_case import make_problem, resolved_model
+    c=read_config(ROOT/'configs/fracture_prescribed_reference.json')
+    # Non-default factory inputs catch silently discarded parameters independently
+    # of the research's frozen .2 mm/s, s7 values.
+    c.update(loading_rate_mm_s=.37,drop_s_mm=9.,blade_angle_deg=17.,blade_thickness_mm=.27)
+    p=make_cohesive_problem(c);m=resolved_model(p)
+    assert p.loading_rate==.37 and p.config.drop_s_mm==9.
+    assert m['geometry']['actual_wedge_included_angle_deg']==pytest.approx(17.,abs=1e-9)
+    assert m['geometry']['actual_blade_thickness_mm']==pytest.approx(.27,abs=1e-12)
+    assert m['geometry']['actual_arc_radius_mm']==pytest.approx(.02,abs=1e-11)
+    assert m['geometry']['arc_fit_max_error_mm']<1e-11
+    assert p.start==-.02 and p.friction_smoothing_mm==1e-5
+    assert p.interface_closure_distances is not None
+    assert p.interface_areas.sum()==pytest.approx(20*5)
+    q=make_problem(angle=0,equilibrium_shear=.14,maxwell_shear=1.24,relaxation_s=1.7,
+        loading_rate=.37,bulk_modulus=23.34333333333331,blade_angle=17.,blade_thickness=.27,
+        drop_s=9.,preparation_clearance_mm=.02,local_spacing=.4,surface_spacing=.04,
+        coarse_spacing=.75,nose_facets=32,blade_spacing=.025,tip_radius=.02)
+    np.testing.assert_allclose(p.rest[p.n:],q.rest[q.n:],atol=5e-14,rtol=0)  # two equivalent clearance constructions at 75 mm scale
+    assert p.material==q.material
+    # v3 seam permits only the declared finite-face closure, not projected-gap.
+    c['loading_rate_mm_s']=.2;c['closure_regularization']='bounded_reversible_compression_penalty'
+    c['cohesive']['compression_kinematics']='projected_gap';f=tmp_path/'bad.json';f.write_text(json.dumps(c))
+    with pytest.raises(ValueError,match='finite-face'):read_config(f)
+
+
+def test_legacy_cohesive_factory_keeps_baseline_geometry():
+    from prototype.cohesive_cut import make_cohesive_problem
+    from prototype.material_case import resolved_model
+    from prototype.ipc_reference import BASELINE
+    p=make_cohesive_problem(read_config(ROOT/'configs/fracture_mixed.json'))
+    q=resolved_model(p)
+    assert q['geometry']['actual_wedge_included_angle_deg']==pytest.approx(BASELINE['model']['blade_tip_angle_deg'])
+    assert q['geometry']['actual_blade_thickness_mm']==pytest.approx(BASELINE['model']['blade_thickness_mm'])
+    assert p.start==pytest.approx(-2*p.dhat)

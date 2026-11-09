@@ -177,3 +177,33 @@ def test_stricter_numeric_goal_cannot_shrink_physical_dt_or_hide_energy_failure(
         assert failure=='physical_solver_accuracy_incomplete' and not physical_cutback(failure)
     elif kind=='energy':assert failure=='physical_energy_resolution' and physical_cutback(failure)
     else:assert failure=='global_compute_budget_exhausted' and not physical_cutback(failure)
+
+
+def test_virgin_exact_tie_off_skips_only_fracture_strength_guard(monkeypatch):
+    import coupled_cohesive
+    c=config();c.update(precrack_mm=0.,initial_slit_halfwidth_mm=0.)
+    c['base']=dict(c['base'],damage_enabled=False)
+    p=problem(c,solve_tolerance_n=1e-7)
+    def forbidden(*args):raise AssertionError('fracture-only endpoint guard called in virgin off')
+    monkeypatch.setattr(coupled_cohesive,'check_connected_endpoint',forbidden)
+    y,rec=p.step(p.rest.copy(),p.start,p.start+1e-4,time.monotonic()+20)
+    assert rec['residual_n']<1e-4 and rec['fully_failed_faces']==0
+    assert not p.active_faces.any() and not p.history.any() and not p.released.any()
+    assert 'disabled for virgin' in rec['endpoint_strength_check']
+    p.active_faces[-1]=True
+    with pytest.raises(RuntimeError,match='virgin'):p.acceptance(y,p.start+1e-4,0,0)
+
+
+def test_mirror_explicit_geometry_and_material_inputs_preserve_scope():
+    from tools.run_zero_gap_cut import problem as factory
+    from prototype.ipc_reference import BASELINE
+    c=config()['base'];legacy=factory(c)
+    c=dict(c,blade_angle_deg=13.31684633759535,blade_thickness_mm=.24577088241513723,
+        tip_radius_mm=.02,drop_s_mm=15.,angle_deg=0.,loading_rate_mm_s=.23,friction_coefficient=.4,
+        material=dict(equilibrium_shear_mpa=.15,maxwell_shear_mpa=1.1,relaxation_s=1.8,bulk_mpa=24.))
+    p=factory(c)
+    assert p.config.blade_tip_angle_deg==c['blade_angle_deg'] and p.config.blade_thickness_mm==c['blade_thickness_mm']
+    assert p.options.tip_radius_mm==.02 and p.loading_rate==.23
+    assert p.config.shear_modulus_n_mm2==.15 and p.material.mu_ov==(1.1,)
+    assert legacy.config.blade_tip_angle_deg==BASELINE['model']['blade_tip_angle_deg']
+    with pytest.raises(ValueError,match='Mirror'):factory(dict(c,drop_s_mm=7.))

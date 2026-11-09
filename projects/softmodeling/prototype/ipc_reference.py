@@ -138,6 +138,8 @@ class IPCProblem:
         blade_thickness=None,
         blade_angle=None,
         coarse_spacing=None,
+        drop_s=None, preparation_clearance_mm=None,
+        friction_smoothing_mm=BASELINE["friction_smoothing_mm"],
     ):
         if not np.isfinite(shear_modulus) or shear_modulus <= 0:
             raise ValueError("Shear modulus must be finite and positive (MPa)")
@@ -177,6 +179,7 @@ class IPCProblem:
         geometry = {name: value for name, value in (
             ('blade_thickness_mm', blade_thickness),
             ('blade_tip_angle_deg', blade_angle),
+            ('drop_s_mm', drop_s),
             ('mesh_size_mm', coarse_spacing)) if value is not None}
         if geometry:
             self.config = replace(self.config, **geometry)
@@ -211,6 +214,13 @@ class IPCProblem:
         self.enrichment = None  # Retained for old P1 observer compatibility.
         self.nodal_volume = None
         self.start = -2 * dhat / max(np.cos(np.deg2rad(self.config.inclination_deg)), 0.1)
+        if preparation_clearance_mm is not None:
+            if not np.isfinite(preparation_clearance_mm) or preparation_clearance_mm <= 0:
+                raise ValueError('Positive vertical preparation clearance required')
+            self.start = -float(preparation_clearance_mm)
+        if not np.isfinite(friction_smoothing_mm) or friction_smoothing_mm <= 0:
+            raise ValueError('Positive displacement friction smoothing required')
+        self.friction_smoothing_mm = float(friction_smoothing_mm)
         if case == "patch":
             blade = np.array(
                 [
@@ -264,7 +274,7 @@ class IPCProblem:
             fixed = np.unique(np.r_[fixed, 2 * np.arange(self.n)])
         self.free = np.setdiff1d(np.arange(2 * self.n), fixed)
         self.previous = self.rest.copy()
-        self.friction = self.ipc.FrictionPotential(BASELINE["friction_smoothing_mm"])
+        self.friction = self.ipc.FrictionPotential(self.friction_smoothing_mm)
         self.grad = self.mesh.bulk_data[1]
         self.dofs = self.mesh.bulk_data[2]
         self.reference_contact_check = self.check_reference_contact()
@@ -670,6 +680,10 @@ class IPCProblem:
         normal_gradient = self.barrier.gradient(c, self.cmesh, x[self.surface]).reshape(-1, 2)
         normal_fz = float(-normal_gradient[self.surface >= self.n, 1].sum())
         total_fz = float(-g.reshape(-1, 2)[self.n:, 1].sum())
+        friction_gradient = (self.friction.gradient(lag, self.cmesh,
+            self.step_increment(x)[self.surface]).reshape(-1, 2) if lag is not None
+            else np.zeros((len(self.surface), 2)))
+        friction_fz = float(-friction_gradient[self.surface >= self.n, 1].sum())
         adjacent = []
         for stencil in c.vv_collisions:
             pair = tuple(sorted((stencil.vertex0_id, stencil.vertex1_id)))
@@ -685,6 +699,8 @@ class IPCProblem:
                     friction_globalization=self.friction_globalization if lag is not None else None,
                     friction_work_n_mm=dissipation, energy_n_mm=E,
                     reaction_normal_fz_n=normal_fz, reaction_friction_fz_n=total_fz-normal_fz,
+                    reaction_friction_assembled_fz_n=friction_fz,
+                    reaction_component_closure_n=total_fz-normal_fz-friction_fz,
                     contact_diagnostics=dict(adjacent_body_vv_count=len(adjacent),
                         adjacent_body_vv_energy_n_mm=adjacent_energy,
                         meaning='Connected surface endpoint barrier terms, not proof of physical self-contact'))

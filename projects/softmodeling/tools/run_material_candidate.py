@@ -18,7 +18,8 @@ from threadpoolctl import threadpool_limits
 from run_support import source_hashes,write_json,save_npz,compute_process_policy
 from prototype.ipc_reference import BASELINE,adaptive_load_steps,record_tip_contact,export_contact_table
 from prototype.material_case import (make_problem, signature, audit, resume,
-                                     resume_compatibility, load_force_csv, failure_checkpoint)
+                                     resume_compatibility, load_force_csv, failure_checkpoint, resolved_model)
+from numerical_runtime import numerical_runtime
 from prototype.tip_contact import TipContactTracker
 from prototype.material_performance import (performance_policy, require_same_performance,
     enable_performance, performance_summary, close_performance, native_audit)
@@ -167,6 +168,11 @@ def main():
         help='Log actual PTC directions, step limits and phase timings; save last paired direction on failure')
     parser.add_argument('--material-batch-size',type=int,default=0,
         help='Opt-in material point batches; 0 retains the original whole-array evaluation')
+    parser.add_argument('--drop-s',type=float)
+    parser.add_argument('--dhat',type=float,default=.0025)
+    parser.add_argument('--preparation-clearance-mm',type=float)
+    parser.add_argument('--friction-smoothing-mm',type=float,default=1e-5)
+    parser.add_argument('--physical-core-affinity',action='store_true')
     parser.add_argument('--blade-spacing',type=float,
         help='Optional straight-blade subdivision (mm); preserves shape/nose and requires an independent history')
     parser.add_argument('--blade-thickness',type=float,help='Symmetric blade thickness (mm)')
@@ -239,19 +245,21 @@ def main():
         report['experiment_sha256']=hashlib.sha256(args.experiment.read_bytes()).hexdigest()
         report['loading_rate_status']='matches speed_um_s in authorized experimental export'
     with (out/'run.log').open('w',encoding='utf-8') as log,contextlib.redirect_stdout(log),\
-         threadpool_limits(limits=args.threads),\
+         numerical_runtime(args.threads,1,args.physical_core_affinity) as runtime,\
          (threadpool_limits(limits=1,user_api='blas') if performance['blas_threads']==1
           else contextlib.nullcontext()),compute_process_policy() as policy:
         report['runtime_process_policy']=policy
+        report['thread_runtime']=runtime
         print('RUNTIME_POLICY '+json.dumps(policy),flush=True)
         started=time.monotonic();p=None;x=None
         try:
             construction={k:getattr(args,k) for k in ('angle','equilibrium_shear','maxwell_shear',
                 'relaxation_s','loading_rate','bulk_modulus','mu','equilibrium_alpha','maxwell_alpha','blade_spacing',
                 'blade_thickness','blade_angle','tip_radius','local_spacing','surface_spacing','coarse_spacing',
-                'fine_halfwidth','nose_facets')}
+                'fine_halfwidth','nose_facets','drop_s','dhat','preparation_clearance_mm','friction_smoothing_mm')}
             p=make_problem(**construction)
             p.solver_diagnostics=args.diagnostics
+            report['resolved_model']=resolved_model(p)
             # JSON round trip makes signatures stable across tuples in Material.
             report['signature']=json.loads(json.dumps(signature(p)))
             report['reference_contact_check']=p.reference_contact_check

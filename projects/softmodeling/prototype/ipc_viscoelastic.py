@@ -101,6 +101,7 @@ class ViscoelasticProblem(IPCProblem):
         dissipation=self.material_dt*float(volumes@q['viscous_rate'])
         accepted['material']=dict(
             dt_s=self.material_dt,time_s=max(0.,float(depth))/self.loading_rate,
+            elapsed_from_initial_s=(float(depth)-self.start)/self.loading_rate,
             stored_energy_n_mm=float(volumes@q['energy']),
             equilibrium_energy_n_mm=float(volumes@q['equilibrium_energy']),
             overstress_energy_n_mm=float(volumes@q['overstress_energy']),
