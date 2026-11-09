@@ -6,12 +6,14 @@ The only current task is [research_prototype_task](../../researchtopic/research_
 Read it and [Git workflow](../../docs/git_workflow.md) before acting. The first paper is experiments
 plus explanatory forward simulation; learning, differentiable solvers and PINNs are possible second-paper
 work, not implementation tasks now. The server owns shared numerical integration; the local agent owns
-reference inputs, experimental comparison and already authorized fitting. Do not make either wait for
-perfect fitting or bulk historical-state transfer.
+cross-end intact alignment and experimental evidence. The current local task adds no new fit; preserve
+any separately authorized live work. Neither side waits for new fitting or bulk historical-state transfer.
 
 Historical C1/C2-only priorities and their old budgets are superseded. Do not repeat the failed C2 policy
-check or extend its controller/certificate chain. Implement only the shared inputs, controls and bounded
-fracture prototype defined in the current task. Preserve historical results and their failure labels.
+check or extend its controller/certificate chain. Shared inputs, damage-off and the original short bridge
+are completed at 74416154; do not repeat them by default. The current task authorizes only a bounded,
+explicit full-domain inertial event experiment on the server and a controlled intact comparison locally.
+Preserve historical results and their failure labels; a new conditional window does not qualify the old QS jump.
 
 Read [research status](docs/research_status.md), [model specification](docs/current_model_spec.md),
 [code map](prototype/README.md) and [project conventions](README.md) as evidence of implemented behavior.
@@ -28,8 +30,9 @@ They do not make an unimplemented task an existing capability. Root AGENTS and p
 - The workbench represents a symmetric wedge/circular nose, not arbitrary CAD. Lubrication is a
   condition label plus explicit Coulomb mu, not an oil-film model. Public Fy maps solver reaction_x_n;
   Fyz is a resultant. Force components, surface projections and energy shares are different quantities.
-- Local common-parameter calibration is authorized within defensible intact windows; the old blanket
-  prohibition on cutting-force fitting is historical. The fracture agent must not tune strength/Gc,
+- The current local round freezes material parameters to isolate numerical differences. General common-parameter
+  calibration within defensible intact windows remains a later option; the old blanket prohibition is historical.
+  The fracture agent must not tune strength/Gc,
   angle-specific material, effective width or force factors to make a desired cutting curve.
 - Treat the second-paper data foundation as source-traceable configurations, histories and observables,
   not permission to create a learning platform, differentiable solver or generic data pipeline.
@@ -46,11 +49,15 @@ They do not make an unimplemented task an existing capability. Root AGENTS and p
 - Exact tied-interface off, finite-stiffness cohesive off and continuous intact are different controls.
   Measure their differences; do not claim equivalence by name. Any approximate closure treatment must
   disclose its penetration/compliance and collision scope; do not label it exact IPC or full qualification.
-- Preserve formulation-specific history identity: the historical mixed network uses two Gauss points,
-  whereas current face-CZM can use four. Whole-face failure requires every applicable point, not a fixed
-  point count borrowed from another route. Network metric floors are globalization only, not physical energy.
+- Preserve formulation-specific history identity: current full-domain intrinsic single-seam and mixed
+  network histories use two Gauss points per segment. The separate historical extrinsic face route may
+  use four or another explicitly configured order. Whole-face failure requires every applicable point,
+  not a point count borrowed from another route. Network metric floors are globalization only, not physical energy.
 - New blade/material/friction/mesh/interface settings start from their own consistent initial history.
-  Existing restore-consistency checks remain. Documentation-only commits do not require rerunning a path
+  The current task explicitly permits a separate QS-seeded conditional inertia experiment with disclosed
+  initial velocity and newly initialized step friction; it is not exact production resumption and cannot
+  upgrade the source path. Ordinary restore-consistency checks remain. Documentation-only commits do not
+  require rerunning a path
   whose actual numerical sources and inputs still match. Record the actual imported code/interpreter.
 - Failure snapshots pair failed positions with that attempt's failed_previous, accepted material metric,
   physical dt and attempted depth. Do not confuse rolled-back previous with the attempted parent.

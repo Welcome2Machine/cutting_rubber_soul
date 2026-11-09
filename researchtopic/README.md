@@ -6,8 +6,8 @@
 |---|---|
 | [科研原型任务](research_prototype_task.md) | **唯一现行任务**：两篇论文背景、共同模型、两端分工、具体方法、预算与验收 |
 | [Git 协作规则](../docs/git_workflow.md) | 分支、文件责任、按提交交接、运行目录与仓库清洁 |
-| [服务器启动提示词](server_agent_prompt.md) | 共同核心、无断裂对照、代表性断裂原型 |
-| [本地启动提示词](baseline_agent_tasks_20261031.md) | 参数与实验依据、已有拟合、轻量交接；沿用文件名以保持链接 |
+| [服务器启动提示词](server_agent_prompt.md) | 共同核心、条件惯性事件窗口与能量解释 |
+| [本地启动提示词](baseline_agent_tasks_20261031.md) | 跨端完整体差异对齐、受控短程与实验依据；沿用文件名保持链接 |
 | [实际研究状态](../projects/softmodeling/docs/research_status.md) | 已完成结果、证据位置与尚未完成的阶段 |
 
 服务器集成分支为 `codex/server-fracture-20261029`；本地数据/基线分支为
