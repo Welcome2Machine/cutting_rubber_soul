@@ -1,9 +1,8 @@
 {
   "schema": "softcut-intact-baseline-upgrade-handoff/1",
   "created_date_jst": "2026-10-31",
-  "purpose": "Review the next intact-baseline upgrade; not a runnable workbench configuration.",
+  "purpose": "Current reference inputs, qualified results and experimental/candidate evidence handoff for paper 1; NOT a runnable solver configuration.",
   "automatic_launch": false,
-  "no_experimental_force_parameter_fitting": true,
   "fracture_enabled": false,
   "angles_deg": [
     0,
@@ -26,7 +25,7 @@
     "Gv_MPa": 1.24,
     "tau_s": 1.7,
     "K_MPa": 23.34333333333331,
-    "source_note": "Legacy reference parameters; historical 57-degree force-based selection, not independent material identification. Held fixed; no fitting in this study."
+    "source_note": "Frozen historical reference; previously informed by 57-degree forces, not independently identified. New common-parameter calibration is authorized only in defensible intact windows; no new fit in this delivery."
   },
   "blade": {
     "id": "a_low_profile",
@@ -44,7 +43,9 @@
     "formulation": "improved-max",
     "dhat_mm": 0.0025,
     "friction_displacement_smoothing_mm": 1e-05,
-    "full_ev_vv_self_contact_ccd": true
+    "full_ev_vv_self_contact_ccd": true,
+    "friction_force_field_status": "reaction_friction_fz_n = total - normal; derived difference, not independent friction gradient audit",
+    "new_velocity_regularization": "If server selects epsilon_v=0.0002 mm/s, set epsilon_u=epsilon_v*dt on both new paths; original fixed epsilon_u=1e-5 mm is equivalent only at dt=.05 s."
   },
   "specimen": {
     "length_mm": 30,
@@ -104,7 +105,9 @@
       "secant_slope_N_per_mm",
       "angle_differences_at_common_depths"
     ],
-    "relative_L2_definition": "norm(FE-exp)/norm(exp) on declared common grid"
+    "relative_L2_definition": "norm(FE-exp)/norm(exp) on declared common grid",
+    "time_note": "All three original force exports declare speed_um_s=200. FE time=d/.2, dt=increment/.2 including precontact. No independent force-video synchronization or mechanical first-contact alignment established.",
+    "reaction_note": "Global laboratory vertical blade reaction in N, not inclined surface-normal force; simulation is not re-zeroed. Width20 mm already in integration. Legacy signature config contains unused max_indentation=3/friction_velocity=.002 fields; actual run target2 and IPC displacement smoothing1e-5 govern."
   },
   "input_provenance": [
     {
@@ -165,10 +168,823 @@
     "direct_independent_friction_decomposition_audit": "not_completed"
   },
   "scope": {
-    "baseline_owner": "local intact-baseline development and reporting",
-    "receiving_agent": "independent assessment first",
-    "server_operations": "outside this task",
-    "fracture_development": "outside this task"
+    "baseline_owner": "local reference/experiment/candidate evidence only",
+    "numerical_core_owner": "server agent, sole integrator",
+    "paper_1": "experiments plus explanatory forward simulation",
+    "paper_2": "possible learning/differentiable solver/PINN; retain inputs, true history and provenance only; no implementation now",
+    "new_FE_started": false,
+    "full_six_angle_rerun": false,
+    "shared_numerical_files_changed": false
   },
-  "publishing": "Only reviewed text/configuration; original experimental inputs, checkpoints, logs, media and runtimes remain local."
+  "publishing": "Only the two existing handoff text/config files; data package remains local and server receipt is 未收到. Numerical and fitting workspaces are untouched.",
+  "updated_date_jst": "2026-11-09",
+  "task_commit": "9ebf5f047b66383ba0de9bc0e33fa6d18dc8c6d4",
+  "handoff_parent_commit": "e64697ded8cf3e712bb1bb14fdf7e1c89a662e91",
+  "numerical_source_commit": "94e9e1de20658fa6eea03c51895931348948d589",
+  "calibration_policy": {
+    "common_parameter_calibration_authorized": true,
+    "new_fit_performed_this_delivery": false,
+    "reference_parameters_changed": false,
+    "current_fit_artifacts": "No current optimizer, loss/window/weight record, or new best candidate found in the inspected local workspace; no Python/mpiexec/wsl jobs observed at preflight. Historical candidates are listed separately.",
+    "scope": "Existing authorized fits retain their original budgets; no restart, budget reset, angle-specific material/width/force factors, or use of unknown post-fracture segments.",
+    "next_search_if_qualified": "Reuse historical sensitivity; common shear scale and mu first, declare fixed K or fixed compressibility before changing shear; no simultaneous tau/K/radius/depth/fracture fitting.",
+    "intact_trial_windows": "0 and 33 degree trial-specific certified windows missing; 57 degree repeated no-crack-to-2mm is condition-level only."
+  },
+  "qualification_windows": [
+    {
+      "angle_deg": 0,
+      "force_trial": "1008n0a2",
+      "numerical_interval_mm": [
+        0,
+        2
+      ],
+      "trial_matched_intact_interval_mm": null,
+      "note": "Approximate 1 mm onset belongs to a1, not a2. 0-0.5 mm is diagnostic only, not certified intact."
+    },
+    {
+      "angle_deg": 33,
+      "force_trial": "1008n33a1",
+      "numerical_interval_mm": [
+        0,
+        2
+      ],
+      "trial_matched_intact_interval_mm": null,
+      "reported_approximate_onset_mm": [
+        1.2,
+        1.3
+      ],
+      "note": "Approximate event information, not a frame-matched label. Late full-range force residual is descriptive, not an intact fitting target."
+    },
+    {
+      "angle_deg": 57,
+      "force_trial": "1014n57a1",
+      "numerical_interval_mm": [
+        0,
+        2
+      ],
+      "trial_matched_intact_interval_mm": null,
+      "condition_level_no_crack_to_mm": 2,
+      "note": "Repeated-test user observation is right-censored at 2 mm; not onset at 2 mm or independent held-out validation."
+    }
+  ],
+  "reference_results": [
+    {
+      "angle_deg": 0,
+      "result": {
+        "path": "runs/intact_a_macro_20261030/angle0/01_angle0/result.json",
+        "sha256": "982af9e308625b2ffa210401dc7e83a7b021de0e643a7dd2ac8729af232d85c0",
+        "bytes": 1694871
+      },
+      "audit": {
+        "path": "runs/intact_a_macro_20261030/angle0/01_angle0/audit.json",
+        "sha256": "1ac4fb8f3f83435a21d41c689c5f7ad0e26d3e307c4a1d40bef6bb778bae892c",
+        "bytes": 57487
+      },
+      "config": {
+        "path": "configs/intact_a_macro_20261030/angle0.json",
+        "sha256": "94600ad7a9fa14a97815fdb62658be3188ccb67a9f2d092cf16908837ac0e43f",
+        "bytes": 1790
+      },
+      "numerical_qualified_interval_mm": [
+        0,
+        2
+      ],
+      "state_count": 201,
+      "checkpoint_sha_verified_count": 201,
+      "source_mismatches": [],
+      "max_residual_n": 9.932789768974678e-05,
+      "minimum_J": 0.12366793318674676,
+      "spatial_temporal_convergence": "not established",
+      "simulation_initial_fz_n": 0.05477711052485708,
+      "precontact_start_depth_mm": -0.005,
+      "first_accepted_dt_s": 0.024999999999999998,
+      "representative_states": [
+        {
+          "path": "runs/intact_a_macro_20261030/angle0/01_angle0/states/0000.npz",
+          "sha256": "838903ce52a01ddbd9b1054918193f440df0f7f0ba66946bf136da43531d926c",
+          "bytes": 2067176,
+          "depth_mm": 0,
+          "state_index": 0,
+          "package_path": "angle0/states/0000.npz"
+        },
+        {
+          "path": "runs/intact_a_macro_20261030/angle0/01_angle0/states/0020.npz",
+          "sha256": "839ce31bfad3a88675d3ac1878ee2f3ee1243056f39b2ab843d11b96fd9e69e5",
+          "bytes": 4097679,
+          "depth_mm": 0.2,
+          "state_index": 20,
+          "package_path": "angle0/states/0020.npz"
+        },
+        {
+          "path": "runs/intact_a_macro_20261030/angle0/01_angle0/states/0050.npz",
+          "sha256": "ab7e61ef1f2d755ee011617219897d6d216fb42eacb9b51f570a9fda28afbff0",
+          "bytes": 4178879,
+          "depth_mm": 0.5,
+          "state_index": 50,
+          "package_path": "angle0/states/0050.npz"
+        }
+      ],
+      "saved_blade_check": {
+        "full_angle_deg": 13.316846337595223,
+        "thickness_mm": 0.24577088241513678,
+        "circle_radius_mm": 0.020000000000000222,
+        "circle_max_error_mm": 6.557254739192331e-16,
+        "meaning": "checks generated geometry only; radius remains assumed, not measured"
+      },
+      "force_metrics": {
+        "0-2": {
+          "rmse_n": 3.872954408938031,
+          "mean_bias_n": 3.538119202357939,
+          "relative_l2": 0.19106627156906023,
+          "max_abs_error_n": 8.57791220401753,
+          "fe_secant_n_mm": 21.106567546746334,
+          "exp_secant_n_mm": 16.845
+        },
+        "0.1-0.5": {
+          "rmse_n": 2.7299077850563425,
+          "mean_bias_n": 2.688367360598403,
+          "relative_l2": 0.5415253876536765,
+          "max_abs_error_n": 3.322729662645332,
+          "fe_secant_n_mm": 21.49434158400271,
+          "exp_secant_n_mm": 17.625
+        },
+        "0.5-1": {
+          "rmse_n": 3.050037121811926,
+          "mean_bias_n": 3.0362738091416865,
+          "relative_l2": 0.2278828226785662,
+          "max_abs_error_n": 3.509651417235739,
+          "fe_secant_n_mm": 18.78890647446243,
+          "exp_secant_n_mm": 20.04
+        },
+        "1-2": {
+          "rmse_n": 4.720462409929311,
+          "mean_bias_n": 4.406125370850731,
+          "relative_l2": 0.1756945200411639,
+          "max_abs_error_n": 8.57791220401753,
+          "fe_secant_n_mm": 21.498385395658435,
+          "exp_secant_n_mm": 15.399999999999999
+        }
+      },
+      "samples": {
+        "0.2": {
+          "fe_n": 5.2678161873985045,
+          "experiment_n": 2.84
+        },
+        "0.5": {
+          "fe_n": 11.375073571127878,
+          "experiment_n": 8.27
+        },
+        "1": {
+          "fe_n": 20.769526808359092,
+          "experiment_n": 18.29
+        },
+        "2": {
+          "fe_n": 42.26791220401753,
+          "experiment_n": 33.69
+        }
+      },
+      "derived_files": [
+        {
+          "path": "angle0/force_residual.csv",
+          "sha256": "c79946ce39debafe93655b3b027aee44ef6992a122e7d04686f78d1a35db24a3",
+          "bytes": 25562
+        },
+        {
+          "path": "angle0/regional_displacement.csv",
+          "sha256": "e59056913d5774e3329621a9ebd328f9a15fe0df5dc4d0005675ef3a239aac58",
+          "bytes": 1065
+        },
+        {
+          "path": "angle0/tip_contact_address.csv",
+          "sha256": "a0555adc424c0d43e4bedcd45d72897007e42c2e7ae141d24afb8849918d0165",
+          "bytes": 8008
+        }
+      ]
+    },
+    {
+      "angle_deg": 33,
+      "result": {
+        "path": "runs/intact_a_macro_20261030/angle33/01_angle33/result.json",
+        "sha256": "f94d9dfc149cbec9f5c3fa77a995b16a58055ae82675f0efae9559d024cf6f7e",
+        "bytes": 1849919
+      },
+      "audit": {
+        "path": "runs/intact_a_macro_20261030/angle33/01_angle33/audit.json",
+        "sha256": "ae398862afd86c3194723b0a1aa369ca89689392e9498578c021bf8a5b6ae617",
+        "bytes": 57488
+      },
+      "config": {
+        "path": "configs/intact_a_macro_20261030/angle33.json",
+        "sha256": "a1f0a0d1fa006f6cc61eb6737bb7e9ba1c2e2cbc6376d064f8b7e95b477b871a",
+        "bytes": 1792
+      },
+      "numerical_qualified_interval_mm": [
+        0,
+        2
+      ],
+      "state_count": 201,
+      "checkpoint_sha_verified_count": 201,
+      "source_mismatches": [],
+      "max_residual_n": 9.933484460886192e-05,
+      "minimum_J": 0.06534720320473919,
+      "spatial_temporal_convergence": "not established",
+      "simulation_initial_fz_n": 0.05655920933189418,
+      "precontact_start_depth_mm": -0.005961816464179737,
+      "first_accepted_dt_s": 0.029809082320898683,
+      "representative_states": [
+        {
+          "path": "runs/intact_a_macro_20261030/angle33/01_angle33/states/0000.npz",
+          "sha256": "e064b678039c6f392f7377e6b26d88e2c1d4fbfdc074d637997184991adab17c",
+          "bytes": 2763257,
+          "depth_mm": 0,
+          "state_index": 0,
+          "package_path": "angle33/states/0000.npz"
+        },
+        {
+          "path": "runs/intact_a_macro_20261030/angle33/01_angle33/states/0020.npz",
+          "sha256": "3864c7defadc8fc873115f474622cdc7254ab375454a41b7d79cf5f18f68142f",
+          "bytes": 4447243,
+          "depth_mm": 0.2,
+          "state_index": 20,
+          "package_path": "angle33/states/0020.npz"
+        },
+        {
+          "path": "runs/intact_a_macro_20261030/angle33/01_angle33/states/0050.npz",
+          "sha256": "dba82bb30a4002ffbd6669406019b9d05d61c23dd6b7e7c2fa36fc12c5201ddb",
+          "bytes": 4499988,
+          "depth_mm": 0.5,
+          "state_index": 50,
+          "package_path": "angle33/states/0050.npz"
+        }
+      ],
+      "saved_blade_check": {
+        "full_angle_deg": 13.316846337595251,
+        "thickness_mm": 0.24577088241513678,
+        "circle_radius_mm": 0.01999999999999995,
+        "circle_max_error_mm": 6.973588373426765e-16,
+        "meaning": "checks generated geometry only; radius remains assumed, not measured"
+      },
+      "force_metrics": {
+        "0-2": {
+          "rmse_n": 4.418388629697565,
+          "mean_bias_n": 4.186531333968053,
+          "relative_l2": 0.23643586981235717,
+          "max_abs_error_n": 7.675268597654085,
+          "fe_secant_n_mm": 19.569354694161095,
+          "exp_secant_n_mm": 15.76
+        },
+        "0.1-0.5": {
+          "rmse_n": 3.0141215073264416,
+          "mean_bias_n": 2.8912861622013786,
+          "relative_l2": 0.6340735061077967,
+          "max_abs_error_n": 4.111398598294029,
+          "fe_secant_n_mm": 22.42823522625449,
+          "exp_secant_n_mm": 15.249999999999998
+        },
+        "0.5-1": {
+          "rmse_n": 4.421600020706888,
+          "mean_bias_n": 4.41776802027338,
+          "relative_l2": 0.36652160845506804,
+          "max_abs_error_n": 4.7400262396389525,
+          "fe_secant_n_mm": 18.36674143605307,
+          "exp_secant_n_mm": 17.68
+        },
+        "1-2": {
+          "rmse_n": 5.059042983395354,
+          "mean_bias_n": 4.953300863597353,
+          "relative_l2": 0.20375848307486447,
+          "max_abs_error_n": 7.675268597654085,
+          "fe_secant_n_mm": 18.470482927564486,
+          "exp_secant_n_mm": 15.07
+        }
+      },
+      "samples": {
+        "0.2": {
+          "fe_n": 5.085727521197093,
+          "experiment_n": 2.81
+        },
+        "0.5": {
+          "fe_n": 11.541414952063064,
+          "experiment_n": 7.609999999999999
+        },
+        "1": {
+          "fe_n": 20.7247856700896,
+          "experiment_n": 16.45
+        },
+        "2": {
+          "fe_n": 39.195268597654085,
+          "experiment_n": 31.52
+        }
+      },
+      "derived_files": [
+        {
+          "path": "angle33/force_residual.csv",
+          "sha256": "1029fc488c63beb315f94a9701862a4c5da6cb46483567707ce2f302e0f90096",
+          "bytes": 25664
+        },
+        {
+          "path": "angle33/regional_displacement.csv",
+          "sha256": "771c7847582493ac38a4f9bf69e636c2a58ba3a93ac69716904f5ba76d10dd1d",
+          "bytes": 1001
+        },
+        {
+          "path": "angle33/tip_contact_address.csv",
+          "sha256": "5f4c6820b207f56a49be2c9c745aeda5778b9b12b9576822a6d72d847b85a037",
+          "bytes": 10954
+        }
+      ]
+    },
+    {
+      "angle_deg": 57,
+      "result": {
+        "path": "runs/intact_a_macro_20261030/angle57/01_angle57/result.json",
+        "sha256": "d13f4b178f40a49ca2f6f9fdc1c7a7df2076c644d7bbb485cfd8d060a93814c5",
+        "bytes": 1838749
+      },
+      "audit": {
+        "path": "runs/intact_a_macro_20261030/angle57/01_angle57/audit.json",
+        "sha256": "0c1b1a22a299174627608046b5873cbea379669e6908b81a2e5276dd19728bb6",
+        "bytes": 57529
+      },
+      "config": {
+        "path": "configs/intact_a_macro_20261030/angle57.json",
+        "sha256": "fa6418f361cab3f89ca36ddc76d70ebe45ce5703f4a6164545b34f7ef150aae8",
+        "bytes": 1792
+      },
+      "numerical_qualified_interval_mm": [
+        0,
+        2
+      ],
+      "state_count": 201,
+      "checkpoint_sha_verified_count": 201,
+      "source_mismatches": [],
+      "max_residual_n": 9.883864660883746e-05,
+      "minimum_J": 0.09801938001379035,
+      "spatial_temporal_convergence": "not established",
+      "simulation_initial_fz_n": 0.045747221054431006,
+      "precontact_start_depth_mm": -0.009180392293883316,
+      "first_accepted_dt_s": 0.04590196146941658,
+      "representative_states": [
+        {
+          "path": "runs/intact_a_macro_20261030/angle57/01_angle57/states/0000.npz",
+          "sha256": "173e0970b72e78df09cfed1ae3c185684c72dd8ce6127bfe9daeefd6426e90b0",
+          "bytes": 2772414,
+          "depth_mm": 0,
+          "state_index": 0,
+          "package_path": "angle57/states/0000.npz"
+        },
+        {
+          "path": "runs/intact_a_macro_20261030/angle57/01_angle57/states/0020.npz",
+          "sha256": "6055582bb282e42f77b75a07653939d3f81e39886fc65b82c194eecd7b0264d1",
+          "bytes": 4440662,
+          "depth_mm": 0.2,
+          "state_index": 20,
+          "package_path": "angle57/states/0020.npz"
+        },
+        {
+          "path": "runs/intact_a_macro_20261030/angle57/01_angle57/states/0050.npz",
+          "sha256": "5eb18bd09c4d64a65909e6e78470d68d6f7c0a9f50722094ca4103f312b2c9e1",
+          "bytes": 4490102,
+          "depth_mm": 0.5,
+          "state_index": 50,
+          "package_path": "angle57/states/0050.npz"
+        }
+      ],
+      "saved_blade_check": {
+        "full_angle_deg": 13.316846337595223,
+        "thickness_mm": 0.24577088241513678,
+        "circle_radius_mm": 0.019999999999999928,
+        "circle_max_error_mm": 6.730727086790012e-16,
+        "meaning": "checks generated geometry only; radius remains assumed, not measured"
+      },
+      "force_metrics": {
+        "0-2": {
+          "rmse_n": 0.5393067803778882,
+          "mean_bias_n": 0.08873551964709342,
+          "relative_l2": 0.029193106797758012,
+          "max_abs_error_n": 1.2417749708917718,
+          "fe_secant_n_mm": 15.131727707976008,
+          "exp_secant_n_mm": 14.674999999999999
+        },
+        "0.1-0.5": {
+          "rmse_n": 0.5447852300920405,
+          "mean_bias_n": 0.3127500989322038,
+          "relative_l2": 0.10632380621612092,
+          "max_abs_error_n": 1.228675218238954,
+          "fe_secant_n_mm": 19.085615071125165,
+          "exp_secant_n_mm": 15.5
+        },
+        "0.5-1": {
+          "rmse_n": 0.7516500785727228,
+          "mean_bias_n": 0.6552545241184486,
+          "relative_l2": 0.058859868378706645,
+          "max_abs_error_n": 1.2417749708917718,
+          "fe_secant_n_mm": 16.015209929071606,
+          "exp_secant_n_mm": 18.419999999999984
+        },
+        "1-2": {
+          "rmse_n": 0.4208725891922338,
+          "mean_bias_n": -0.25784842079674497,
+          "relative_l2": 0.017321951440569607,
+          "max_abs_error_n": 1.0367015484192876,
+          "fe_secant_n_mm": 13.268075808712016,
+          "exp_secant_n_mm": 12.170000000000005
+        }
+      },
+      "samples": {
+        "0.2": {
+          "fe_n": 3.0279010184473054,
+          "experiment_n": 3.12
+        },
+        "0.5": {
+          "fe_n": 9.033521863758628,
+          "experiment_n": 7.970000000000001
+        },
+        "1": {
+          "fe_n": 17.04112682829443,
+          "experiment_n": 17.179999999999993
+        },
+        "2": {
+          "fe_n": 30.309202637006447,
+          "experiment_n": 29.349999999999998
+        }
+      },
+      "derived_files": [
+        {
+          "path": "angle57/force_residual.csv",
+          "sha256": "2d70fa5ef5a25703040b5f2b151b6fd783ae8493fbd95fc0b59b0c8c6a6eb104",
+          "bytes": 26174
+        },
+        {
+          "path": "angle57/regional_displacement.csv",
+          "sha256": "3cf1b4f4fe8ccf99485f7031e6b7dc2590cfc6b271fae0c4d366fb93b33296ef",
+          "bytes": 1009
+        },
+        {
+          "path": "angle57/tip_contact_address.csv",
+          "sha256": "189cfc04f152fd2ddc02021866a3548173b5c6b680f306b0ab4841cd1c04c2fd",
+          "bytes": 8629
+        }
+      ]
+    }
+  ],
+  "numerical_source_sha256": {
+    "mechanics/__init__.py": "1565e3f5f44c394c60e6a53a0239e8f625acdf81468543c26a1211e71728076e",
+    "mechanics/discrete_gradient.py": "f9195454705b30b3b43772dabb08977dcbe5eafb2300286b48b56f2e9421223f",
+    "mechanics/finite_strain.py": "fe1be3a79f088ad29b746c6419200e1882905cb06edc818580100e757722917d",
+    "prototype/cohesive.py": "e7f2e8131d83c106b8bea2be67ee9c1bc16358042f3af38e26ecb6a28473a876",
+    "prototype/cohesive_closure.py": "83de8394d35b664c6fec782e4d9b11b1cc923b1d0185cfda7e01229664fa381b",
+    "prototype/cohesive_cut.py": "32876a11ec4953315f0ce7945540603452d5771b2d7edd0daebfe853bd914cd4",
+    "prototype/cohesive_dynamics.py": "526f7ab60e0c3ea0b24cf806b59b97ecb0b15a8eeda007273b62c785ab158a17",
+    "prototype/cohesive_mixed.py": "76f9be5d02c94584d5eba5d1918f8f7a7b7536847464e968955757c0e7c0ecc2",
+    "prototype/cohesive_network.py": "9b6efd95a03362557ef9390593dc90029870b1d4c14adb04358003df2f25b7a3",
+    "prototype/contact_trace.py": "64ce5c3dd26684486739c38be607b062e7d036267e9fe04db700d7cd0fa1b31c",
+    "prototype/energy_cut.py": "a6899b0c8bcacf98a8dd9bf3c8ed10f77fc29e91716c54925b7ae9ec64759f80",
+    "prototype/extrinsic_topology.py": "e39488ac4ce4e581f1c28514e0c922a0fd0dfc9658b5fb5c0d97b40a7c66574e",
+    "prototype/finite_increment_cut.py": "3e93c6a2005da5aed88bbffecf2e216173a0e845ecebd60dbfd1636628b4956e",
+    "prototype/force_globalization.py": "7ca9200da1a366601149af8488ee977412cdef8b94047383e1bcd485b05d860b",
+    "prototype/geometry.py": "b84a05fdb56ce1c0d22d01bb9a00f6c526c3c7fcd1a1beea4740508f9c6f9af9",
+    "prototype/ipc_reference.py": "f6837777f6045d7c4c89d012f1e5f024a3d3439cb1c394346800a5cc2e20771d",
+    "prototype/ipc_viscoelastic.py": "1c4656a86fa07ae24daf82e8793bcc4db8ba0459493be82d660fd59b9554c5d5",
+    "prototype/linear_solve.py": "f4364011659c12bed7ff069be96bb66509911ac8d8c2e061007f712f436d642b",
+    "prototype/material.py": "e2cd6304b96c7c88bedf78c53d05ccca242de1f4c895ec6b0d03264d7c04ed4b",
+    "prototype/material_case.py": "8e39fdc4013e8ec07468e16dde9695147dbdbb61853227f848757b562595dd03",
+    "prototype/material_performance.py": "61dc46f89dca58b1c039783a722f329cb0a5bd78c885963cf1d340e67b9f4e42",
+    "prototype/model_config.py": "946a8ecff4e988155b6ea02ab731f7a03f5173f7a1ce69f9f2606abd7f3350e0",
+    "prototype/pardiso.py": "0ca7c31d119ba7e53577e77e8f7b0cb8af1507b91cdb87e6dabededc4aaa44b4",
+    "prototype/tip_contact.py": "8967c2e85b0a5c3e4741a4b9dde712900f4e6570a0bb8bd17fbea1f65edf4582",
+    "prototype/zero_gap_cut.py": "0704d97fdb3799fd6e1c94ea54246916790d7fde7f755c9a73be69ae67daa21c",
+    "run_support.py": "97ec99ce97dd3485668f94e234b26509307a949490362e000c7328d1acedac5d",
+    "tools/run_material_candidate.py": "e13b7d38192e27f310270b502a3a4dec950582f3cb9b80cc168d2d6c26dfb70d",
+    "prototype/ipc_baseline.json": "d554704737964ccf226dc8a5948bf228bacba18afee74771c84348428502e7cf"
+  },
+  "historical_candidates": [
+    {
+      "id": "balanced",
+      "angle_deg": 57.0,
+      "result": {
+        "path": "projects/softmodeling/outputs/angle57_priority_20261023/balanced57/01_angle57/result.json",
+        "sha256": "c57fe087223a75234a87f32fe8f17daa73e3551170bafcaeaeec3ecdd1961a56",
+        "bytes": 974393
+      },
+      "Ginf_MPa": 0.2,
+      "Gv_MPa": 0.9,
+      "K_MPa": 23.34333333333331,
+      "tau_s": 1.7,
+      "mu": 0.35,
+      "full_angle_deg": 23.0,
+      "thickness_mm": 0.245,
+      "blade_spacing_mm": 0.005,
+      "completed": true,
+      "mechanical_last_depth_mm": 1.0,
+      "audit_passed": true,
+      "audit": {
+        "path": "projects/softmodeling/outputs/angle57_priority_20261023/balanced57/01_angle57/audit.json",
+        "sha256": "637fab72141efce5b8c866d67c9ce6c2efa1207d47ce29ab1f58a64fb0a4729c",
+        "bytes": 28962
+      },
+      "qualified_interval_mm": [
+        0,
+        1.0
+      ],
+      "status": "historical research candidate, not a new fit or promoted A-low reference",
+      "audit_error": null
+    },
+    {
+      "id": "balanced",
+      "angle_deg": 0.0,
+      "result": {
+        "path": "projects/softmodeling/outputs/angle57_priority_20261023/balanced57/02_angle0/result.json",
+        "sha256": "3935a5c983d39970c7ab600e4202d7f977064f792040285b84a51cc46c972a42",
+        "bytes": 889060
+      },
+      "Ginf_MPa": 0.2,
+      "Gv_MPa": 0.9,
+      "K_MPa": 23.34333333333331,
+      "tau_s": 1.7,
+      "mu": 0.35,
+      "full_angle_deg": 23.0,
+      "thickness_mm": 0.245,
+      "blade_spacing_mm": 0.005,
+      "completed": true,
+      "mechanical_last_depth_mm": 1.0,
+      "audit_passed": true,
+      "audit": {
+        "path": "projects/softmodeling/outputs/angle57_priority_20261023/balanced57/02_angle0/audit.json",
+        "sha256": "82ff15a2ddc690d0cd4c52b8bc957124a12b452773feef62506efb3f9be9f380",
+        "bytes": 28994
+      },
+      "qualified_interval_mm": [
+        0,
+        1.0
+      ],
+      "status": "historical research candidate, not a new fit or promoted A-low reference",
+      "audit_error": null
+    },
+    {
+      "id": "balanced",
+      "angle_deg": 33.0,
+      "result": {
+        "path": "projects/softmodeling/outputs/angle57_priority_20261023/balanced57/03_angle33/result.json",
+        "sha256": "4c5ff3819243c170d7b4b5cf53c3a1e6797135d6d0ed0e42b0ccc4865cd5f757",
+        "bytes": 941141
+      },
+      "Ginf_MPa": 0.2,
+      "Gv_MPa": 0.9,
+      "K_MPa": 23.34333333333331,
+      "tau_s": 1.7,
+      "mu": 0.35,
+      "full_angle_deg": 23.0,
+      "thickness_mm": 0.245,
+      "blade_spacing_mm": 0.005,
+      "completed": true,
+      "mechanical_last_depth_mm": 1.0,
+      "audit_passed": true,
+      "audit": {
+        "path": "projects/softmodeling/outputs/angle57_priority_20261023/balanced57/03_angle33/audit.json",
+        "sha256": "6900fbf019df6c56e568683d24d351589f1285cbf6c19806cc54230b57392eb9",
+        "bytes": 29004
+      },
+      "qualified_interval_mm": [
+        0,
+        1.0
+      ],
+      "status": "historical research candidate, not a new fit or promoted A-low reference",
+      "audit_error": null
+    },
+    {
+      "id": "q25",
+      "angle_deg": 57.0,
+      "result": {
+        "path": "projects/softmodeling/outputs/balanced_shape_20261023/q25/01_angle57/result.json",
+        "sha256": "926adadb76e153043bf7d4ec1c388b4a1ab7a7f6b7d00685e4a703d9c00481d8",
+        "bytes": 977734
+      },
+      "Ginf_MPa": 0.275,
+      "Gv_MPa": 0.825,
+      "K_MPa": 23.34333333333331,
+      "tau_s": 1.7,
+      "mu": 0.35,
+      "full_angle_deg": 23.0,
+      "thickness_mm": 0.245,
+      "blade_spacing_mm": 0.005,
+      "completed": true,
+      "mechanical_last_depth_mm": 1.0,
+      "audit_passed": true,
+      "audit": {
+        "path": "projects/softmodeling/outputs/balanced_shape_20261023/q25/01_angle57/audit.json",
+        "sha256": "ee6f74077a1d352aa716bab89ff32bc7379db3ea75a945fd6cf6d720494a2091",
+        "bytes": 28968
+      },
+      "qualified_interval_mm": [
+        0,
+        1.0
+      ],
+      "status": "historical research candidate, not a new fit or promoted A-low reference",
+      "audit_error": null
+    },
+    {
+      "id": "q25",
+      "angle_deg": 0.0,
+      "result": {
+        "path": "projects/softmodeling/outputs/balanced_shape_20261023/q25/02_angle0/result.json",
+        "sha256": "f3f27a9eb4265d66c4358c30c3a1ba7a9d74c623dc5a117bb493d6e6d8004d36",
+        "bytes": 876194
+      },
+      "Ginf_MPa": 0.275,
+      "Gv_MPa": 0.825,
+      "K_MPa": 23.34333333333331,
+      "tau_s": 1.7,
+      "mu": 0.35,
+      "full_angle_deg": 23.0,
+      "thickness_mm": 0.245,
+      "blade_spacing_mm": 0.005,
+      "completed": true,
+      "mechanical_last_depth_mm": 1.0,
+      "audit_passed": true,
+      "audit": {
+        "path": "projects/softmodeling/outputs/balanced_shape_20261023/q25/02_angle0/audit.json",
+        "sha256": "7b5bda58ec68fc073740c0503083b70d0c1e4f855ed681b436839a66c35f3b09",
+        "bytes": 28985
+      },
+      "qualified_interval_mm": [
+        0,
+        1.0
+      ],
+      "status": "historical research candidate, not a new fit or promoted A-low reference",
+      "audit_error": null
+    },
+    {
+      "id": "q25",
+      "angle_deg": 33.0,
+      "result": {
+        "path": "projects/softmodeling/outputs/balanced_shape_20261023/q25/03_angle33/result.json",
+        "sha256": "abdf4261399be1c625aba365f77ccccba1e4904eb6a0fac491e81819b1c2d777",
+        "bytes": 937010
+      },
+      "Ginf_MPa": 0.275,
+      "Gv_MPa": 0.825,
+      "K_MPa": 23.34333333333331,
+      "tau_s": 1.7,
+      "mu": 0.35,
+      "full_angle_deg": 23.0,
+      "thickness_mm": 0.245,
+      "blade_spacing_mm": 0.005,
+      "completed": true,
+      "mechanical_last_depth_mm": 1.0,
+      "audit_passed": true,
+      "audit": {
+        "path": "projects/softmodeling/outputs/balanced_shape_20261023/q25/03_angle33/audit.json",
+        "sha256": "45e1764ec308e2a6f68b1e902da44363f540bf084d377b4c23938953701008ba",
+        "bytes": 28983
+      },
+      "qualified_interval_mm": [
+        0,
+        1.0
+      ],
+      "status": "historical research candidate, not a new fit or promoted A-low reference",
+      "audit_error": null
+    },
+    {
+      "id": "q50",
+      "angle_deg": 57.0,
+      "result": {
+        "path": "projects/softmodeling/outputs/common_candidate_20261023/common2mm/01_angle57/result.json",
+        "sha256": "31fd3a18369b97ffb18cd396ba0ec709bb6374a1f04e1660f10fe79d973ecaa3",
+        "bytes": 2058905
+      },
+      "Ginf_MPa": 0.345,
+      "Gv_MPa": 0.345,
+      "K_MPa": 23.34333333333331,
+      "tau_s": 1.7,
+      "mu": 0.35,
+      "full_angle_deg": 23.0,
+      "thickness_mm": 0.245,
+      "blade_spacing_mm": 0.005,
+      "completed": false,
+      "mechanical_last_depth_mm": 2.0,
+      "audit_passed": null,
+      "audit": null,
+      "qualified_interval_mm": null,
+      "status": "historical research candidate, not a new fit or promoted A-low reference",
+      "audit_error": "RuntimeError: Material history does not reproduce saved accepted metric",
+      "historically_reported_qualified_depth_mm": 1.25,
+      "qualification_note": "Task commit records 1.25 mm; full local audit missing, 2 mm history audit failed. Do not use full mechanical prefix."
+    },
+    {
+      "id": "q50",
+      "angle_deg": 0.0,
+      "result": {
+        "path": "projects/softmodeling/outputs/common_candidate_20261023/common2mm/02_angle0/result.json",
+        "sha256": "fd79863a5200ecb6a57d91e8ff6ee6e5b8aa045e6cc23f24536b1798fef9fb77",
+        "bytes": 1722948
+      },
+      "Ginf_MPa": 0.345,
+      "Gv_MPa": 0.345,
+      "K_MPa": 23.34333333333331,
+      "tau_s": 1.7,
+      "mu": 0.35,
+      "full_angle_deg": 23.0,
+      "thickness_mm": 0.245,
+      "blade_spacing_mm": 0.005,
+      "completed": true,
+      "mechanical_last_depth_mm": 2.0,
+      "audit_passed": true,
+      "audit": {
+        "path": "projects/softmodeling/outputs/common_candidate_20261023/common2mm/02_angle0/audit.json",
+        "sha256": "9ba0fd594d71082672c83262632a366f1f2b8c9464d2426b21f2f10c09d882c6",
+        "bytes": 57429
+      },
+      "qualified_interval_mm": [
+        0,
+        2.0
+      ],
+      "status": "historical research candidate, not a new fit or promoted A-low reference",
+      "audit_error": null
+    },
+    {
+      "id": "q50",
+      "angle_deg": 33.0,
+      "result": {
+        "path": "projects/softmodeling/outputs/common_candidate_20261023/common2mm/03_angle33/result.json",
+        "sha256": "f02cff02ef1ddb055bd8fd429d2087b5d8581765165e3610f6a3ffc7ade506dd",
+        "bytes": 1222043
+      },
+      "Ginf_MPa": 0.345,
+      "Gv_MPa": 0.345,
+      "K_MPa": 23.34333333333331,
+      "tau_s": 1.7,
+      "mu": 0.35,
+      "full_angle_deg": 23.0,
+      "thickness_mm": 0.245,
+      "blade_spacing_mm": 0.005,
+      "completed": false,
+      "mechanical_last_depth_mm": 1.28,
+      "audit_passed": true,
+      "audit": {
+        "path": "projects/softmodeling/outputs/common_candidate_20261023/common2mm/03_angle33/audit.json",
+        "sha256": "fa7fe6d4f4f6c51e824f2b68be5cf3aaa0683f6ae06d76e78cbb698fd518f53f",
+        "bytes": 36984
+      },
+      "qualified_interval_mm": [
+        0,
+        1.28
+      ],
+      "status": "historical research candidate, not a new fit or promoted A-low reference",
+      "audit_error": null
+    }
+  ],
+  "regional_method": {
+    "bounds_s_n_mm": {
+      "left": [
+        5.5,
+        6.5,
+        3.5,
+        4.5
+      ],
+      "right": [
+        7.5,
+        8.5,
+        3.5,
+        4.5
+      ],
+      "below": [
+        6.5,
+        7.5,
+        2.5,
+        3.5
+      ]
+    },
+    "selection": "Fixed element centroids in undeformed specimen coordinates; reference-area-weighted mean of P1 triangle-mean nodal displacement from accepted depth-zero state.",
+    "components": "laboratory x right / z up, mm",
+    "experimental_comparison": "not performed: no same-trial synchronized regional data certified for these three reference paths"
+  },
+  "historical_video_comparison": {
+    "path": "projects/softmodeling/outputs/video_fe_1mm_20261024/deformation_review/candidates/candidate_comparison.json",
+    "sha256": "97c0fed47e8fb144460c91a6c8938c6798f173d49af43fe2b2de2b3cec350f88",
+    "bytes": 314097
+  },
+  "handoff_delivery": {
+    "manifest": {
+      "path": "runs/baseline_handoff_20261031/reference_delivery_20261109/manifest.json",
+      "sha256": "7cfd3e257a40f943fc4d8f865fa08b887a2b6f2583aa987ecc1e445c9f8c8633",
+      "bytes": 62586
+    },
+    "package": {
+      "path": "runs/baseline_handoff_20261031/reference_delivery_20261109.zip",
+      "sha256": "592fea0ad5bf909391bf67664902fc587ae11993a722404dc68131b0e17a22ea",
+      "bytes": 35023450
+    },
+    "server_result_package_receipt": "未收到",
+    "git_payload": [
+      "configs/intact_baseline_upgrade_20261031.json",
+      "docs/intact_baseline_upgrade_task_20261031.md"
+    ],
+    "raw_or_result_data_in_git": false,
+    "server_checkout_or_cherry_pick": "not verified; GitHub publication is not server receipt",
+    "package_contents": "3 complete result/audit and force curves; 3 original experimental exports; 3 original configs; 9 representative NPZ at 0/.2/.5 mm; derived residual/region/contact tables; two figure groups; provenance manifest.",
+    "package_limit": "Full parent state histories not included. Representative states are for inspection, not proof that arbitrary standalone resumption is supported.",
+    "relative_paths_base": "Original integration workspace root; ZIP member paths relative to package root",
+    "source_maps": "Per-result source map and global numerical_source_sha256; 603 checkpoints matched existing audit, not a new mechanical audit."
+  }
 }
