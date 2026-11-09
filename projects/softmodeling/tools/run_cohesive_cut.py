@@ -375,8 +375,13 @@ def run(config_path, output, seconds, *, ipc_threads=2, blas_threads=1, physical
                 audit_report['cohesive_history_chain_passed']=True
                 write_json(out/'audit.json', audit_report)
                 (out/'audit.pending.json').unlink(missing_ok=True)
-                report['verification']=dict(accepted_prefix_audited=True, accepted_states=len(report['steps']),
-                    scope='fresh residual, positive J, IPC intersection, Maxwell and cohesive history; not experimental or discretization validation')
+                report['verification']=dict(accepted_prefix_audited=audit_report['passed'],
+                    accepted_states=len(report['steps']),
+                    qualified_prefix_states=audit_report.get('qualified_prefix_states',0),
+                    scope='fresh residual, endpoint geometry, physical chord CCD/J, Maxwell and cohesive history; not experimental or discretization validation')
+                if not audit_report['passed']:
+                    report.update(status='audit_failed', completed=False,
+                        audit_error='Saved physical trajectory failed independent audit; endpoint evidence retained')
             except Exception as exc:
                 report.update(status='audit_failed', completed=False, audit_error=f'{type(exc).__name__}: {exc}')
                 report['verification']=dict(accepted_prefix_audited=False, qualified_states=0)

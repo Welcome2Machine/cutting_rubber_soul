@@ -213,8 +213,12 @@ def audit(p,out,report,*,destination=None,progress=None,deadline=None):
         row['checkpoint_sha256']=hashlib.sha256(path.read_bytes()).hexdigest();rows.append(row)
         if progress:progress(row,len(rows),len(report['steps']))
         if len(rows)%25==0:print(f'AUDIT accepted_states={len(rows)}/{len(report["steps"])}',flush=True)
-    result=dict(passed=True,states=len(rows),rows=rows,
-                scope='fresh force/geometry/history checks; not space/time or experimental convergence')
+    prefix=next((i for i,row in enumerate(rows) if not row['passed']),len(rows))
+    result=dict(passed=bool(rows) and prefix==len(rows),states=len(rows),rows=rows,
+                qualified_prefix_states=prefix,
+                endpoint_checks_passed=all(row.get('endpoint_passed',row['passed']) for row in rows),
+                trajectory_checked=bool(rows) and all('trajectory_passed' in row for row in rows),
+                scope='fresh force/geometry/history checks; cohesive paths also check each physical chord; not space/time or experimental convergence')
     write_json(destination or out/'audit.json',result)
     return result
 

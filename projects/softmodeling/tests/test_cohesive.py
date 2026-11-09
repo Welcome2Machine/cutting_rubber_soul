@@ -88,6 +88,27 @@ class CohesiveTests(unittest.TestCase):
         np.testing.assert_array_equal(p.material_metric, before_metric)
         np.testing.assert_array_equal(p.cohesive_maximum, before_damage)
 
+    def test_failed_trajectory_result_cannot_publish_qualified_events(self):
+        from tools.run_cohesive_cut import run
+        root=Path(__file__).resolve().parents[1]
+        config=json.loads((root/'configs/fracture_demo.json').read_text())
+        config['target_mm']=.001
+        def unsafe(p,out,report,**kwargs):
+            return dict(passed=False,endpoint_checks_passed=True,
+                        qualified_prefix_states=1,states=len(report['steps']),rows=[])
+        with tempfile.TemporaryDirectory() as temp:
+            parent=Path(temp);source=parent/'config.json';out=parent/'run'
+            source.write_text(json.dumps(config))
+            with patch('tools.run_cohesive_cut.audit',side_effect=unsafe), patch('tools.run_cohesive_cut.render'):
+                self.assertEqual(run(source,out,10),1)
+            report=json.loads((out/'result.json').read_text())
+            checked=json.loads((out/'audit.json').read_text())
+            self.assertFalse(checked['passed'])
+            self.assertTrue(checked['endpoint_checks_passed'])
+            self.assertEqual(report['status'],'audit_failed')
+            self.assertEqual(report['event_qualification'],'unqualified')
+            self.assertEqual(report['verification']['qualified_prefix_states'],1)
+
     def test_audit_failure_masks_events_and_replaces_positive_audit(self):
         from tools.run_cohesive_cut import run
         root=Path(__file__).resolve().parents[1]

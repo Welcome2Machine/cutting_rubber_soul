@@ -813,8 +813,15 @@ class CohesiveCutProblem(ViscoelasticProblem):
                 for key, expected in self._mixed_energy_record(q).items():
                     np.testing.assert_allclose(state[key], expected, rtol=1e-10, atol=1e-12)
                     np.testing.assert_allclose(record['fracture'][key], expected, rtol=1e-10, atol=1e-12)
-            return dict(result, cohesive_history_passed=True,
-                        max_damage=float(q['damage'].max()))
+            # Safe Newton segments do not certify the physical time-step chord.
+            # Keep endpoint evidence even if the saved two-state trajectory is unsafe.
+            fraction = float(self.safe_step(state['previous_positions'],
+                                           state['positions']-state['previous_positions']))
+            trajectory_passed = bool(np.isfinite(fraction) and fraction >= 1.)
+            return dict(result, passed=trajectory_passed, endpoint_passed=True,
+                        trajectory_passed=trajectory_passed,
+                        physical_chord_safe_fraction=fraction,
+                        cohesive_history_passed=True, max_damage=float(q['damage'].max()))
         finally:
             self.previous_cohesive_maximum = before
 

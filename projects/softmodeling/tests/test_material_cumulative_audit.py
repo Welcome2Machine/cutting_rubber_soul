@@ -34,6 +34,21 @@ class CumulativeReportingAuditTests(unittest.TestCase):
             host, report = self.fixture(directory)
             self.assertTrue(audit(host, directory, report)['passed'])
 
+    def test_safe_endpoints_do_not_certify_unsafe_physical_chord(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory=Path(temp)
+            host,report=self.fixture(directory)
+            host.audit_state=lambda state,record: dict(
+                passed=record['depth_mm']==0., endpoint_passed=True,
+                trajectory_passed=record['depth_mm']==0.,
+                physical_chord_safe_fraction=1. if record['depth_mm']==0. else .006)
+            result=audit(host,directory,report)
+            self.assertFalse(result['passed'])
+            self.assertTrue(result['endpoint_checks_passed'])
+            self.assertTrue(result['trajectory_checked'])
+            self.assertEqual(result['qualified_prefix_states'],1)
+            self.assertEqual(len(result['rows']),2)
+
     def test_tampered_report_cumulative_value_is_rejected(self):
         for index in (0, 1):
             with self.subTest(index=index), tempfile.TemporaryDirectory() as temp:
