@@ -8,10 +8,11 @@
 |---|---|---|
 | 完整体受力、变形和接触 | `tools.run_material_candidate` | `material_case`、`model_config`、`geometry`、`ipc_viscoelastic`、`ipc_reference`、`material`、`mechanics/finite_strain` |
 | 起裂候选指标与危险位置 | `tools.fracture_onset` | `workbench.results.saved_state_fields`、已有应力/能量恢复和邻域平均 |
-| 裂后分离、新面接触与载荷传递 | `tools.run_coupled_growth` | `coupled_cohesive`、`coupled_contact`、`face_cut`、`face_cohesive_quadrature`及其既有基类 |
+| 当前0°/s7单seam机制与off桥接 | `tools.run_cohesive_cut` | `CohesiveCutProblem`、`MixedModeLaw`、`cohesive_closure`；正间隙、有限面闭合、准静态Maxwell/IPC |
+| 历史居中动态裂后证据 | `tools.run_coupled_growth` | `coupled_cohesive`、`coupled_contact`、`face_cut`、`face_cohesive_quadrature`及其既有基类 |
 
 面级P1内聚与真实历史已接入当前耦合机制路线；旧“尚未接入”的说明属于历史阶段。
-当前裂后路线限0°居中、预设mode-I路径，不能直接替代s=7 mm多角度完整体。
+历史coupled路线限0°居中、预设mode-I路径；当前单seam支持实际s7但未解决准静态跳跃，不具备完整裂后资格。
 
 ## 当前构造依赖与整理边界
 

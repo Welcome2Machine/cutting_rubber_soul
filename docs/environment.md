@@ -1,49 +1,49 @@
 # 运行环境与迁移
 
-## C2现有策略固定试步核查（2026-11-02，c401ec7任务）
+## 当前共同核心与单seam原型交付（2026-11-09）
 
-干净工作区从225260b安全快进至c401ec78d33ce7d07d2024648d107b7ecc318bd9；本人初始
-队列为空，module/SysB、spartition、qgroup、CPU拓扑及账户规则重新留档。现场分区
-gr10578b，Rmin/Rstd/Rmax=56/112/112，最大14日；无新增付费资源或旧任务重启。
-运行库 `/LARGE1/gr10578/Zhao_Guorui/SoftCutting/1029/runs/server_1102_c2_policy/`。
-任务单独登记45min运行并集，预留15min；唯一条件solve≤90s、含恢复/审查≤300s。
-未通过第一道门，因此没有自身初态新C2加载、没有续算或第二次条件solve。
+任务基点9ebf5f0；服务器1029开工时bd99be7、暂存与工作区干净、本人队列为空。
+检查origin后fetch并正常快进，保留其他worktree/旧结果，未reset或清理他人文件。
+现场modules为SysB/2022、slurm/2022、intel/2023.2；spartition/qgroup读取gr10578b，
+Rmin/Rstd/Rmax=56/112/112、最大14日，原组占用0。没有新付费资源或恢复旧任务。
 
-唯一实际求解job26364426：p1:t2:c2:m8G，IPC1/BLAS1，物理核亲和性；内部solve90s、
-总诊断250s、外层280s、Slurm300s，使用sbatch --rsc→srun和--no-requeue。
-实际solve39.284214s，含恢复40.642423s；三项诊断/只读核查的保守作业并集57s。
-回归申请4物理核/4计算线程/16GiB以容纳既有默认池。每项实际TRES、HT2拓扑、
-亲和性和线程池均存档；AllocCPUS没有被当成物理核数。
+唯一新运行库：`/LARGE1/gr10578/Zhao_Guorui/SoftCutting/1029/runs/prescribed_seam_20261109/`。
+事前登记4h运行并集，探索最多3h，保留1h交付；每任务≤4物理核/4线程/16GiB，最多2并行。
+加载实际p1:t2:c2:m8G、IPC1/BLAS1和物理核亲和性；回归p1:t4:c4:m16G，IPC2/BLAS1。
+只用本站sbatch --rsc→srun、--no-requeue、内部/进程/Slurm分层截止。
+主路径内部3500s，联合on1800s，半步1500s，均小于单项60min；没有续算或预算重置。
+数值源码在各加载/审查期间冻结，后续新增仅是已结束路径的审查资格修复；原producer源码保留Git。
 
-全部8项作业均已结束：26364426、26364607、26364608、26364614、26364615、
-26364650、26364659、26364752。7项Slurm COMPLETED，首次图表启动26364650因相对
-解释器路径返回127，改用绝对解释器后完成；均计入资源。首版只读审查捕获字段名错误
-后正常保存，其Slurm退出0不代表审查通过；v2使用既有step_limits后核查拒绝证据成功。
-实际条件步和最终independent_balance仍失败，不把程序正常退出当物理成功。
+全部21项作业终态。最终保守运行并集**886s（14分46秒）**，sacct并集874s；
+申请物理核时保守**0.752222h**、sacct口径0.737222h；新增FE加载并集612s。
+排队累计23s另记。最大并发8物理核/8线程申请/32GiB（两项4核回归），单项上限均满足。
+实际ReqTRES/AllocTRES与HT2拓扑逐项匹配；没有将AllocCPUS直接当物理核数。
+TotalCPU按job层合计1138.130s，不重复叠加step；约为申请物理核秒的42.88%。
+作业Elapsed和/运行并集=1.33524仅说明独立作业重叠，不是已测线程加速。
+进程树1s采样RSS峰203399168 B（193.98 MiB）；
+sacct单步骤MaxRSS峰181956608 B（173.53 MiB）。二者采样范围不同，不是精确内存上界。
 
-最终保守运行并集**90s**（含打包、回归、失败启动）；sacct秒级并集84s、原子标记
-78.708419s。物理核时保守**0.0677778h**，调度口径0.0622222h；TotalCPU合计72.130s，
-未重复累加steps。最多同时2项、6物理核/6线程申请/24GiB；单项≤4核/4线程/16GiB。
-新生产加载并集0；含本次真实诊断与全部回归的FE活动保守并集71s。
-诊断/测试/交付阶段并集57/23/19s，因重叠不可直接相加。排队累计7s不计运行预算。
-作业Elapsed和/并集1.08333只反映少量独立作业重叠，不是求解器加速测量。
-单步job TotalCPU/申请物理核秒47.35%；主要使用一个核，未做线程扩展性试验。
-进程树RSS一秒采样峰194355200B（185.35MiB），sacct步骤MaxRSS峰88461312B
-（84.36MiB）；采样范围不同，均不是精确内存上界。停止因为授权前置门失败，非预算耗尽。
+4次早期失败均计入：首次FE回归暴露构造器CCD组合尚未贯通；第二次仅新轮廓比较容差过窄
+（75mm坐标表示差1.42e-14mm，改测试容差，未改物理门）；首次后处理遇NumPy2批量solve RHS维度；
+首次打包传了已有supervisor不支持的stage，未启动FE，改用已有audit类别后完成。
+最终相关FE103通过/40 subtests，根118通过/11无显示GUI跳过；提交前与可达1030 blobs发布检查通过。
 
-根pytest118通过/11跳过，相关FE既有证书与分支回归12通过。解释器、依赖、完整命令、
-配置和来源SHA、原父态两个预测器、原/新拒绝及独立审查在运行库；没有核心源码修改。
-最终资源以`accounting_final.json`和`sacct_final.psv`为准。包内accounting.json是打包前
-快照；其旧FE含回归小计未含诊断，最终账已明确包含诊断，全部作业总并集始终包含它。
+旧audit.json/result.json保留生产端点标签；audit_rechecked.json逐态重组力/历史并补查物理弦。
+原始主路径完成至.8mm，但最大连续安全前缀只到.325mm；不能以Slurm COMPLETED认证切割。
+原生产本地b2c7310与发布5db9bbe、审查本地5968e0d与发布988f991分别逐树一致。
+Git HTTPS无凭据，因此通过已连接GitHub接口create tree/commit并正常快进ref，force=false且检查预期父SHA；
+只变提交作者/时间元数据，文件字节一致。未整分支合并本地成果，本地新拟合包未收到。
 
-精简包绝对路径：
-`/LARGE1/gr10578/Zhao_Guorui/SoftCutting/1029/runs/deliverables/server_1102_c2_policy_review_20261102.tar.gz`
-大小6769777字节，149个逐成员SHA核验文件（另有清单自身）、9份NPZ，SHA256：
-`6218fb7247a6efa8c1e72e9337932ccb3d2fa454daef6abddb477f35e32713cf`。
-含单步重放所需完整父态/预测器及两个拒绝，复用原C2图/表；原1302态完整库仍在
-`runs/server_1102_prototype/c2_half_dt/`，小包不冒充全路径审查库。
-归档旁finalization侧件含最终核账与发布映射，避免包自引用重写。旧宽缺口包未重新制作，
-也未用其新面接触替代本次C2的未发生结论。
+精简包：`runs/deliverables/prescribed_seam_20261109_review.tar.gz`，15215159 bytes、408成员、30个完整关键状态。
+SHA256 `77d46b74df24126deddd86277420226e2a77f91cf473e6bd7c0ade625dc5d6ab`。
+解压后逐成员SHA核验和实际30态重放通过；三个跳跃不安全的反例被再次检出。
+包内accounting_before_delivery明确为打包前快照；最终sacct/核账、重放结果与发布映射见
+`runs/deliverables/prescribed_seam_20261109_final_metadata/`。原完整状态不删、不加入Git。
+停止依据是准静态跳跃能量/CCD与联合正则化敏感性，非预算耗尽。
+
+旧C2核查环境全文在
+[任务基点environment](https://github.com/Welcome2Machine/cutting_rubber_soul/blob/9ebf5f047b66383ba0de9bc0e33fa6d18dc8c6d4/docs/environment.md)。
+以下保留原环境/迁移记录及其当时范围。
 
 ## 科研原型服务器交付（2026-11-02）
 

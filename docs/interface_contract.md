@@ -41,6 +41,15 @@ flowchart LR
 
 公共坐标 `[y,z]` 为右/上，mm；`fy_N` 对应求解器 x，`fz_N` 为竖直向上反力。旧基线缺横向力时保持 null。保存帧之间的深度插值是观测采样，不是新的平衡态，不能用于新时刻能量审查；报告记录左右态和权重。
 
+## 共同FE原型输入与资格（2026-11-09）
+
+既有完整体/内聚入口显式传递drop_s、A-low完整夹角/厚度、速度、初始净空、dhat与位移摩擦正则；旧默认不变。
+输出`resolved_model`从实际构造读取材料、轮廓/网格SHA及时间/摩擦方式，`config`保留旧配置载体，不代表其所有历史字段均生效。
+内聚律以`cohesive_law`为准；`reaction_friction_assembled_fz_n`为独立装配摩擦分量，旧相减字段保留。
+`endpoint_checks_passed`与`trajectory_checked`/逐态`trajectory_passed`分开；
+`qualified_prefix_states`是首个失败弦之前的连续状态数。端点安全的条件静力分支不能作为已验证进入过程导出。
+此变化复用现有入口/报告，不新增一层运行框架。
+
 ## 显式比较配置
 
 `configs/comparison.example.json` 提供 `registration`、`rotation_deg`、`translation_y_mm/translation_z_mm`、`depth_offset_mm`、`max_depth_mm`、`fe_reference_index`、`support_mode`、`intact_status`。
