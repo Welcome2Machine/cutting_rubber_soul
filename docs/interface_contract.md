@@ -250,3 +250,19 @@ Maxwell真实时间与半域完整IPC/CCD，未断法向连接为精确约束，
 接触并报告首次进入区间。`report_coupled_contact`比较共同绝对时刻，不对齐事件。
 净能量余项、绝对数值项（含方程残量功）、窗口完成、进入和时间资格分别保存。
 未测得拒绝量的`worst`可为null；下游不能再无条件解引用或称首条为最严重。
+
+### 受限的全域条件BE事件模式
+
+`tools.run_cohesive_cut`仅在v3、0°、prescribed_seam＋finite_faces配置显式给出`event`时启用；
+默认QS不改变。`role=pilot|window`、`source_kind=qs_condition|dynamic_seed`、`dt_s`、`duration_s`、
+密度及其假设身份、固定`epsilon_v_mm_s=.0004`和源result/audit SHA、源index必须登记。
+QS条件起点仅.300 mm/.295 mm差分速度；先导h=.001且≤.2 s，动态种子窗口h=1e-5或5e-6且≤.005 s。
+源完整请求前缀和逐态SHA必须合格；QS producer绑定固定Git对象，动态种子要求数值文件完全同源。
+这不是普通resume；后者在复制状态前必须核实audit通过且覆盖全部请求态。
+
+输出沿用result/audit/curves/energy_ledger，新增`conditional_initialization`、`initial_state.npz`与逐态`event`。
+初态标为conditional_initialization_only，不计接受步；production_continuation=false，保留原来源与初始能量。
+检查点增加velocity/previous_velocity、event_time/previous_event_time、密度与实际摩擦速度尺度。
+独立审查交叉核对真实时间、刀具运动、速度、A/κ和累积耗散；原拒绝态另存，不能追加为接受尾段。
+`accepted_prefix_audited`只表示逐步力/几何/历史合格；`completed_window`只表示到达请求终点。
+`physical_event_qualified=false`默认保留，必须依据共同时间的运动/事件/能量分配另行研究判断，不能由代数闭合自动授予。

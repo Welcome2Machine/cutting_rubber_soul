@@ -1,6 +1,6 @@
 # 当前科研原型代码地图
 
-更新：2026-11-02。这里只描述活跃调用关系；执行范围见[科研原型任务](../../../researchtopic/research_prototype_task.md)。
+更新：2026-11-09。这里只描述活跃调用关系；执行范围见[科研原型任务](../../../researchtopic/research_prototype_task.md)。
 
 ## 活跃路径
 
@@ -8,11 +8,13 @@
 |---|---|---|
 | 完整体受力、变形和接触 | `tools.run_material_candidate` | `material_case`、`model_config`、`geometry`、`ipc_viscoelastic`、`ipc_reference`、`material`、`mechanics/finite_strain` |
 | 起裂候选指标与危险位置 | `tools.fracture_onset` | `workbench.results.saved_state_fields`、已有应力/能量恢复和邻域平均 |
-| 当前0°/s7单seam机制与off桥接 | `tools.run_cohesive_cut` | `CohesiveCutProblem`、`MixedModeLaw`、`cohesive_closure`；正间隙、有限面闭合、准静态Maxwell/IPC |
+| 当前0°/s7单seam机制与off桥接 | `tools.run_cohesive_cut` | `CohesiveCutProblem`、`MixedModeLaw`、`cohesive_closure`；正间隙、有限面闭合；默认QS Maxwell/IPC，显式event增加全域BE惯性 |
 | 历史居中动态裂后证据 | `tools.run_coupled_growth` | `coupled_cohesive`、`coupled_contact`、`face_cut`、`face_cohesive_quadrature`及其既有基类 |
 
 面级P1内聚与真实历史已接入当前耦合机制路线；旧“尚未接入”的说明属于历史阶段。
-历史coupled路线限0°居中、预设mode-I路径；当前单seam支持实际s7但未解决准静态跳跃，不具备完整裂后资格。
+历史coupled路线限0°居中、预设mode-I路径；当前单seam支持实际s7；受限BE条件实验复用同一类/入口，未完成连通/进入窗口，不具备完整裂后资格。
+`event_step`登记实际h，`initialize_event`核对QS条件初态或同源动态种子；既有audit增加显式动态初态链。
+没有新增runner、换类或通用控制器；QS默认与历史coupled路径分开。
 
 ## 当前构造依赖与整理边界
 

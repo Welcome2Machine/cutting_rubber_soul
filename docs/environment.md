@@ -1,49 +1,56 @@
 # 运行环境与迁移
 
-## 当前共同核心与单seam原型交付（2026-11-09）
+## 当前条件惯性事件交付（2026-11-09）
 
-任务基点9ebf5f0；服务器1029开工时bd99be7、暂存与工作区干净、本人队列为空。
-检查origin后fetch并正常快进，保留其他worktree/旧结果，未reset或清理他人文件。
-现场modules为SysB/2022、slurm/2022、intel/2023.2；spartition/qgroup读取gr10578b，
-Rmin/Rstd/Rmax=56/112/112、最大14日，原组占用0。没有新付费资源或恢复旧任务。
+任务固定b30aa743。开工时74416154、分支codex/server-fracture-20261029正确，完整index与工作区干净、本人无活动作业。
+核对origin、fetch后审查纯任务差异并正常快进；保留全部旧结果/其他worktree，未reset/clean/stash他人文件。
+固定df2372ed本地两份文字交接已读取，未整分支合并；本地完整体计算仍消费74416154，不自动跟随动态核心。
+现场modules为SysB/2022、slurm/2022、intel/2023.2；spartition/qgroup确认gr10578b，
+Rmin/Rstd/Rmax=56/112/112、最长14日、开工组占用0。没有新增付费资源或复活旧队列。
 
-唯一新运行库：`/LARGE1/gr10578/Zhao_Guorui/SoftCutting/1029/runs/prescribed_seam_20261109/`。
-事前登记4h运行并集，探索最多3h，保留1h交付；每任务≤4物理核/4线程/16GiB，最多2并行。
-加载实际p1:t2:c2:m8G、IPC1/BLAS1和物理核亲和性；回归p1:t4:c4:m16G，IPC2/BLAS1。
-只用本站sbatch --rsc→srun、--no-requeue、内部/进程/Slurm分层截止。
-主路径内部3500s，联合on1800s，半步1500s，均小于单项60min；没有续算或预算重置。
-数值源码在各加载/审查期间冻结，后续新增仅是已结束路径的审查资格修复；原producer源码保留Git。
+运行根`/LARGE1/gr10578/Zhao_Guorui/SoftCutting/1029/runs/seam_inertia_20261109/`。
+登记全轮运行并集4h，加载/探索最多3h，保留1h审查；最多2并发、每项≤4物理核/4线程/16GiB。
+恰好三条FE：h=.001先导和h=10/5 μs同种子窗口，没有追加步长级别、控制器或续算。
+每条内部3500s含120s独立审查预留、进程3540s、Slurm3600s；实际都提前因求解门失败保存退出。
+加载p1:t2:c2:m8G、IPC1/BLAS1、物理核亲和性；直接回归p1:t4:c4:m16G、IPC2/BLAS1。
+所有数值装配、回归、审查、绘图、打包/重放走sbatch --rsc→srun，--no-requeue；没有登录节点FE。
+数值源码在活动作业期间冻结，必要文档修改不进入数值哈希。
 
-全部21项作业终态。最终保守运行并集**886s（14分46秒）**，sacct并集874s；
-申请物理核时保守**0.752222h**、sacct口径0.737222h；新增FE加载并集612s。
-排队累计23s另记。最大并发8物理核/8线程申请/32GiB（两项4核回归），单项上限均满足。
-实际ReqTRES/AllocTRES与HT2拓扑逐项匹配；没有将AllocCPUS直接当物理核数。
-TotalCPU按job层合计1138.130s，不重复叠加step；约为申请物理核秒的42.88%。
-作业Elapsed和/运行并集=1.33524仅说明独立作业重叠，不是已测线程加速。
-进程树1s采样RSS峰203399168 B（193.98 MiB）；
-sacct单步骤MaxRSS峰181956608 B（173.53 MiB）。二者采样范围不同，不是精确内存上界。
+最终全部16作业终态（包括首次缺allocations目录、尚未启动FE的失败作业26670434）。
+加载作业26673780/26673855/26673856；实际程序保存并审查后进程正常结束不等于研究窗口通过。
+保守运行并集**567s（9分27秒）**，sacct并集555s、原子标记547.103s；新增FE加载并集335s。
+申请物理核时保守**.390556h**，sacct口径.38h；排队累计33s单列，不计运行。
+job层TotalCPU总592.923s，不叠加step；占申请物理核秒43.34%。各加载约49.68–52.28%，
+符合IPC1/BLAS1和8GiB资源申请的两物理核分配；没有做线程扩展测试。
+Elapsed和/运行并集1.13694仅表示独立任务重叠，不是单求解器加速。
+最高并发8物理核/8计算线程申请/32GiB（两项4核回归），各单项上限满足。
+已回读ReqTRES/AllocTRES并用HT2拓扑核实；AllocCPUS逻辑数没有直接当物理核时。
+1s采样进程树RSS峰236687360 B（225.72 MiB），sacct单步骤MaxRSS峰121806848 B（116.16 MiB）；
+两者范围不同，均非严格内存上界。原始sacct、每项worker/亲和性/线程池与accounting.json完整保留。
 
-4次早期失败均计入：首次FE回归暴露构造器CCD组合尚未贯通；第二次仅新轮廓比较容差过窄
-（75mm坐标表示差1.42e-14mm，改测试容差，未改物理门）；首次后处理遇NumPy2批量solve RHS维度；
-首次打包传了已有supervisor不支持的stage，未启动FE，改用已有audit类别后完成。
-最终相关FE103通过/40 subtests，根118通过/11无显示GUI跳过；提交前与可达1030 blobs发布检查通过。
+相关FE首组94通过/40 subtests，最后针对性18通过/2 subtests（含新BE实际单步独立重装）；
+不是将有交叠测试数相加。根118通过、11无显示GUI跳过。恢复false/短前缀拒绝、完整质量、BE恒等式、
+实际摩擦尺度及真实不安全弦的准确回滚均覆盖。数值提交发布检查5 blobs通过；最终文档另核可达内容。
 
-旧audit.json/result.json保留生产端点标签；audit_rechecked.json逐态重组力/历史并补查物理弦。
-原始主路径完成至.8mm，但最大连续安全前缀只到.325mm；不能以Slurm COMPLETED认证切割。
-原生产本地b2c7310与发布5db9bbe、审查本地5968e0d与发布988f991分别逐树一致。
-Git HTTPS无凭据，因此通过已连接GitHub接口create tree/commit并正常快进ref，force=false且检查预期父SHA；
-只变提交作者/时间元数据，文件字节一致。未整分支合并本地成果，本地新拟合包未收到。
+数值本地producer3506854、公开00db3922整树b3249435相同。HTTPS push无凭据，使用已连接GitHub
+create-tree/commit后以expected_sha、force=false正常快进；仅提交元数据变化，不伪改源文件hash。
+旧5db9bbe/74416154、原.8mm失败审查及所有原始状态保留。停止由三条限定路径的原方程求解失败触发，非预算到期。
 
-精简包：`runs/deliverables/prescribed_seam_20261109_review.tar.gz`，15215159 bytes、408成员、30个完整关键状态。
-SHA256 `77d46b74df24126deddd86277420226e2a77f91cf473e6bd7c0ade625dc5d6ab`。
-解压后逐成员SHA核验和实际30态重放通过；三个跳跃不安全的反例被再次检出。
-包内accounting_before_delivery明确为打包前快照；最终sacct/核账、重放结果与发布映射见
-`runs/deliverables/prescribed_seam_20261109_final_metadata/`。原完整状态不删、不加入Git。
-停止依据是准静态跳跃能量/CCD与联合正则化敏感性，非预算耗尽。
+精简包：`runs/deliverables/seam_inertia_20261109_review.tar.gz`，13401733 bytes、228成员，
+19动态接受关键态＋5旧QS态＋三份拒绝，SHA256
+`d64dcde81b8df31a883f6bfb21c0fec9e4c767af8556da3431ebda5617ea47a4`。
+解包逐文件核验通过；19态重新装配通过，三份拒绝残差仍大于1e-4 N。完整链在服务器库，包内清单明确未收入的状态。
+最终账/重放/发布映射放`runs/deliverables/seam_inertia_20261109_final_metadata/`，不循环改写包。
 
-旧C2核查环境全文在
-[任务基点environment](https://github.com/Welcome2Machine/cutting_rubber_soul/blob/9ebf5f047b66383ba0de9bc0e33fa6d18dc8c6d4/docs/environment.md)。
-以下保留原环境/迁移记录及其当时范围。
+连续完整体0–.2mm已有41态复用打包，无新桥接加载：
+`runs/deliverables/intact_s7_server_reference_20261109.tar.gz`，9926891 bytes，SHA256
+`2be72606342b9a717d98d4adc962eefddca8b38b2ceadb18d88393c1a04b9e9e`。
+服务器已备齐原配置/命令/result/audit/41态及逐文件清单；**本地未确认实收**。
+本地35MB原始结果包也未收到；不能把Git交接文字可读当原始包已到。
+
+上一轮共同输入、三条桥接与QS敏感性全文见
+[74416154环境记录](https://github.com/Welcome2Machine/cutting_rubber_soul/blob/74416154e2b250dd528a730a72e3c9d6e9f4653c/docs/environment.md)。
+以下旧环境/迁移记录保留其当时范围。
 
 ## 科研原型服务器交付（2026-11-02）
 
