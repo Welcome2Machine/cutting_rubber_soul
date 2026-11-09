@@ -1,7 +1,7 @@
 {
   "schema": "softcut-intact-baseline-upgrade-handoff/1",
   "created_date_jst": "2026-10-31",
-  "purpose": "Current reference inputs, qualified results and experimental/candidate evidence handoff for paper 1; NOT a runnable solver configuration.",
+  "purpose": "Current cross-end continuous-intact discretization attribution plus preserved historical reference provenance; NOT a runnable solver configuration.",
   "automatic_launch": false,
   "fracture_enabled": false,
   "angles_deg": [
@@ -172,23 +172,25 @@
     "numerical_core_owner": "server agent, sole integrator",
     "paper_1": "experiments plus explanatory forward simulation",
     "paper_2": "possible learning/differentiable solver/PINN; retain inputs, true history and provenance only; no implementation now",
-    "new_FE_started": false,
+    "new_FE_started": true,
     "full_six_angle_rerun": false,
-    "shared_numerical_files_changed": false
+    "shared_numerical_files_changed": false,
+    "current_round": "Exactly two independent 0-degree s7 continuous-intact 0-0.2 mm paths at pinned core; fine body plus coarse reproduction because original server data were not received."
   },
-  "publishing": "Only the two existing handoff text/config files; data package remains local and server receipt is 未收到. Numerical and fitting workspaces are untouched.",
+  "publishing": "Only the two existing handoff files. New result package and original server package both have no server/local receipt confirmation respectively; original data and numerical workspaces unchanged.",
   "updated_date_jst": "2026-11-09",
-  "task_commit": "9ebf5f047b66383ba0de9bc0e33fa6d18dc8c6d4",
-  "handoff_parent_commit": "e64697ded8cf3e712bb1bb14fdf7e1c89a662e91",
+  "task_commit": "b30aa7437aaf96438583af512451b5de711abf8e",
+  "handoff_parent_commit": "df2372edf735bf7eb249e858a062164d5975edb1",
   "numerical_source_commit": "94e9e1de20658fa6eea03c51895931348948d589",
   "calibration_policy": {
     "common_parameter_calibration_authorized": true,
     "new_fit_performed_this_delivery": false,
     "reference_parameters_changed": false,
-    "current_fit_artifacts": "No current optimizer, loss/window/weight record, or new best candidate found in the inspected local workspace; no Python/mpiexec/wsl jobs observed at preflight. Historical candidates are listed separately.",
+    "current_fit_artifacts": "No active optimizer or new optimum found; none restarted. This round fixes all material parameters.",
     "scope": "Existing authorized fits retain their original budgets; no restart, budget reset, angle-specific material/width/force factors, or use of unknown post-fracture segments.",
     "next_search_if_qualified": "Reuse historical sensitivity; common shear scale and mu first, declare fixed K or fixed compressibility before changing shear; no simultaneous tau/K/radius/depth/fracture fitting.",
-    "intact_trial_windows": "0 and 33 degree trial-specific certified windows missing; 57 degree repeated no-crack-to-2mm is condition-level only."
+    "intact_trial_windows": "0 and 33 degree trial-specific certified windows missing; 57 degree repeated no-crack-to-2mm is condition-level only.",
+    "current_round_new_fitting_authorized": false
   },
   "qualification_windows": [
     {
@@ -965,6 +967,21 @@
     "bytes": 314097
   },
   "handoff_delivery": {
+    "package_path": "runs/baseline_handoff_20261031/cross_end_alignment/delivery.zip",
+    "sha256": "a9a7b3f485e1fc3f87c45adf2f56874982be90b36a0b7a555084e18b769690ca",
+    "bytes": 19690347,
+    "server_receipt": "未收到",
+    "manifest_sha256": "97a4aebf924742f8f34208aca3540da9b62e68873665cfdab3f221dab5777309",
+    "metadata_sha256": "db2c26970bd46d2ba8424cbe0a2da27125cad7586066a72ab0bdeb114446e23a",
+    "summary_sha256": "f8ba7403903ccef23716e815da6de0a6f65474d693e14186fcfb6116f8181e58",
+    "git_payload": [
+      "configs/intact_baseline_upgrade_20261031.json",
+      "docs/intact_baseline_upgrade_task_20261031.md"
+    ],
+    "raw_or_result_data_in_git": false,
+    "server_checkout_or_cherry_pick": "not verified; GitHub push is not server receipt"
+  },
+  "previous_reference_delivery": {
     "manifest": {
       "path": "runs/baseline_handoff_20261031/reference_delivery_20261109/manifest.json",
       "sha256": "7cfd3e257a40f943fc4d8f865fa08b887a2b6f2583aa987ecc1e445c9f8c8633",
@@ -986,5 +1003,509 @@
     "package_limit": "Full parent state histories not included. Representative states are for inspection, not proof that arbitrary standalone resumption is supported.",
     "relative_paths_base": "Original integration workspace root; ZIP member paths relative to package root",
     "source_maps": "Per-result source map and global numerical_source_sha256; 603 checkpoints matched existing audit, not a new mechanical audit."
+  },
+  "current_control": {
+    "question": "At 0 degrees, d=.2 mm, explain local5.2678161874 vs reported server6.361196 N without fitting.",
+    "task_sha": "b30aa7437aaf96438583af512451b5de711abf8e",
+    "pinned_core_sha": "74416154e2b250dd528a730a72e3c9d6e9f4653c",
+    "alignment": [
+      {
+        "setting": "material_Ginf_Gv_K_MPa_tau_s_mu",
+        "old_local": [
+          0.14,
+          1.24,
+          23.34333333333331,
+          1.7,
+          0.35
+        ],
+        "reported_server": [
+          0.14,
+          1.24,
+          23.34333333333331,
+          1.7,
+          0.35
+        ],
+        "controlled_both": [
+          0.14,
+          1.24,
+          23.34333333333331,
+          1.7,
+          0.35
+        ]
+      },
+      {
+        "setting": "length_height_width_drop_mm_angle_deg",
+        "old_local": [
+          30,
+          5,
+          20,
+          7,
+          0
+        ],
+        "reported_server": [
+          30,
+          5,
+          20,
+          7,
+          0
+        ],
+        "controlled_both": [
+          30,
+          5,
+          20,
+          7,
+          0
+        ]
+      },
+      {
+        "setting": "blade_full_angle_deg_thickness_mm_assumed_radius_mm",
+        "controlled_both": [
+          13.31684633759535,
+          0.24577088241513723,
+          0.02
+        ],
+        "old_and_reported_server": "same"
+      },
+      {
+        "setting": "body_local_surface_coarse_finehalfwidth_mm",
+        "old_local": [
+          0.05,
+          0.005,
+          1,
+          3
+        ],
+        "reported_server": [
+          0.4,
+          0.04,
+          0.75,
+          3
+        ],
+        "controlled_fine": [
+          0.05,
+          0.005,
+          0.75,
+          3
+        ],
+        "controlled_coarse": [
+          0.4,
+          0.04,
+          0.75,
+          3
+        ]
+      },
+      {
+        "setting": "body_nodes_triangles",
+        "old_local": [
+          24955,
+          48466
+        ],
+        "reported_server": [
+          1496,
+          2720
+        ],
+        "controlled_fine": [
+          24955,
+          48466
+        ],
+        "controlled_coarse": [
+          1496,
+          2720
+        ]
+      },
+      {
+        "setting": "nose_facets_blade_spacing_mm",
+        "old_local": [
+          64,
+          null
+        ],
+        "reported_server": [
+          32,
+          0.025
+        ],
+        "controlled_both": [
+          32,
+          0.025
+        ]
+      },
+      {
+        "setting": "increment_mm_regular_dt_s",
+        "old_local": [
+          0.01,
+          0.05
+        ],
+        "reported_server": [
+          0.005,
+          0.025
+        ],
+        "controlled_both": [
+          0.005,
+          0.025
+        ]
+      },
+      {
+        "setting": "initial_depth_mm_first_dt_s",
+        "old_local": [
+          -0.005,
+          0.025
+        ],
+        "reported_server": {
+          "initial_depth_mm": -0.02,
+          "first_dt_from_declared_settings_s": 0.1,
+          "raw_dt_record_received": false
+        },
+        "controlled_both": [
+          -0.02,
+          0.1
+        ]
+      },
+      {
+        "setting": "contact_dhat_mm_fixed_friction_epsilon_u_mm",
+        "old_local": [
+          0.0025,
+          1e-05
+        ],
+        "reported_server": [
+          0.0025,
+          1e-05
+        ],
+        "controlled_both": [
+          0.0025,
+          1e-05
+        ],
+        "note": "regular-step equivalent epsilon_v old .0002, new .0004 mm/s; both retain fixed displacement smoothing, not a velocity law"
+      },
+      {
+        "setting": "production_source",
+        "old_local": "94e9e1de20658fa6eea03c51895931348948d589",
+        "reported_server": "5db9bbe45172670ce12ca7b3365b32f65d69d8ef production / 988f99150b62d0a004055bedfb8b3ce6dab5f605 audit",
+        "controlled_both": "74416154e2b250dd528a730a72e3c9d6e9f4653c"
+      },
+      {
+        "setting": "regions",
+        "old_published": "fixed centroid-selected reference area-weighted P1 mean",
+        "server_published": "fixed reference P1 probes; exact coordinates not received",
+        "controlled_and_old_reextracted": "same 100 fixed uniform cell-center probes in each of left/right/below region, P1 barycentric interpolation, mean relative to own accepted depth-zero state"
+      },
+      {
+        "setting": "dependencies",
+        "controlled_and_old_local": "Windows Python 3.10; current NumPy2.2.6 SciPy1.15.3 IPC1.6.0; existing runtime reused",
+        "reported_server": "actual interpreter/dependency metadata not received; do not invent equality"
+      }
+    ],
+    "server_original_package": {
+      "path": "runs/deliverables/prescribed_seam_20261109_review.tar.gz",
+      "sha256": "77d46b74df24126deddd86277420226e2a77f91cf473e6bd7c0ade625dc5d6ab",
+      "received": false
+    },
+    "new_paths": {
+      "fine_body": {
+        "mesh": {
+          "nodes": 24955,
+          "elements": 48466
+        },
+        "load_elapsed_including_setup_s": 273.25,
+        "audit_passed": true,
+        "native_audit": {
+          "material_batch_size": 0,
+          "linear_backend": "native",
+          "fresh_problem": true,
+          "states": 41,
+          "scope": "Whole accepted path; exact dual histories, physical dt and dissipation chain"
+        },
+        "chord_passed": true,
+        "minimum_chord_fraction": 1.0,
+        "max_residual_n": 8.26702237588974e-05,
+        "min_J": 0.7216729945907917,
+        "max_component_closure_n": 1.1102230246251565e-15,
+        "rejected_attempts": 0,
+        "result": {
+          "path": "runs/baseline_handoff_20261031/cross_end_alignment/fine_body/result.json",
+          "sha256": "1e9dd79b401887f6d1ffc5dd46a0c6fa75ceb0ed3a4344f02aacd82e06d0179d",
+          "bytes": 316515
+        },
+        "audit": {
+          "path": "runs/baseline_handoff_20261031/cross_end_alignment/fine_body/audit.json",
+          "sha256": "304301ef7414b5d2dca4e9ed6359a9eea211d1fdd548910a2fce95b35bb18f06",
+          "bytes": 12023
+        },
+        "geometry": {
+          "actual_wedge_included_angle_deg": 13.316846337595223,
+          "actual_blade_thickness_mm": 0.24577088241513678,
+          "actual_arc_radius_mm": 0.020000000000000098,
+          "arc_fit_max_error_mm": 5.30825383648903e-16,
+          "radius_status": "assumed, not independently measured",
+          "blade_reference_sha256": "3dfb56350573499f7bac2c008fe73a4209bf2c16c4c7015321b422f47e1f55d8",
+          "body_reference_sha256": "a841dc09b202ab11762bb0fcd060e61b695971ee2b884fa90338176bebc0ea3d",
+          "triangles_sha256": "4b40480574f10daeb4f596db603e4fd02d72d9cb2d0ceaa07a558d7f7ac278d2",
+          "nodes": 24955,
+          "triangles": 48466,
+          "nose_facets": 32,
+          "blade_spacing_mm": 0.025,
+          "reference_volume_mm3": 3000.0
+        },
+        "samples": [
+          {
+            "depth_mm": 0.0,
+            "total_fz_n": 0.05286489869734079,
+            "normal_fz_n": 0.05173135330117394,
+            "friction_assembled_fz_n": 0.0011335453961668514,
+            "component_closure_n": -2.3852447794681098e-18
+          },
+          {
+            "depth_mm": 0.049999999999999996,
+            "total_fz_n": 1.4189311249312957,
+            "normal_fz_n": 1.3282580068832681,
+            "friction_assembled_fz_n": 0.09067311804802758,
+            "component_closure_n": 0.0
+          },
+          {
+            "depth_mm": 0.1,
+            "total_fz_n": 2.7896968360916867,
+            "normal_fz_n": 2.487530198995469,
+            "friction_assembled_fz_n": 0.3021666370962174,
+            "component_closure_n": 3.3306690738754696e-16
+          },
+          {
+            "depth_mm": 0.15,
+            "total_fz_n": 4.082642021382888,
+            "normal_fz_n": 3.489067525620653,
+            "friction_assembled_fz_n": 0.5935744957622355,
+            "component_closure_n": -4.440892098500626e-16
+          },
+          {
+            "depth_mm": 0.2,
+            "total_fz_n": 5.28816384372637,
+            "normal_fz_n": 4.333731869937143,
+            "friction_assembled_fz_n": 0.9544319737892264,
+            "component_closure_n": 2.220446049250313e-16
+          }
+        ],
+        "regional_endpoint": [
+          {
+            "case": "fine_body",
+            "index": 40,
+            "depth_mm": 0.2,
+            "region": "left",
+            "probe_count": 100,
+            "ux_mm": -0.021304297371953485,
+            "uz_mm": -0.032127604686211904
+          },
+          {
+            "case": "fine_body",
+            "index": 40,
+            "depth_mm": 0.2,
+            "region": "right",
+            "probe_count": 100,
+            "ux_mm": 0.017352239006478712,
+            "uz_mm": -0.03238660528331466
+          },
+          {
+            "case": "fine_body",
+            "index": 40,
+            "depth_mm": 0.2,
+            "region": "below",
+            "probe_count": 100,
+            "ux_mm": -0.0020212973243549496,
+            "uz_mm": -0.03409090601679149
+          }
+        ],
+        "command_file": "runs/baseline_handoff_20261031/cross_end_alignment/fine_launch.json",
+        "source_hashes_location": "result.json:source_sha256 and metadata.json; no per-state list copied here"
+      },
+      "coarse_body": {
+        "mesh": {
+          "nodes": 1496,
+          "elements": 2720
+        },
+        "load_elapsed_including_setup_s": 17.0,
+        "audit_passed": true,
+        "native_audit": {
+          "material_batch_size": 0,
+          "linear_backend": "native",
+          "fresh_problem": true,
+          "states": 41,
+          "scope": "Whole accepted path; exact dual histories, physical dt and dissipation chain"
+        },
+        "chord_passed": true,
+        "minimum_chord_fraction": 1.0,
+        "max_residual_n": 5.3781356047044867e-05,
+        "min_J": 0.814976310043785,
+        "max_component_closure_n": 9.43689570931383e-16,
+        "rejected_attempts": 0,
+        "result": {
+          "path": "runs/baseline_handoff_20261031/cross_end_alignment/coarse_body/result.json",
+          "sha256": "2e7926f72a1a9f3c402eced1b553723bed83423c60c65eb2ac013e2cfba0e896",
+          "bytes": 307394
+        },
+        "audit": {
+          "path": "runs/baseline_handoff_20261031/cross_end_alignment/coarse_body/audit.json",
+          "sha256": "f9d31cd50609125b02c6062183151576eca996d222e9fa62c7d66bcf3f711ca7",
+          "bytes": 12028
+        },
+        "geometry": {
+          "actual_wedge_included_angle_deg": 13.316846337595223,
+          "actual_blade_thickness_mm": 0.24577088241513678,
+          "actual_arc_radius_mm": 0.020000000000000098,
+          "arc_fit_max_error_mm": 5.30825383648903e-16,
+          "radius_status": "assumed, not independently measured",
+          "blade_reference_sha256": "3dfb56350573499f7bac2c008fe73a4209bf2c16c4c7015321b422f47e1f55d8",
+          "body_reference_sha256": "15201c2aadc8dd1631cade557c4821925187eaaf6c39251652d093d8bd8f14ec",
+          "triangles_sha256": "94b9d55b9f8cb14ca7064426829a508371c007d1c43e947593a7689160be8fb8",
+          "nodes": 1496,
+          "triangles": 2720,
+          "nose_facets": 32,
+          "blade_spacing_mm": 0.025,
+          "reference_volume_mm3": 3000.0
+        },
+        "samples": [
+          {
+            "depth_mm": 0.0,
+            "total_fz_n": 0.07380397569338622,
+            "normal_fz_n": 0.07376415897371803,
+            "friction_assembled_fz_n": 3.981671966817856e-05,
+            "component_closure_n": 5.671732614814795e-18
+          },
+          {
+            "depth_mm": 0.049999999999999996,
+            "total_fz_n": 1.6809671875922838,
+            "normal_fz_n": 1.6179138488667972,
+            "friction_assembled_fz_n": 0.06305333872548666,
+            "component_closure_n": -8.326672684688674e-17
+          },
+          {
+            "depth_mm": 0.1,
+            "total_fz_n": 3.3010350193504796,
+            "normal_fz_n": 3.183269180786707,
+            "friction_assembled_fz_n": 0.11776583856377204,
+            "component_closure_n": 4.996003610813204e-16
+          },
+          {
+            "depth_mm": 0.15,
+            "total_fz_n": 4.865563319314479,
+            "normal_fz_n": 4.523495749883292,
+            "friction_assembled_fz_n": 0.3420675694311871,
+            "component_closure_n": -3.3306690738754696e-16
+          },
+          {
+            "depth_mm": 0.2,
+            "total_fz_n": 6.361195893699095,
+            "normal_fz_n": 5.686957262161656,
+            "friction_assembled_fz_n": 0.674238631537438,
+            "component_closure_n": 2.220446049250313e-16
+          }
+        ],
+        "regional_endpoint": [
+          {
+            "case": "coarse_body",
+            "index": 40,
+            "depth_mm": 0.2,
+            "region": "left",
+            "probe_count": 100,
+            "ux_mm": -0.024901723105307364,
+            "uz_mm": -0.03796954556099189
+          },
+          {
+            "case": "coarse_body",
+            "index": 40,
+            "depth_mm": 0.2,
+            "region": "right",
+            "probe_count": 100,
+            "ux_mm": 0.019193228525010902,
+            "uz_mm": -0.03827235685599605
+          },
+          {
+            "case": "coarse_body",
+            "index": 40,
+            "depth_mm": 0.2,
+            "region": "below",
+            "probe_count": 100,
+            "ux_mm": -0.0023466842346056647,
+            "uz_mm": -0.04027120611961076
+          }
+        ],
+        "command_file": "runs/baseline_handoff_20261031/cross_end_alignment/coarse_launch.json",
+        "source_hashes_location": "result.json:source_sha256 and metadata.json; no per-state list copied here"
+      }
+    },
+    "endpoint_results_n": {
+      "coarse_body": 6.361195893699095,
+      "fine_body": 5.28816384372637,
+      "old_reference": 5.2678161873985045
+    },
+    "coarse_reproduction_minus_reported_server_n": -1.0630090496732691e-07,
+    "fine_minus_coarse_n": -1.073032049972725,
+    "fine_minus_old_n": 0.02034765632786506,
+    "body_and_surface_discretization_fraction_of_endpoint_gap": 0.9813901280491929,
+    "remaining_gap_percent_of_old": 0.38626359774169894,
+    "component_change_fine_minus_coarse_n": {
+      "total_fz_n": -1.073032049972725,
+      "normal_fz_n": -1.3532253922245134,
+      "friction_assembled_fz_n": 0.2801933422517884
+    },
+    "fine_and_old_actual_body_identical": true,
+    "fine_and_old_body_sha256": "a841dc09b202ab11762bb0fcd060e61b695971ee2b884fa90338176bebc0ea3d",
+    "fine_and_old_triangles_sha256": "4b40480574f10daeb4f596db603e4fd02d72d9cb2d0ceaa07a558d7f7ac278d2",
+    "budget": {
+      "max_FE_paths": 2,
+      "actual_FE_paths": 2,
+      "max_FE_seconds": 3600,
+      "allocated_seconds": [
+        2700,
+        900
+      ],
+      "elapsed_including_setup_sum_s": 290.25,
+      "audit_postprocess_budget_seconds": 3600,
+      "new_fit": false,
+      "third_path_started": false
+    },
+    "qualification": "Both41-state native fresh full-history audits and extra full-chord CCD/positive-J checks pass; no space/time convergence or experimental accuracy qualification.",
+    "limitations": [
+      "Body interior and body contact-surface discretization changed together; cannot isolate volumetric locking.",
+      "Remaining .02035 N mixes blade discretization, step/time/friction velocity-equivalent scale and preparation history; no individual attribution.",
+      "Exact old/new body hashes match despite nominal coarse1/.75; no effective body change from that setting in this fine family.",
+      "Endpoint reproduction does not prove full cross-platform time-series identity without original server data.",
+      "Experiment2.84 N is not a target here; intact model discrepancy remains."
+    ],
+    "artifacts": {
+      "root": "runs/baseline_handoff_20261031/cross_end_alignment",
+      "summary_sha256": "f8ba7403903ccef23716e815da6de0a6f65474d693e14186fcfb6116f8181e58",
+      "metadata_sha256": "db2c26970bd46d2ba8424cbe0a2da27125cad7586066a72ab0bdeb114446e23a",
+      "package": {
+        "package_path": "runs/baseline_handoff_20261031/cross_end_alignment/delivery.zip",
+        "sha256": "a9a7b3f485e1fc3f87c45adf2f56874982be90b36a0b7a555084e18b769690ca",
+        "bytes": 19690347,
+        "server_receipt": "未收到",
+        "manifest_sha256": "97a4aebf924742f8f34208aca3540da9b62e68873665cfdab3f221dab5777309",
+        "metadata_sha256": "db2c26970bd46d2ba8424cbe0a2da27125cad7586066a72ab0bdeb114446e23a",
+        "summary_sha256": "f8ba7403903ccef23716e815da6de0a6f65474d693e14186fcfb6116f8181e58"
+      }
+    },
+    "region_method": {
+      "regions_s_n_mm": {
+        "left": [
+          5.5,
+          6.5,
+          3.5,
+          4.5
+        ],
+        "right": [
+          7.5,
+          8.5,
+          3.5,
+          4.5
+        ],
+        "below": [
+          6.5,
+          7.5,
+          2.5,
+          3.5
+        ]
+      },
+      "sampling": "Same 10x10 uniform cell-center probes per fixed reference region, P1 barycentric interpolation, equal-area quadrature mean; relative to own accepted depth-zero state; no remapping.",
+      "comparison_to_server_published_region": "Probe coordinates and full server series not received; do not equate this method to its upper-region value.",
+      "old_friction": "derived total-normal only; no independent old friction reassembly",
+      "chord_scope": "Full displacement chord incl. initial rest to depth0; P1 positive J and full native CCD. Does not certify space/time convergence."
+    },
+    "old_reference_new_solve": false
   }
 }
