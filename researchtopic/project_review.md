@@ -1,8 +1,8 @@
-# 项目审查：从求解器诊断收束到科研原型
+# 历史审查（2026-11-02）：从求解器诊断收束到科研原型
 
 更新：2026-11-02（日本时间）。审查源码：`78405e242bc4246d269dda5ff5bdf11814b1c0fa`。
 
-本页是当前项目决策；逐轮运行事实仍以既有 `research_status.md`、`fracture_implementation.md` 和运行库为准。[2026-10-31审查](project_review_20261031.md)作为历史保留。
+本页保留当时的审查事实与判断，已由[当前科研原型任务](research_prototype_task.md)接续；下文“即日起”“下一步”均指当时，不构成新的启动指令。实际运行事实以既有 `research_status.md`、`fracture_implementation.md` 和运行库为准。[2026-10-31审查](project_review_20261031.md)同为历史依据。
 
 ## 1. 结论与负责人调整
 

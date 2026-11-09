@@ -1,12 +1,15 @@
 # Integration workspace
 
 Read README.md, docs/interface_contract.md and docs/git_workflow.md before changing interfaces.
+The current research scope and ownership are defined only in researchtopic/research_prototype_task.md
+and docs/git_workflow.md; historical round priorities do not override them.
 The original directories outside this workspace are read-only sources; work in projects/ copies.
 The user corrected the input: softmodeling is the FE project. The old 0915ForceProcessing is excluded.
 
 - projects/softmodeling retains its own AGENTS.md and numerical invariants. This integration request
   explicitly enables the video comparison layer; earlier local statements deferring matching are historical.
-- Preserve numerical algorithms and original inputs. Integration code belongs to softcut_solution/.
+- Preserve original inputs and historical model identities. Numerical changes must serve the explicitly
+  authorized current research task and retain its physical invariants. Integration code belongs to softcut_solution/.
 - No FE loading, resumed queue or GPU tracking on UI startup. Explicit user actions use separate outputs,
   recorded interpreters, budgets and source hashes. Existing-result export is postprocessing.
 - Conditional video scale, clock, reference, material identity and FE qualification must remain explicit.
