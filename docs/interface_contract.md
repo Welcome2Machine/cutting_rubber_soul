@@ -49,6 +49,9 @@ flowchart LR
 `endpoint_checks_passed`与`trajectory_checked`/逐态`trajectory_passed`分开；
 `qualified_prefix_states`是首个失败弦之前的连续状态数。端点安全的条件静力分支不能作为已验证进入过程导出。
 此变化复用现有入口/报告，不新增一层运行框架。
+2026-11-10：显式`enforce_physical_chord=true`在原端点接受后、所有历史提交前检查完整弦。
+接受记录保留`physical_chord.enforced/safe_fraction`，resolved_model/contact与signature绑定开启状态；
+默认关闭保留旧模型身份。构造阶段被拒绝没有接受帧，不得导出为零深度基线或填补力曲线。
 
 ## 显式比较配置
 

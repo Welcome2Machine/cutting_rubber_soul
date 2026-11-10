@@ -2,7 +2,28 @@
 
 > 当前任务与方法选择见[科研原型任务](../researchtopic/research_prototype_task.md)。本文是实现和运行的历史证据；各节日期、旧优先级及当时授权保留原义，不覆盖当前任务。新方案尚未实现时不得改写为已验证能力。
 
-## 当前方法：单seam条件惯性事件实验
+## 当前方法：细体对照的接受前完整物理弦检查
+
+2026-11-10；固定任务fc2fce1，实际结果见[当前状态](../projects/softmodeling/docs/research_status.md)。
+`IPCProblem.step`新增默认关闭的`enforce_physical_chord`。有/无摩擦两分支都先完成原接受检查，
+再调用`safe_step(previous, x-previous)`；非有限或小于1抛原`LoadStepFailure`。
+该位置在predictor记忆及外层Maxwell/CZM的A、κ、累计耗散提交之前；不在runner yield之后补查。
+接受记录写`physical_chord.enforced/safe_fraction`，实际policy写resolved_model并绑定signature。
+完整体CLI显式`--enforce-physical-chord`，内聚运行配置用同名布尔字段；旧默认/历史签名保持。
+开启时完整体独立audit也重新检查弦；内聚原离线审查仍返回端点证据、passed=false和连续合格前缀，
+没有把在线异常塞入acceptance而破坏旧审查。
+
+继承同一增量的割线/仿射重试、最小.000625 mm有限二分，不新增控制器。拒绝时committed A/κ、
+累计耗散和接受predictor不变；attempt previous_A/previous_κ/dt与failed_previous保留作拒绝见证。
+真实无交端点但跨越试样的刀具弦覆盖两求解分支；相关回归还覆盖默认旧坏弦审查、有限回退及安全步提交。
+
+本次F1没有走到加载：保留gap=.006、表面间距.005和seam=.1后，split_mesh在x=6.997/7.003插入缝端点，
+与原表面x=6.995/7.005形成.002 mm短边，低于dhat=.0025。原生两VV和两EV项产生6.029455 N
+自由接触残量范数，刀具接触力0。完整体构造阶段同一检查为0，切分后才失败；CZM初态梯度约2.87e-11 N。
+这是参考采样/接触初态不一致，不是已证实的材料失稳或刀具载荷。未删碰撞项、修改间隙或绕过初态门；
+F2按任务止损不启动，因而没有可信的细体off/on差值或损伤事件变化结论。
+
+## 已完成的条件惯性实验（2026-11-09，未续算）
 
 2026-11-09；任务固定b30aa743，结果与运行身份见[当前状态](../projects/softmodeling/docs/research_status.md)。
 共同输入和原QS/elastic-CZM桥接沿用74416154，不重跑。有限gap、finite_faces闭合与示例材料保持；
