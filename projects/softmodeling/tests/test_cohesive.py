@@ -100,7 +100,7 @@ class CohesiveTests(unittest.TestCase):
             parent=Path(temp);source=parent/'config.json';out=parent/'run'
             source.write_text(json.dumps(config))
             with patch('tools.run_cohesive_cut.audit',side_effect=unsafe), patch('tools.run_cohesive_cut.render'):
-                self.assertEqual(run(source,out,10),1)
+                self.assertEqual(run(source,out,30),1)
             report=json.loads((out/'result.json').read_text())
             checked=json.loads((out/'audit.json').read_text())
             self.assertFalse(checked['passed'])
@@ -121,7 +121,7 @@ class CohesiveTests(unittest.TestCase):
             parent=Path(temp);source=parent/'config.json';out=parent/'run'
             source.write_text(json.dumps(config), encoding='utf-8')
             with patch('tools.run_cohesive_cut.audit', side_effect=broken_audit), patch('tools.run_cohesive_cut.render'):
-                self.assertEqual(run(source, out, 10), 1)
+                self.assertEqual(run(source, out, 30), 1)
             report=json.loads((out/'result.json').read_text())
             audit=json.loads((out/'audit.json').read_text())
             self.assertFalse(audit['passed'])
@@ -206,3 +206,85 @@ class FullDomainEventTests(unittest.TestCase):
         self.assertTrue(checked['passed'])
         self.assertTrue(checked['cohesive_history_passed'])
         self.assertEqual(checked['physical_chord_safe_fraction'],1.)
+
+
+class PhysicalChordCommitTests(unittest.TestCase):
+    def problem(self, enabled, mu=.35):
+        root=Path(__file__).resolve().parents[1]
+        config=json.loads((root/'configs/fracture_prescribed_reference.json').read_text())
+        config['enforce_physical_chord']=enabled
+        config['friction_coefficient']=mu
+        return make_cohesive_problem(config)
+
+    def test_real_unsafe_chord_rejects_before_committed_dual_history(self):
+        from prototype.ipc_reference import adaptive_load_steps
+        from prototype.material_case import failure_checkpoint
+        for mu in (.35,):
+            with self.subTest(mu=mu):
+                p=self.problem(True,mu);before=p.rest.copy();depth=100.
+                after=before.copy();after[p.n:]=p.prescribed_blade_positions(depth)
+                self.assertFalse(p.ipc.has_intersections(p.cmesh,after[p.surface]))
+                self.assertLess(p.safe_step(before,after-before),1.)
+                metric=p.material_metric.copy();damage=p.cohesive_maximum.copy()
+                ledger=p.cohesive_energy_ledger.copy();diss=p.material_dissipation
+                rejected=[]
+                # Inject only the converged endpoint/predictor. Acceptance,
+                # full CCD/J and the inherited finite retry are the real code.
+                with patch.object(p,'_loading_predictor',return_value=after), patch.object(p,'solve_friction',return_value=(after,0)):
+                    with self.assertRaisesRegex(LoadStepFailure,'adaptive load exhausted.*Physical loading chord unsafe'):
+                        list(adaptive_load_steps(p,before,p.start,depth,float('inf'),.000625,rejected.append))
+                self.assertEqual(len(rejected),2)
+                np.testing.assert_array_equal(p.material_metric,metric)
+                np.testing.assert_array_equal(p.cohesive_maximum,damage)
+                np.testing.assert_array_equal(p.previous,before)
+                self.assertEqual(p.material_dissipation,diss)
+                self.assertEqual(p.cohesive_energy_ledger,ledger)
+                self.assertEqual(p._accepted_predictor_history,[])
+                state,context=failure_checkpoint(p,before)
+                np.testing.assert_array_equal(state['previous_positions'],before)
+                np.testing.assert_array_equal(state['previous_material_metric'],metric)
+                np.testing.assert_array_equal(state['previous_cohesive_maximum'],damage)
+                self.assertAlmostEqual(float(state['material_dt_s']),(depth-p.start)/p.loading_rate)
+                self.assertEqual(context['attempted_depth_mm'],depth)
+
+    def test_default_off_preserves_offline_failed_prefix(self):
+        from prototype.material_case import audit
+        p=self.problem(False);before=p.rest.copy();after=before.copy();depth=100.
+        after[p.n:]=p.prescribed_blade_positions(depth)
+        with patch.object(p,'_loading_predictor',return_value=after), patch.object(p,'solve_friction',return_value=(after,0)):
+            x,record=p.step(before,p.start,depth,float('inf'))
+        self.assertNotIn('physical_chord',record)
+        state=dict(p.checkpoint_data(),positions=x,previous_positions=before,depth_mm=depth,
+                   reference_xy=p.rest,triangles=p.mesh.triangles,body_nodes=p.n)
+        with tempfile.TemporaryDirectory() as temp:
+            out=Path(temp);(out/'states').mkdir()
+            np.savez(out/'states/0000.npz',**state)
+            checked=audit(self.problem(False),out,dict(steps=[record]))
+        self.assertFalse(checked['passed'])
+        self.assertEqual(checked['qualified_prefix_states'],0)
+        self.assertTrue(checked['rows'][0]['endpoint_passed'])
+        self.assertFalse(checked['rows'][0]['trajectory_passed'])
+
+    def test_safe_chord_records_policy_and_commits_once(self):
+        import time
+        p=self.problem(True)
+        x,record=p.step(p.rest.copy(),p.start,0.,time.monotonic()+20)
+        self.assertEqual(record['physical_chord'],dict(enforced=True,safe_fraction=1.))
+        self.assertEqual(len(p._accepted_predictor_history),1)
+        self.assertEqual(p.material_dissipation,record['material']['cumulative_viscous_dissipation_n_mm'])
+        state=dict(p.checkpoint_data(),positions=x,previous_positions=p.previous,depth_mm=0.,
+                   reference_xy=p.rest,triangles=p.mesh.triangles,body_nodes=p.n)
+        self.assertTrue(self.problem(True).audit_state(state,record)['passed'])
+
+    def test_no_friction_branch_rejects_actual_crossing_before_predictor_commit(self):
+        from prototype.ipc_reference import IPCProblem
+        p=IPCProblem(case='patch',mu=0.,local_spacing=.2,surface_spacing=.2,
+                     enforce_physical_chord=True)
+        before=p.rest.copy();after=before.copy();depth=100.
+        after[p.n:]=p.prescribed_blade_positions(depth)
+        self.assertFalse(p.ipc.has_intersections(p.cmesh,after[p.surface]))
+        self.assertLess(p.safe_step(before,after-before),1.)
+        with patch.object(p,'_loading_predictor',return_value=after):
+            with self.assertRaisesRegex(LoadStepFailure,'Physical loading chord unsafe'):
+                p.step(before,p.start,depth,float('inf'))
+        self.assertEqual(p._accepted_predictor_history,[])

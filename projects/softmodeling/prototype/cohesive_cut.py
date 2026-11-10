@@ -1022,6 +1022,7 @@ def make_cohesive_problem(config):
         blade_angle=config.get('blade_angle_deg'),blade_thickness=config.get('blade_thickness_mm'),
         drop_s=config.get('drop_s_mm'),blade_spacing=mesh.get('blade_spacing_mm'),
         friction_smoothing_mm=config.get('friction_smoothing_mm',1e-5),
+        enforce_physical_chord=config.get('enforce_physical_chord',False),
         tip_radius=config['tip_radius_mm'], fine_halfwidth=mesh.get('fine_halfwidth_mm', 3.), max_iterations=500,
         predictor='secant', hessian_mode='regularized')
 

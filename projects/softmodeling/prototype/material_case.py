@@ -23,6 +23,8 @@ def signature(p):
                 physical_force_tolerance_n=BASELINE['force_tolerance_n'])
     if getattr(p,'friction_smoothing_mm',BASELINE['friction_smoothing_mm']) != BASELINE['friction_smoothing_mm']:
         value['friction_smoothing_mm'] = p.friction_smoothing_mm
+    if p.enforce_physical_chord:
+        value["enforce_physical_chord"] = True
     return value
 
 
@@ -48,6 +50,7 @@ def resolved_model(p):
             epsilon_v_mm_s=(p.event_friction_velocity_mm_s if getattr(p,'event_mode',False) else None),
             scope='same coefficient for blade and body self-contact; closure penalty excluded from IPC friction load'),
         contact=dict(formulation=p.contact_formulation,dhat_mm=p.dhat,
+            enforce_physical_chord=p.enforce_physical_chord,
             ccd=getattr(p,'network_ccd_policy',{'mode':'toolkit_default'})),
         geometry=dict(actual_wedge_included_angle_deg=float(angle),
             actual_blade_thickness_mm=float(np.ptp(blade[:,0])),
@@ -177,7 +180,7 @@ def make_problem(*,angle,equilibrium_shear,maxwell_shear,relaxation_s,loading_ra
                  volumetric='quadratic_j',blade_spacing=None,blade_thickness=None,blade_angle=None,
                  tip_radius=.02,local_spacing=.05,surface_spacing=.005,nose_facets=64,
                  fine_halfwidth=3.,coarse_spacing=None,drop_s=None,dhat=.0025,
-                 preparation_clearance_mm=None,friction_smoothing_mm=1e-5):
+                 preparation_clearance_mm=None,friction_smoothing_mm=1e-5,enforce_physical_chord=False):
     """Shared construction for actual-angle runs and completed-reference audits."""
     if not all(np.isfinite(a) and 1 <= a <= 4 for a in (equilibrium_alpha,maxwell_alpha)):
         raise ValueError('Explicit candidate exponents must be in [1, 4]')
@@ -188,7 +191,7 @@ def make_problem(*,angle,equilibrium_shear,maxwell_shear,relaxation_s,loading_ra
         fine_halfwidth=fine_halfwidth,max_iterations=500,predictor='secant',hessian_mode='regularized',element='p1',
         blade_spacing=blade_spacing,blade_thickness=blade_thickness,blade_angle=blade_angle,
         coarse_spacing=coarse_spacing,drop_s=drop_s,preparation_clearance_mm=preparation_clearance_mm,
-        friction_smoothing_mm=friction_smoothing_mm)
+        friction_smoothing_mm=friction_smoothing_mm,enforce_physical_chord=enforce_physical_chord)
     p.stagnation_window=40
     if maxwell_alpha != 2.:
         p.material=replace(p.material,mu_ov=(2*maxwell_shear/maxwell_alpha,),alpha_ov=(float(maxwell_alpha),))

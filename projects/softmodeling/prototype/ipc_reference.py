@@ -140,9 +140,13 @@ class IPCProblem:
         coarse_spacing=None,
         drop_s=None, preparation_clearance_mm=None,
         friction_smoothing_mm=BASELINE["friction_smoothing_mm"],
+        enforce_physical_chord=False,
     ):
         if not np.isfinite(shear_modulus) or shear_modulus <= 0:
             raise ValueError("Shear modulus must be finite and positive (MPa)")
+        if not isinstance(enforce_physical_chord, bool):
+            raise ValueError("enforce_physical_chord must be a boolean")
+        self.enforce_physical_chord = enforce_physical_chord
         self.ipc = toolkit()
         self.case = case
         self.dhat = dhat
@@ -850,6 +854,15 @@ class IPCProblem:
               fresh_residual_N=best_norm, accepted_history_states=len(history)), sort_keys=True), flush=True)
         return best
 
+    def _check_accepted_physical_chord(self, x, accepted):
+        """Opt-in gate before predictor/material/damage commits, not an audit hook."""
+        if not self.enforce_physical_chord:
+            return
+        fraction = float(self.safe_step(self.previous, x-self.previous))
+        accepted['physical_chord'] = dict(enforced=True, safe_fraction=fraction)
+        if not np.isfinite(fraction) or fraction < 1.:
+            raise LoadStepFailure(f'Physical loading chord unsafe: fraction={fraction:.17g}')
+
     def step(self, x, old, depth, deadline):
         self.phase_seconds = {}
         self.ptc_state = {}
@@ -859,6 +872,7 @@ class IPCProblem:
         if self.config.friction_coefficient > 0:
             x, iterations = self.solve_friction(x, depth, deadline)
             accepted = self.acceptance(x, depth, iterations+1, 0)
+            self._check_accepted_physical_chord(x, accepted)
             self._remember_predictor_acceptance(x, depth, old)
             return x, accepted
         iterations = 0
@@ -939,6 +953,7 @@ class IPCProblem:
                     f"residual={final_norm:.6g} N, limit={self.max_iterations}"
                 )
         accepted = self.acceptance(x, depth, iterations, 1)
+        self._check_accepted_physical_chord(x, accepted)
         self._remember_predictor_acceptance(x, depth, old)
         return x, accepted
 

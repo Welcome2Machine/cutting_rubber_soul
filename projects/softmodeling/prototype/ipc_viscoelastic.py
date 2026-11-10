@@ -180,9 +180,15 @@ class ViscoelasticProblem(IPCProblem):
                 raise RuntimeError('Material history does not reproduce saved accepted metric')
             if not np.isclose(fresh['reaction_fz_n'],record['reaction_fz_n'],rtol=1e-9,atol=1e-8):
                 raise RuntimeError('Fresh force differs from saved force')
-            return dict(depth_mm=record['depth_mm'],residual_n=fresh['residual_n'],
-                        min_j=fresh['min_j'],reaction_fz_n=fresh['reaction_fz_n'],passed=True,
-                        **self._audit_extra_acceptance(fresh,record))
+            result = dict(depth_mm=record['depth_mm'],residual_n=fresh['residual_n'],
+                          min_j=fresh['min_j'],reaction_fz_n=fresh['reaction_fz_n'],passed=True,
+                          **self._audit_extra_acceptance(fresh,record))
+            if self.enforce_physical_chord:
+                fraction = float(self.safe_step(self.previous, positions-self.previous))
+                safe = bool(np.isfinite(fraction) and fraction >= 1.)
+                result.update(passed=safe, endpoint_passed=True, trajectory_passed=safe,
+                              physical_chord_safe_fraction=fraction)
+            return result
         finally:
             del self._fresh_material_cache
             self.previous,self.previous_material_metric,self.material_dt=before
