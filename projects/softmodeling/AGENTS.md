@@ -1,19 +1,20 @@
 # Repository requirements
 
-## Current user task and ownership (2026-11-09)
+## Current user task and ownership (2026-11-10)
 
 The only current task is [research_prototype_task](../../researchtopic/research_prototype_task.md).
 Read it and [Git workflow](../../docs/git_workflow.md) before acting. The first paper is experiments
 plus explanatory forward simulation; learning, differentiable solvers and PINNs are possible second-paper
-work, not implementation tasks now. The server owns shared numerical integration; the local agent owns
-cross-end intact alignment and experimental evidence. The current local task adds no new fit; preserve
-any separately authorized live work. Neither side waits for new fitting or bulk historical-state transfer.
+work, not implementation tasks now. Today the user authorizes SERVER-ONLY execution. The local agent
+preserves its a39ce7 results and workspace; no new local FE, fit, code edits or duplicate packaging.
+The server reads that fixed handoff without waiting for the local raw package or merging its branch.
 
-Historical C1/C2-only priorities and their old budgets are superseded. Do not repeat the failed C2 policy
-check or extend its controller/certificate chain. Shared inputs, damage-off and the original short bridge
-are completed at 74416154; do not repeat them by default. The current task authorizes only a bounded,
-explicit full-domain inertial event experiment on the server and a controlled intact comparison locally.
-Preserve historical results and their failure labels; a new conditional window does not qualify the old QS jump.
+The b30aa743 pilot/A/B experiment and resume guard are completed at 4730067a; the event windows failed
+and do not qualify connected fracture or entry. Do not restart those tasks, their stopped parents or
+historical C1/C2 controllers. Today's task is the bounded matched fine-body continuum/off/on comparison,
+with a minimal opt-in pre-commit physical-chord gate in the existing step path. No new dynamic mode,
+controller, solver, friction/material sweep, mesh platform or learning pipeline is authorized today.
+Preserve previous results and failure labels; budgets do not roll over.
 
 Read [research status](docs/research_status.md), [model specification](docs/current_model_spec.md),
 [code map](prototype/README.md) and [project conventions](README.md) as evidence of implemented behavior.
@@ -30,8 +31,8 @@ They do not make an unimplemented task an existing capability. Root AGENTS and p
 - The workbench represents a symmetric wedge/circular nose, not arbitrary CAD. Lubrication is a
   condition label plus explicit Coulomb mu, not an oil-film model. Public Fy maps solver reaction_x_n;
   Fyz is a resultant. Force components, surface projections and energy shares are different quantities.
-- The current local round freezes material parameters to isolate numerical differences. General common-parameter
-  calibration within defensible intact windows remains a later option; the old blanket prohibition is historical.
+- Today all material/fracture parameters are frozen to isolate body/surface discretization and interface effects.
+  General common-parameter calibration within defensible intact windows remains a later option.
   The fracture agent must not tune strength/Gc,
   angle-specific material, effective width or force factors to make a desired cutting curve.
 - Treat the second-paper data foundation as source-traceable configurations, histories and observables,
@@ -54,11 +55,9 @@ They do not make an unimplemented task an existing capability. Root AGENTS and p
   use four or another explicitly configured order. Whole-face failure requires every applicable point,
   not a point count borrowed from another route. Network metric floors are globalization only, not physical energy.
 - New blade/material/friction/mesh/interface settings start from their own consistent initial history.
-  The current task explicitly permits a separate QS-seeded conditional inertia experiment with disclosed
-  initial velocity and newly initialized step friction; it is not exact production resumption and cannot
-  upgrade the source path. Ordinary restore-consistency checks remain. Documentation-only commits do not
-  require rerunning a path
-  whose actual numerical sources and inputs still match. Record the actual imported code/interpreter.
+  The previous QS-seeded inertia experiment retains its conditional identity and cannot upgrade its source
+  path; today does not extend it. Ordinary restore-consistency checks remain. Documentation-only commits
+  do not require rerunning paths whose actual numerical sources and inputs still match. Record actual imports/interpreter.
 - Failure snapshots pair failed positions with that attempt's failed_previous, accepted material metric,
   physical dt and attempted depth. Do not confuse rolled-back previous with the attempted parent.
 - Independent audits qualify the accepted prefix. Saved-state export is postprocessing, not a new solve
