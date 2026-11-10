@@ -6,7 +6,7 @@
 |---|---|
 | [科研原型任务](research_prototype_task.md) | **唯一现行任务**：两篇论文背景、共同模型、两端分工、具体方法、预算与验收 |
 | [Git 协作规则](../docs/git_workflow.md) | 分支、文件责任、按提交交接、运行目录与仓库清洁 |
-| [服务器启动提示词](server_agent_prompt.md) | 今天唯一执行端：匹配细体的完整体/off/on对照 |
+| [服务器启动提示词](server_agent_prompt.md) | 今天唯一执行端：局部修复接缝采样，复用F0、顺序完成F1及有条件F2 |
 | [本地启动提示词](baseline_agent_tasks_20261031.md) | 今天暂停新增工作；保留a39ce7成果与既有证据 |
 | [实际研究状态](../projects/softmodeling/docs/research_status.md) | 已完成结果、证据位置与尚未完成的阶段 |
 

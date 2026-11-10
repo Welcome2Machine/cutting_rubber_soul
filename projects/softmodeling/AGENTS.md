@@ -9,12 +9,14 @@ work, not implementation tasks now. Today the user authorizes SERVER-ONLY execut
 preserves its a39ce7 results and workspace; no new local FE, fit, code edits or duplicate packaging.
 The server reads that fixed handoff without waiting for the local raw package or merging its branch.
 
-The b30aa743 pilot/A/B experiment and resume guard are completed at 4730067a; the event windows failed
-and do not qualify connected fracture or entry. Do not restart those tasks, their stopped parents or
-historical C1/C2 controllers. Today's task is the bounded matched fine-body continuum/off/on comparison,
-with a minimal opt-in pre-commit physical-chord gate in the existing step path. No new dynamic mode,
-controller, solver, friction/material sweep, mesh platform or learning pipeline is authorized today.
-Preserve previous results and failure labels; budgets do not roll over.
+The pre-commit physical-chord gate is completed at 18e4e3c. The 19bd670 delivery completed F0;
+F1 was rejected at reference construction and F2 was not executed. Reuse qualified F0 with its original
+source identity; do not rerun it or repeat the gate implementation. The current task permits one explicit,
+local seam-endpoint sampling repair in existing split_mesh, preserving the old default and native contact
+formula. After reference checks, run F1 to .2 mm, audit contact attribution, then conditionally F2 to .4 mm.
+No contact filtering, dhat/gap tuning, new mesh/contact platform, dynamic controller, material/friction sweep
+or learning pipeline. The failed 4730067a event windows and old coarse suffixes retain their labels;
+do not resume them. Today's cumulative budget includes work already performed, not a fresh allowance.
 
 Read [research status](docs/research_status.md), [model specification](docs/current_model_spec.md),
 [code map](prototype/README.md) and [project conventions](README.md) as evidence of implemented behavior.
@@ -31,7 +33,7 @@ They do not make an unimplemented task an existing capability. Root AGENTS and p
 - The workbench represents a symmetric wedge/circular nose, not arbitrary CAD. Lubrication is a
   condition label plus explicit Coulomb mu, not an oil-film model. Public Fy maps solver reaction_x_n;
   Fyz is a resultant. Force components, surface projections and energy shares are different quantities.
-- Today all material/fracture parameters are frozen to isolate body/surface discretization and interface effects.
+- Today material/fracture/contact parameters are frozen; only the specified local endpoint sampling changes.
   General common-parameter calibration within defensible intact windows remains a later option.
   The fracture agent must not tune strength/Gc,
   angle-specific material, effective width or force factors to make a desired cutting curve.
