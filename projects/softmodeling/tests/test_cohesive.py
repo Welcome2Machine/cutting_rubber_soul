@@ -288,3 +288,98 @@ class PhysicalChordCommitTests(unittest.TestCase):
             with self.assertRaisesRegex(LoadStepFailure,'Physical loading chord unsafe'):
                 p.step(before,p.start,depth,float('inf'))
         self.assertEqual(p._accepted_predictor_history,[])
+
+
+class SeamEndpointSamplingTests(unittest.TestCase):
+    def config(self):
+        root=Path(__file__).resolve().parents[1]
+        c=json.loads((root/'configs/fracture_prescribed_reference.json').read_text())
+        c['mesh'].update(local_spacing_mm=.05,surface_spacing_mm=.005)
+        c['cohesive']['damage_enabled']=False
+        return c
+
+    def test_fine_reference_native_rejection_and_coordinated_components(self):
+        from prototype.material_case import signature
+        c=self.config()
+        with self.assertRaisesRegex(ValueError,'contact'):
+            make_cohesive_problem(c)
+        c['mesh']['seam_endpoint_sampling']='coordinated_endpoints'
+        p=make_cohesive_problem(c)
+        self.assertEqual((p.n,len(p.mesh.triangles)),(24985,48425))
+        np.testing.assert_allclose(p.seam_endpoint_sampling_metadata['removed_local_sn_mm'],
+                                   [[6.995,5.],[7.005,5.]],atol=1e-12)
+        self.assertEqual(len(p.mesh.seam_pairs),51)
+        self.assertAlmostEqual(p.mesh.bulk_data[0].sum(),149.97,places=10)
+        self.assertTrue(np.all(p.mesh.bulk_data[0]>0))
+        self.assertAlmostEqual(p.interface_areas.sum(),100.)
+        np.testing.assert_allclose(p.bond_lengths,.006,atol=1e-12)
+        self.assertEqual(p.reference_contact_check['body_contact_force_norm_n'],0.)
+        self.assertFalse(p.ipc.has_intersections(p.cmesh,p.rest[p.surface]))
+        p.material_dt=.1
+        force,_,dofs,_,j=p.material_bulk(np.zeros(2*p.n),with_tangent=False)
+        g=np.bincount(dofs.ravel(),weights=force.ravel(),minlength=p.total)
+        self.assertLess(np.linalg.norm(g),1e-10)
+        self.assertEqual(j,1.)
+        q=p.cohesive_response(p.rest)
+        self.assertLess(np.linalg.norm(q['gradient']),1e-8)
+        np.testing.assert_array_equal(p.material_metric,np.broadcast_to(np.eye(3),p.material_metric.shape))
+        np.testing.assert_array_equal(p.cohesive_maximum,0.)
+        self.assertEqual(p.material_dissipation,0.)
+        self.assertEqual(q['fracture_dissipation_n_mm'],0.)
+        self.assertTrue(np.all(p.mesh.local_sn[p.mesh.bottom_nodes,1]==0))
+        self.assertFalse(np.isin((2*p.mesh.bottom_nodes[:,None]+np.arange(2)).ravel(),p.free).any())
+        c['cohesive']['damage_enabled']=True
+        on=make_cohesive_problem(c)
+        np.testing.assert_array_equal(on.rest,p.rest)
+        np.testing.assert_array_equal(on.mesh.triangles,p.mesh.triangles)
+        self.assertEqual(signature(on)['mesh_sha256'],signature(p)['mesh_sha256'])
+        state=p.checkpoint_data()
+        self.assertEqual(state['seam_endpoint_sampling'],'coordinated_endpoints')
+        # Reject before any history restoration; missing means the legacy policy.
+        state.pop('seam_endpoint_sampling')
+        with self.assertRaisesRegex(RuntimeError,'sampling differs'):p.audit_state(state,{})
+        state['seam_endpoint_sampling']='legacy'
+        with self.assertRaisesRegex(RuntimeError,'sampling differs'):p.audit_state(state,{})
+
+    def test_local_rule_protects_corners_seam_and_interior_under_rotation(self):
+        from prototype.model_config import FEMMesh,FEMConfig,local_to_lab
+        from prototype.cohesive_cut import split_mesh
+        # A deliberately small domain puts even outer corners inside the nominal
+        # radius. Only old collinear non-seam/non-corner samples may disappear.
+        c=FEMConfig(length_mm=1.,height_mm=1.,drop_s_mm=.5,inclination_deg=33.)
+        sn=np.array([[0,0],[0,1],[1,0],[1,1],[.38,0],[.38,1],[.62,0],[.62,1],
+                     [.38,.001],[.62,.999],[.1,.5],[.9,.5],[.3,1.]])
+        old=FEMMesh(local_to_lab(sn,c),sn,np.empty((0,3),int),np.empty((0,2),int),
+                    np.empty(0),np.flatnonzero(sn[:,1]==0),np.array([12]),np.zeros(len(sn)))
+        record={}
+        new=split_mesh(old,c,.2,.25,endpoint_sampling='coordinated_endpoints',
+                       surface_spacing_mm=.5,sampling_record=record)
+        self.assertEqual(record['removed_old_samples'],4)
+        kept={tuple(x) for x in new.local_sn}
+        for point in sn[[0,1,2,3,8,9,10,11,12]]:self.assertIn(tuple(point),kept)
+        for point in sn[[4,5,6,7]]:self.assertNotIn(tuple(point),kept)
+        np.testing.assert_allclose(new.reference_xy,local_to_lab(new.local_sn,c),atol=0)
+        self.assertAlmostEqual(new.bulk_data[0].sum(),.8)
+        self.assertEqual(len(new.seam_pairs),5)
+        default=split_mesh(old,c,.2,.25)
+        explicit=split_mesh(old,c,.2,.25,endpoint_sampling='legacy',surface_spacing_mm=.5)
+        np.testing.assert_array_equal(default.reference_xy,explicit.reference_xy)
+        np.testing.assert_array_equal(default.triangles,explicit.triangles)
+        self.assertEqual(len(default.local_sn)-len(new.local_sn),4)
+
+    def test_policy_validation_and_legacy_checkpoint_identity(self):
+        from tools.run_cohesive_cut import read_config
+        root=Path(__file__).resolve().parents[1]
+        c=json.loads((root/'configs/fracture_prescribed_reference.json').read_text())
+        p=make_cohesive_problem(c)
+        self.assertNotIn('seam_endpoint_sampling',p.checkpoint_data())
+        self.assertNotIn('seam_endpoint_sampling',p.fracture_topology_metadata)
+        bad=p.checkpoint_data();bad['seam_endpoint_sampling']='coordinated_endpoints'
+        with self.assertRaisesRegex(RuntimeError,'sampling differs'):p.audit_state(bad,{})
+        for policy,topology in [('unknown','prescribed_seam'),('coordinated_endpoints','edge_network')]:
+            c['mesh']['seam_endpoint_sampling']=policy;c['fracture_topology']=topology
+            with self.subTest(policy=policy,topology=topology):
+                with self.assertRaisesRegex(ValueError,'seam|Seam'):make_cohesive_problem(c)
+                with tempfile.TemporaryDirectory() as tmp:
+                    path=Path(tmp)/'config.json';path.write_text(json.dumps(c))
+                    with self.assertRaisesRegex(ValueError,'seam|Seam'):read_config(path)

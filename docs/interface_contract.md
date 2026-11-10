@@ -53,6 +53,15 @@ flowchart LR
 接受记录保留`physical_chord.enforced/safe_fraction`，resolved_model/contact与signature绑定开启状态；
 默认关闭保留旧模型身份。构造阶段被拒绝没有接受帧，不得导出为零深度基线或填补力曲线。
 
+2026-11-10接缝采样：`mesh.seam_endpoint_sampling`可显式设为`coordinated_endpoints`，
+仅适用于`prescribed_seam`；缺省`legacy`保留旧构型。既有`split_mesh`固定新缝端点，
+只移除同一上/下外边直线上、距端点小于名义`surface_spacing_mm`的旧采样点；
+外角点、内部节点和原seam节点受保护，仍用原Delaunay和完整原生接触。
+新策略记录于config、fracture signature、topology/resolved geometry和NPZ；移除点坐标/数目可审阅。
+缺失NPZ策略字段只代表legacy，审查拒绝跨策略/网格恢复。参考态零预载与加载后接触归因分别检查，
+不能以短边长度或VV计数单独授予/撤销物理资格；完整体入口及其历史结果不改变。
+
+
 ## 显式比较配置
 
 `configs/comparison.example.json` 提供 `registration`、`rotation_deg`、`translation_y_mm/translation_z_mm`、`depth_offset_mm`、`max_depth_mm`、`fe_reference_index`、`support_mode`、`intact_status`。

@@ -32,6 +32,10 @@ def read_config(path):
         raise ValueError('Expected softcut-cohesive/1, /2 or /3 config')
     regularized = config.get('schema') == 'softcut-cohesive/3'
     mixed = config.get('schema') in {'softcut-cohesive/2', 'softcut-cohesive/3'}
+    sampling = config.get('mesh', {}).get('seam_endpoint_sampling', 'legacy')
+    if (sampling not in ('legacy', 'coordinated_endpoints') or sampling != 'legacy'
+            and config.get('fracture_topology', 'prescribed_seam') != 'prescribed_seam'):
+        raise ValueError('Coordinated seam endpoint sampling requires prescribed_seam')
     fine_width = config.get('mesh', {}).get('fine_halfwidth_mm')
     if fine_width is not None and (not regularized or isinstance(fine_width, bool)
             or not isinstance(fine_width, (int, float)) or not np.isfinite(fine_width) or fine_width <= 0):
@@ -506,6 +510,9 @@ def run(config_path, output, seconds, *, ipc_threads=2, blas_threads=1, physical
                 topology=config.get('fracture_topology','prescribed_seam'), law=p.cohesive_law.to_dict(),
                 history_shape=list(p.cohesive_maximum.shape), reference_gap_mm=config['reference_gap_mm'],
                 preparation_clearance_mm=config.get('preparation_clearance_mm'), initial_depth_mm=p.start)
+            if p.seam_endpoint_sampling != 'legacy':
+                physical_signature['fracture']['seam_endpoint_sampling'] = p.seam_endpoint_sampling
+                report['resolved_model']['geometry']['seam_endpoint_sampling'] = dict(p.seam_endpoint_sampling_metadata)
             report['solver_policy']=dict(network_metric_floor_n_per_mm=config.get('network_metric_floor_n_per_mm',0.),
                 network_predictor=config.get('network_predictor','baseline'),
                 minimum_increment_mm=config.get('minimum_increment_mm', .000625),

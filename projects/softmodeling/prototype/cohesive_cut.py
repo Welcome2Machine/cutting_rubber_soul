@@ -22,17 +22,38 @@ from .cohesive_mixed import MixedModeLaw, interface_response
 from .cohesive_network import network_mesh
 
 
-def split_mesh(mesh, config, gap_mm, seam_spacing_mm):
+def split_mesh(mesh, config, gap_mm, seam_spacing_mm, *, endpoint_sampling='legacy',
+               surface_spacing_mm=None, sampling_record=None):
     """Two independently triangulated material halves, with an explicit void strip."""
     if not np.isfinite([gap_mm, seam_spacing_mm]).all() or min(gap_mm, seam_spacing_mm) <= 0:
         raise ValueError('Positive finite seam gap/spacing required')
+    if endpoint_sampling not in ('legacy', 'coordinated_endpoints'):
+        raise ValueError('Unknown seam endpoint sampling policy')
+    if endpoint_sampling != 'legacy' and (isinstance(surface_spacing_mm, bool)
+            or surface_spacing_mm is None or not np.isfinite(surface_spacing_mm)
+            or surface_spacing_mm <= 0):
+        raise ValueError('Coordinated endpoints require positive nominal surface spacing')
     middle = config.drop_s_mm
     levels = np.linspace(0., config.height_mm,
                          int(np.ceil(config.height_mm/seam_spacing_mm))+1)
     parts, triangles, seam_ids, offset = [], [], [], 0
+    removed = []
     for side in (-1, 1):
         sx = middle+side*gap_mm/2
         keep = side*(mesh.local_sn[:, 0]-sx) > 1e-10
+        if endpoint_sampling == 'coordinated_endpoints':
+            # Only old samples on the same straight outer edge are candidates.
+            # Work in reference (s,n), before lab rotation. The new seam is
+            # inserted below; corners and every interior sample are protected.
+            s, n = mesh.local_sn.T
+            outer_edge = np.isclose(n, 0., atol=1e-10, rtol=0) | np.isclose(
+                n, config.height_mm, atol=1e-10, rtol=0)
+            corner = np.isclose(s, 0., atol=1e-10, rtol=0) | np.isclose(
+                s, config.length_mm, atol=1e-10, rtol=0)
+            protected_seam = np.isin(np.arange(len(s)), mesh.seam_nodes)
+            remove = keep & outer_edge & ~corner & ~protected_seam & (np.abs(s-sx) < surface_spacing_mm)
+            removed.extend(mesh.local_sn[remove].tolist())
+            keep &= ~remove
         sn = np.unique(np.round(np.vstack((mesh.local_sn[keep],
                       np.column_stack((np.full(len(levels), sx), levels)))), 10), axis=0)
         tri = Delaunay(sn).simplices.copy()
@@ -54,13 +75,16 @@ def split_mesh(mesh, config, gap_mm, seam_spacing_mm):
     result = FEMMesh(local_to_lab(sn, config), sn, np.vstack(triangles), pairs,
                      tributary, np.flatnonzero(np.isclose(sn[:, 1], 0.)),
                      pairs.ravel(), sides)
+    if sampling_record is not None:
+        sampling_record.update(policy=endpoint_sampling, nominal_surface_spacing_mm=surface_spacing_mm,
+                               removed_old_samples=len(removed), removed_local_sn_mm=removed)
     return result
 
 
 class CohesiveCutProblem(ViscoelasticProblem):
     def __init__(self, *, cohesive_law=None, cohesive_kind='radial_mode_i',
                  fracture_topology='prescribed_seam', gap_mm=.006,
-                 seam_spacing_mm=.1, network_metric_floor_n_per_mm=1.,
+                 seam_spacing_mm=.1, seam_endpoint_sampling='legacy', network_metric_floor_n_per_mm=1.,
                  network_predictor='body_stationary_if_safe',
                  preparation_clearance_mm=None, ccd_tolerance_mm=None,
                  ptc_model_backtracks=0, ptc_residual_guard=False,
@@ -74,6 +98,11 @@ class CohesiveCutProblem(ViscoelasticProblem):
         if fracture_topology == 'edge_network' and not self.is_mixed_mode:
             raise ValueError('The edge network requires the objective mixed-mode law')
         self.fracture_topology = fracture_topology
+        if (seam_endpoint_sampling not in ('legacy', 'coordinated_endpoints')
+                or seam_endpoint_sampling != 'legacy' and fracture_topology != 'prescribed_seam'):
+            raise ValueError('Coordinated seam endpoints require prescribed_seam')
+        self.seam_endpoint_sampling = seam_endpoint_sampling
+        self.seam_endpoint_sampling_metadata = {}
         self.network_topology = None
         if (isinstance(network_metric_floor_n_per_mm, bool)
                 or not np.isfinite(network_metric_floor_n_per_mm)
@@ -173,7 +202,10 @@ class CohesiveCutProblem(ViscoelasticProblem):
         if self.fracture_topology == 'edge_network':
             self.mesh, self.network_topology = network_mesh(self.mesh, self.config, self.gap_mm)
         else:
-            self.mesh = split_mesh(self.mesh, self.config, self.gap_mm, self.seam_spacing_mm)
+            self.mesh = split_mesh(self.mesh, self.config, self.gap_mm, self.seam_spacing_mm,
+                endpoint_sampling=self.seam_endpoint_sampling,
+                surface_spacing_mm=kwargs.get('surface_spacing'),
+                sampling_record=self.seam_endpoint_sampling_metadata)
         self.n = self.mesh.node_count
         self.rest = np.vstack((self.mesh.reference_xy, blade))
         self.total = self.rest.size
@@ -243,6 +275,8 @@ class CohesiveCutProblem(ViscoelasticProblem):
                                       if self.is_mixed_mode else None)
         self.reference_contact_check = self.check_reference_contact()
         self.fracture_topology_metadata['preparation'] = dict(self.preparation_metadata)
+        if self.seam_endpoint_sampling != 'legacy':
+            self.fracture_topology_metadata['seam_endpoint_sampling'] = dict(self.seam_endpoint_sampling_metadata)
         if self.nonlinear_solver != 'ptc':
             self.fracture_topology_metadata['nonlinear_solver'] = self.nonlinear_solver
         # The intrinsic network can spend many valid PTC iterations closing its
@@ -880,6 +914,8 @@ class CohesiveCutProblem(ViscoelasticProblem):
                     previous_cohesive_maximum=self.previous_cohesive_maximum,
                     seam_pairs=self.mesh.seam_pairs, reference_bond_lengths_mm=self.bond_lengths,
                     reference_bond_areas_mm2=self.bond_areas)
+        if self.seam_endpoint_sampling != 'legacy':
+            result['seam_endpoint_sampling'] = self.seam_endpoint_sampling
         if self.is_mixed_mode:
             result.update(cohesive_kind=self.cohesive_kind,
                 cohesive_law_parameters_json=json.dumps(self.cohesive_law.to_dict(), sort_keys=True),
@@ -917,6 +953,8 @@ class CohesiveCutProblem(ViscoelasticProblem):
         return result
 
     def audit_state(self, state, record):
+        if str(state.get('seam_endpoint_sampling', 'legacy')) != self.seam_endpoint_sampling:
+            raise RuntimeError('Checkpoint seam endpoint sampling differs')
         if str(state.get('nonlinear_solver', 'ptc')) != self.nonlinear_solver:
             raise RuntimeError('Checkpoint nonlinear solver differs')
         if self.is_mixed_mode:
@@ -1004,6 +1042,7 @@ def make_cohesive_problem(config):
     material, mesh = config['material'], config['mesh']
     p = CohesiveCutProblem(cohesive_law=law, cohesive_kind=kind,
         fracture_topology=config.get('fracture_topology', 'prescribed_seam'),
+        seam_endpoint_sampling=mesh.get('seam_endpoint_sampling', 'legacy'),
         network_metric_floor_n_per_mm=config.get('network_metric_floor_n_per_mm', 1.),
         network_predictor=config.get('network_predictor', 'body_stationary_if_safe'),
         preparation_clearance_mm=config.get('preparation_clearance_mm'),
