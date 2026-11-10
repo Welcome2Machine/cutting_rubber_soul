@@ -1,5 +1,21 @@
 # 运行环境与迁移
 
+## 当前端点采样对照（2026-11-10）
+
+固定任务52300dfca1954ba11636efe414e1f5524d95e208，数值producer
+1e67631630821dcfee80bb335686e08885a029ab；公开等树版本047dfe54f7c13880b64d33283055e9d1c35e5495。
+整树21f307752a07b827c2f532ccabad4e2bf664b731。F0沿用18e4e3c原生产身份，不重跑、不覆盖旧包。
+本次没有安装或更换数值依赖，活动加载期间数值文件冻结；仅现有split_mesh的显式端点策略及其输入/身份接通有变化。
+新版回放须使用各自保存配置中的coordinated_endpoints；缺省legacy仍用于重放旧参考失败，不能跨策略恢复。
+
+新F1/F2、原生接触重组、实际时间步、完整接受/拒绝记录和解释器/依赖清单位于
+`runs/fine_interface_20261110/endpoint_sampling/`；实际结果见[研究状态](../projects/softmodeling/docs/research_status.md)。
+README_REPLAY.md、preregistration.json、jobs.json、sacct.psv及accounting.json提供命令、环境与最终核账，
+包括本日已用额度；运行结果和基础设施明细留既有证据库，不进入Git。
+本地a39ce7fc文字交接已读，原始包未实收；没有要求本地新增计算、拟合或代码修改。
+
+下述条件惯性事件及更早记录保留原来源和失败资格，本次没有恢复其动态路径。
+
 ## 当前条件惯性事件交付（2026-11-09）
 
 任务固定b30aa743。开工时74416154、分支codex/server-fracture-20261029正确，完整index与工作区干净、本人无活动作业。
