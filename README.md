@@ -1,6 +1,6 @@
 # SoftCut Solution · 橡胶斜切研究工作台
 
-> **当前研究任务（2026-11-09）**：[唯一任务书](researchtopic/research_prototype_task.md) · [本地 agent](researchtopic/baseline_agent_tasks_20261031.md) · [服务器 agent](researchtopic/server_agent_prompt.md) · [Git 协作](docs/git_workflow.md)。第一篇完成实验解释所需的共同前向模型；第二篇的学习/微分方向只保留基础。任务更新不代表新增计算结果。
+> **当前研究任务（2026-11-16）**：[唯一任务书](researchtopic/research_prototype_task.md) · [本地暂停入口](researchtopic/baseline_agent_tasks_20261031.md) · [服务器 agent](researchtopic/server_agent_prompt.md) · [Git 协作](docs/git_workflow.md)。本轮仅服务器完成基线修复与刀尖迁移、材料变形和接触相对运动分析。第一篇实验解释优先；第二篇学习/微分方向只保留基础。任务更新不代表代码修复或新增计算结果。
 
 把有限元仿真与视频材料点观测放在同一个本地工程内：启动各自流程、检查输入、导出已审查有限元状态、比较同参考态位移，以及显式运行起裂候选诊断和受限裂后研究算例。各流程保存可追溯的 HTML / CSV / JSON 报告。
 

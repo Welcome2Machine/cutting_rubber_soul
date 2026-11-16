@@ -1,28 +1,29 @@
 # 当前科研工具入口
 
-更新：2026-11-02。执行范围见[科研原型任务](../../../researchtopic/research_prototype_task.md)，模型见[当前规格](../docs/current_model_spec.md)，结果见[研究状态](../docs/research_status.md)。
+更新：2026-11-16。执行范围见[科研原型任务](../../../researchtopic/research_prototype_task.md)，模型见[当前规格](../docs/current_model_spec.md)，结果见[研究状态](../docs/research_status.md)。本轮仅服务器执行基线修复与运动学分析。
 
-## 三条活跃科研入口
+## 本轮主要入口
 
 | 入口 | 目的 | 范围 |
 |---|---|---|
-| `python -m tools.run_material_candidate` | 一个实际角度的完整体计算；本地agent负责拟合 | 同一材料/接触描述，明确实验未裂有效区间 |
-| `python -m tools.fracture_onset` | 读取合格完整体保存态，输出共享起裂指标与位置 | 只读后处理；未知阈值不称已预测起裂 |
-| `python -m tools.run_coupled_growth` | 单一面级CZM/BE/IPC/Maxwell裂后机制 | 0°居中、预设裂路；新C2从自身无预裂初态开始 |
+| `python -m tools.run_material_candidate` | 服务器在任务条件成立时执行一个完整体短程 | 真实配置、自身初态、有限预算、完整接受历史 |
+| `python -m prototype.contact_trace export` | 已有接受态的刀尖材料坐标与接触几何后处理 | 本轮修复新版几何／起点兼容及显式合格前缀，保留源资格 |
+| 根目录 `python -m softcut_solution compare` | 有实验数据时进行固定材料点的条件比较 | 配准、时间、身份与实验未裂窗口独立核对 |
 
 优先复用已有数据。完整体队列仅在当前任务明确需要补算时使用；不由UI或旧脚本自动恢复队列。
-本轮C2使用新配置和当前任务的更小预算，不能直接复制历史2 mm或数小时命令。
+本轮不继续C2/F2。新增完整体路径严格受当前任务的数量、目标与预算约束，不复制历史2 mm或数小时默认命令。
 
 ## 复用的支持能力
 
 | 工具/模块 | 当前用途 |
 |---|---|
-| `qualify_intact_baseline`、`material_case` | 完整体来源和必要独立力学审查 |
+| `material_case`／`native_audit` | 使用实际保存配置重组完整体历史与原方程；复用既有独立审查 |
+| `qualify_intact_baseline` | 固定旧23°/603态的历史核对，不是任意新路径的通用 `--source` 工具 |
 | `plot_experiment_angles`、`visualize_ipc` | 已有力曲线、接受状态和场量图 |
 | `workbench.results` | 已有标准包与字段导出；保持有效区间和缺失值 |
 | `report_staged_c1_event`、已有事件报告 | 读取历史机制证据；不升级原资格 |
-| `run_coupled_growth audit`及现有必要审查 | 当前机制路线的物理、历史、几何和能量核查 |
-| `report_coupled_growth` | 已审查路径的裂面、载荷与关键帧；C2按实际输入修正标签，不使用要求非空预裂的C1报告 |
+| `run_coupled_growth audit`及既有断裂审查 | 历史机制路线的物理、历史、几何和能量核查，本轮不启动新断裂路径 |
+| `report_coupled_growth` | 历史已审查路径的裂面、载荷与关键帧，保留原资格 |
 | `face_witness`、`window_journal`、`audit_coupled_chunks` | 已有溯源/恢复能力；本轮不扩建通用设施 |
 | `manage_outputs` | 已有无损归档/恢复；整理不启动FE，本轮不批量删除 |
 | `check_publish` | 代码、文档、审阅配置发布检查 |
@@ -31,7 +32,7 @@
 
 ## 冻结的研究入口
 
-以下代码保留供历史复现与现行依赖，不是本轮推荐执行路线：旧径向CZM、全内部边自由网络、FFM虚拟裂增量/摩擦功、离散梯度对照、条件释放、纯预裂控制、闭合C1时间控制和进一步性能扫描。
+以下代码保留供历史复现与现行依赖，不是本轮推荐执行路线：起裂诊断、新的CZM/F2加载、旧径向CZM、全内部边自由网络、FFM虚拟裂增量/摩擦功、离散梯度对照、条件释放、纯预裂控制、闭合C1时间控制和进一步性能扫描。
 
 `run_cohesive_cut`、`run_zero_gap_cut`、`run_fracture_route`、`run_endpoint_face_route`、`run_precrack_entry`以及条件窗口系列中部分工厂仍被当前主线调用；冻结研究用途不等于可以删除文件。
 

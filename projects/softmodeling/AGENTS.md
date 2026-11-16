@@ -1,22 +1,24 @@
 # Repository requirements
 
-## Current user task and ownership (2026-11-10)
+## Current user task and ownership (2026-11-16)
 
 The only current task is [research_prototype_task](../../researchtopic/research_prototype_task.md).
 Read it and [Git workflow](../../docs/git_workflow.md) before acting. The first paper is experiments
 plus explanatory forward simulation; learning, differentiable solvers and PINNs are possible second-paper
-work, not implementation tasks now. Today the user authorizes SERVER-ONLY execution. The local agent
-preserves its a39ce7 results and workspace; no new local FE, fit, code edits or duplicate packaging.
-The server reads that fixed handoff without waiting for the local raw package or merging its branch.
+work, not implementation tasks now. The user authorizes SERVER-ONLY execution of baseline repairs,
+material-coordinate migration, fixed-material deformation and contact-relative motion analysis.
+The local agent preserves its a39ce7 results and workspace; no new local FE, fit, code edits or duplicate
+packaging is assigned. Missing local raw data does not block the server's work; do not merge that branch.
 
-The physical-chord gate and 047dfe54 endpoint sampling repair are completed. The f8cca8e delivery
-qualifies F0/F1 to .2 mm and an independently re-audited 61-state F2 prefix to .295 mm; its original
-audit_failed label and rejected trial remain unchanged. Do not repeat these tasks or extend long paths.
-The current task is read-only endpoint energy/contact/softening and solver-attempt analysis. Only if
-all documented conditions hold, one same-target .295-to-.29625 mm verification is permitted, with the
-original parent history, dt and solver gates, at most 15 minutes. The whole stage is bounded to 60 minutes.
-No production numerical changes, new mesh/contact platform, solver/spectral/dynamic framework, parameter
-sweep or learning pipeline. Old event failures retain their labels. Today's budget includes prior work.
+The current task explicitly supersedes the November 10 read-only fracture-endpoint task and its probe.
+Implement its B1-B7 fixes in existing modules: actual geometry/initial-position metadata, consistent
+online/offline observables, independently qualified-prefix export, the mu=0 CLI, material-identity
+kinematics and one research report. First reuse the server's F0 and available oblique accepted histories.
+Only the current task's conditional bounded intact paths are authorized; retain its resource limits.
+Do not continue F2, repeat seam sampling repairs, or develop solver/spectral/dynamic/3D/learning frameworks.
+Finite-gap proximity motion, material-address migration and loaded-interface slip have distinct meanings.
+Preserve missing/ambiguous samples and source failure labels; postprocessing success is not solve completion.
+The physical-chord gate, F0/F1 and the independently re-audited 61-state F2 prefix remain historical evidence.
 
 Read [research status](docs/research_status.md), [model specification](docs/current_model_spec.md),
 [code map](prototype/README.md) and [project conventions](README.md) as evidence of implemented behavior.
@@ -33,8 +35,10 @@ They do not make an unimplemented task an existing capability. Root AGENTS and p
 - The workbench represents a symmetric wedge/circular nose, not arbitrary CAD. Lubrication is a
   condition label plus explicit Coulomb mu, not an oil-film model. Public Fy maps solver reaction_x_n;
   Fyz is a resultant. Force components, surface projections and energy shares are different quantities.
-- Today numerical sources, mesh, material/fracture/contact parameters and solver gates are frozen.
-  General common-parameter calibration within defensible intact windows remains a later option.
+- The baseline formulation and established physical/solver gates remain fixed. The current task authorizes
+  targeted IO/observability/CLI repairs and only its explicitly bounded comparison configurations.
+  Do not silently change friction regularization or historical input identities. General common-parameter
+  calibration within defensible intact windows remains a later option.
   The fracture agent must not tune strength/Gc,
   angle-specific material, effective width or force factors to make a desired cutting curve.
 - Treat the second-paper data foundation as source-traceable configurations, histories and observables,
