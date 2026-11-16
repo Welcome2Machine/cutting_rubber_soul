@@ -180,9 +180,9 @@ def audit_coverage(source, report, audit_path=None, manifest_path=None):
     return prefix, provenance
 
 
-def accumulate_motion(tracker, motion, contact, prior_contact, prior_motion, cumulative, dt):
+def accumulate_motion(tracker, motion, contact, prior_contact, prior_motion, cumulative, dt, *, continuity=None):
     """Endpoint/right-rule proximity increments; no integration across gaps."""
-    result = dict(motion, segment_id=None, break_reason=None,
+    result = dict(motion, segment_id=None, break_reason=None, continuity_check=continuity,
                   signed_segment_mm=None, absolute_segment_mm=None, migration_rate_mm_s=None)
     if not motion['valid']:
         result['break_reason'] = motion['status']
@@ -192,7 +192,8 @@ def accumulate_motion(tracker, motion, contact, prior_contact, prior_motion, cum
         reason = 'first_valid_endpoint_or_contact_birth'
     else:
         old_edge, edge = prior_contact['edge_nodes'], contact['edge_nodes']
-        if old_edge != edge and not set(old_edge).intersection(edge):
+        if (old_edge != edge and not set(old_edge).intersection(edge)
+                and not (continuity and continuity['continuous'])):
             reason = 'nonadjacent_projection_jump'
     if reason:
         cumulative.update(segment_id=cumulative.get('segment_id', -1)+1, signed=0., absolute=0.)
@@ -310,7 +311,13 @@ def export_trace(source, output, *, qualified_prefix=False, audit_path=None, man
                 if step.get(key, {}).get('status') != 'error' and key in step and step[key] != value:
                     raise ValueError(f'Online/offline observation mismatch: {i}/{key}')
             motion = dict(valid=False, status='physical_time_unavailable') if dt is None else tracker.relative_motion(x, previous, contact, dt)
-            motion = accumulate_motion(tracker, motion, contact, prior_contact, prior_motion, cumulative, dt)
+            continuity = None
+            if (motion['valid'] and prior_motion and prior_motion['valid']
+                    and prior_contact['status'] == 'unique'
+                    and not set(contact['edge_nodes']).intersection(prior_contact['edge_nodes'])):
+                continuity = tracker.projection_continuity(previous, x, prior_contact, contact)
+            motion = accumulate_motion(tracker, motion, contact, prior_contact, prior_motion, cumulative, dt,
+                                       continuity=continuity)
             if first_valid is None and contact['status'] == 'unique':
                 first_valid = dict(index=i, bracket_depth_mm=[prior_depth, step['depth_mm']], reference_s_mm=contact['reference_s_mm'])
             epsilon = report.get('resolved_model', {}).get('friction', {}).get('epsilon_u_mm',
@@ -347,6 +354,7 @@ def export_trace(source, output, *, qualified_prefix=False, audit_path=None, man
         relative_motion_definition=dict(raw='(v_blade_fixed_pole-v_material_same_current_edge_weights) dot current tangent',
             transported='previous material point carried by finite rigid blade motion minus current material point, dot current tangent / dt',
             trajectory_identity='fixed knife pole and contiguous original top-material projection branch; material points along this branch can differ',
+            continuity='adjacent reference edges remain connected; fast multi-edge crossings use at most 32 sampled subintervals on the accepted-state geometric chord. These are not equilibrium states or proof of physical contact throughout the step; gaps, ambiguity and unresolved changes cut the segment.',
             integration='right endpoint increment, per valid contiguous endpoint segment; birth increment excluded; endpoint validity does not prove continuous physical contact',
             qualification='geometric proximity; no local pressure or traction qualification; not physical accumulated slip'),
         contact_events=proximity_events(observed, tracker, start),
@@ -391,6 +399,8 @@ def write_kinematics_table(path, steps):
         row.update({k: step['tip_contact'].get(k) for k in ('status', 'reference_s_mm', 'reference_offset_mm', 'gap_mm', 'edge_nodes', 'edge_alpha')})
         row.update({k: step['relative_motion'].get(k) for k in ('raw_mm_s', 'transported_mm_s', 'transport_correction_mm_s', 'segment_id', 'break_reason', 'signed_segment_mm', 'absolute_segment_mm', 'local_edge_stretch', 'migration_rate_mm_s')})
         row.update(motion_valid=step['relative_motion']['valid'], motion_status=step['relative_motion']['status'])
+        check = step['relative_motion'].get('continuity_check') or {}
+        row.update(continuity_status=check.get('status'), continuity_chord_intervals=check.get('intervals'))
         row.update(step['force'])
         for name, roi in step['fixed_material']['rois'].items():
             row.update({name+'_'+k: roi[k] for k in ('u_s_mm', 'u_n_mm', 'count')})

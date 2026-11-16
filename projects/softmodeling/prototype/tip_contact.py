@@ -422,3 +422,36 @@ class TipContactTracker:
                   np.linalg.norm(self.reference[j]-self.reference[i]))
                   for name, (i, j) in definition['gauge_nodes'].items()}
         return dict(rois=rois, gauge_stretch=gauges)
+
+    def projection_continuity(self, previous, positions, prior_contact, contact):
+        """Resolve fast crossings of adjacent reference edges on a geometric chord.
+
+        Interior samples are NOT equilibrium states or new physical observations.
+        They support a sampled projection branch only, not continuous pressure
+        contact throughout the physical interval. Genuine gaps/ambiguities stay
+        invalid; an unresolved jump never receives a cumulative contribution.
+        """
+        x, old = np.asarray(positions), np.asarray(previous)
+        last = None
+        for intervals in (2, 4, 8, 16, 32):
+            samples = [dict(fraction=0., **prior_contact)]
+            try:
+                for i in range(1, intervals):
+                    f = i/intervals
+                    depth = (1-f)*prior_contact['depth_mm']+f*contact['depth_mm']
+                    samples.append(dict(fraction=f, **self.observe((1-f)*old+f*x, depth)))
+            except ValueError as exc:
+                return dict(continuous=False, status='invalid_chord_geometry', error=str(exc),
+                            intermediate_geometry_only=True)
+            samples.append(dict(fraction=1., **contact))
+            last = [dict(fraction=s['fraction'], status=s['status'], edge_nodes=s['edge_nodes'],
+                         reference_s_mm=s['reference_s_mm'], gap_mm=s['gap_mm']) for s in samples]
+            if any(s['status'] != 'unique' for s in samples):
+                return dict(continuous=False, status='chord_gap_or_ambiguous_projection',
+                            intervals=intervals, samples=last, intermediate_geometry_only=True)
+            if all(a['edge_nodes'] == b['edge_nodes'] or set(a['edge_nodes']).intersection(b['edge_nodes'])
+                   for a, b in zip(samples[:-1], samples[1:])):
+                return dict(continuous=True, status='sampled_continuous_projection',
+                            intervals=intervals, samples=last, intermediate_geometry_only=True)
+        return dict(continuous=False, status='unresolved_projection_change', intervals=32,
+                    samples=last, intermediate_geometry_only=True)

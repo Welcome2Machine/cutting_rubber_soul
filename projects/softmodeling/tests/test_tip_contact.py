@@ -288,3 +288,32 @@ class MaterialIdentityMotionTests(unittest.TestCase):
         self.assertTrue(result['valid'])
         self.assertGreater(abs(result['raw_mm_s']), 1e-4)
         self.assertAlmostEqual(result['transported_mm_s'], 0., places=11)
+
+class FastProjectionCrossingTests(unittest.TestCase):
+    def test_multiple_adjacent_material_edges_do_not_reduce_cumulative_motion(self):
+        from prototype.contact_trace import accumulate_motion
+        tracker,reference,_,n,_=fixture()
+        old=place_pole(tracker,reference,n,[.3,1.005])
+        current=place_pole(tracker,reference,n,[2.3,1.005])
+        a,b=tracker.observe(old,0.),tracker.observe(current,.1)
+        self.assertFalse(set(a['edge_nodes']).intersection(b['edge_nodes']))
+        continuity=tracker.projection_continuity(old,current,a,b)
+        self.assertTrue(continuity['continuous'])
+        self.assertTrue(continuity['intermediate_geometry_only'])
+        motion=tracker.relative_motion(current,old,b,1.)
+        cumulative=dict(segment_id=0,signed=0.,absolute=0.)
+        result=accumulate_motion(tracker,motion,b,a,dict(valid=True),cumulative,1.,continuity=continuity)
+        self.assertIsNone(result['break_reason'])
+        self.assertAlmostEqual(result['signed_segment_mm'],2.)
+        self.assertAlmostEqual(result['absolute_segment_mm'],2.)
+
+    def test_intermediate_gap_is_not_healed_by_valid_endpoints(self):
+        from unittest.mock import patch
+        tracker,reference,_,n,_=fixture()
+        old=place_pole(tracker,reference,n,[.3,1.005]);current=place_pole(tracker,reference,n,[2.3,1.005])
+        a,b=tracker.observe(old,0.),tracker.observe(current,.1)
+        missing=dict(status='no_tip_contact',edge_nodes=None,reference_s_mm=None,gap_mm=.1)
+        with patch.object(tracker,'observe',return_value=missing):
+            continuity=tracker.projection_continuity(old,current,a,b)
+        self.assertFalse(continuity['continuous'])
+        self.assertEqual(continuity['status'],'chord_gap_or_ambiguous_projection')
