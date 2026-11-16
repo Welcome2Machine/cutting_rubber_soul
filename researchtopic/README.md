@@ -4,9 +4,9 @@
 
 | 入口 | 用途 |
 |---|---|
-| [科研原型任务](research_prototype_task.md) | **唯一现行任务**：B1–B7基线修复、运动学定义、数据复用、有界计算与验收 |
+| [科研原型任务](research_prototype_task.md) | **唯一现行任务**：第0节新agent背景／接管导读，后续B1–B7修复、运动学、有界计算与验收 |
 | [Git 协作规则](../docs/git_workflow.md) | 分支、文件责任、按提交交接、运行目录与仓库清洁 |
-| [服务器启动提示词](server_agent_prompt.md) | 本轮唯一执行端：先修复与后处理，按条件至多两条完整体短程 |
+| [新服务器agent提示词](server_agent_prompt.md) | 无需旧对话即可接管；继承已有进度和预算，继续本轮唯一服务器任务 |
 | [本地启动提示词](baseline_agent_tasks_20261031.md) | 本轮不接新任务；保留a39ce7成果与既有证据 |
 | [实际研究状态](../projects/softmodeling/docs/research_status.md) | 已完成结果、证据位置与尚未完成的阶段 |
 
