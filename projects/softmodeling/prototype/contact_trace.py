@@ -436,8 +436,10 @@ def write_research_report(output, result):
     gap_axis.axhline(result['tip_contact_tracking']['dhat_mm'], color='tab:orange', ls=':', label='dhat (mm)')
     gap_axis.set_ylabel('pole gap (mm)')
     gap_axis.legend(loc='lower left', fontsize=7)
-    for name in ('nose', 'left_flank', 'right_flank'):
+    for name in steps[0]['blade_contact_footprint']['parts']:
         axes[0, 1].plot(d, [s['blade_contact_footprint']['parts'][name]['supported_current_length_mm'] for s in steps], label=name)
+    axes[0, 1].plot(d, [s['blade_contact_footprint']['supported_current_length_mm'] for s in steps],
+                    'k--', label='whole_blade_union')
     for name in result['fixed_material_definition']['roi_nodes']:
         for component, style in (('u_s_mm', '-'), ('u_n_mm', '--')):
             axes[1, 0].plot(d, numbers([s['fixed_material']['rois'][name][component] for s in steps]), style, label=name+' '+component)

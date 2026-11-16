@@ -156,8 +156,14 @@ class ViscoelasticProblem(IPCProblem):
         self._fresh_material_cache=(key,F.copy(),self.previous_material_metric.copy(),value)
         return value
 
-    def audit_state(self,state,record):
-        """Fresh original force balance using BOTH exact pre-step histories."""
+    def audit_state(self,state,record,*,incremental_blade_positions=None):
+        """Fresh force balance; optional blade replay comes from the full auditor.
+
+        The continuous vertical runner updates its rigid boundary incrementally.
+        A full audit can independently replay that arithmetic from the reference
+        and require exact equality, without widening a coordinate tolerance.
+        Standalone and other-formulation callers retain the absolute check.
+        """
         before=(self.previous.copy(),self.previous_material_metric.copy(),self.material_dt)
         if hasattr(self,'_fresh_material_cache'):raise RuntimeError('Nested material audit')
         self._fresh_material_cache=None
@@ -168,11 +174,14 @@ class ViscoelasticProblem(IPCProblem):
             positions=state['positions']
             depth=float(state['depth_mm'])
             expected_blade=self.prescribed_blade_positions(depth)
+            blade_valid = (np.allclose(positions[self.n:],expected_blade,rtol=0,
+                              atol=self.blade_boundary_roundoff_tolerance(depth))
+                           if incremental_blade_positions is None else
+                           np.array_equal(positions[self.n:],incremental_blade_positions))
             if (not np.array_equal(state['reference_xy'],self.rest)
                     or not np.array_equal(state['triangles'],self.mesh.triangles)
                     or not np.array_equal(positions[self.mesh.bottom_nodes],self.rest[self.mesh.bottom_nodes])
-                    or not np.allclose(positions[self.n:],expected_blade,rtol=0,
-                                       atol=self.blade_boundary_roundoff_tolerance(depth))):
+                    or not blade_valid):
                 raise RuntimeError('Checkpoint geometry or prescribed boundaries differ')
             fresh=self.acceptance(positions,float(state['depth_mm']),0,0)
             trial=self.material_response(positions)
@@ -183,6 +192,11 @@ class ViscoelasticProblem(IPCProblem):
             result = dict(depth_mm=record['depth_mm'],residual_n=fresh['residual_n'],
                           min_j=fresh['min_j'],reaction_fz_n=fresh['reaction_fz_n'],passed=True,
                           **self._audit_extra_acceptance(fresh,record))
+            if incremental_blade_positions is not None:
+                result.update(blade_boundary_check='exact full accepted-increment replay',
+                    blade_replay_max_error_mm=0.,
+                    blade_absolute_reconstruction_difference_mm=float(
+                        np.max(np.abs(positions[self.n:]-expected_blade))))
             if self.enforce_physical_chord:
                 fraction = float(self.safe_step(self.previous, positions-self.previous))
                 safe = bool(np.isfinite(fraction) and fraction >= 1.)

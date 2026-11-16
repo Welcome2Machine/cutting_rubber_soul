@@ -145,6 +145,37 @@ class MaxwellCandidateTests(unittest.TestCase):
             np.testing.assert_array_equal(p.previous_material_metric,np.eye(3)[None])
 
 
+    def test_full_blade_replay_avoids_accumulated_roundoff_without_accepting_tampering(self):
+        p=ViscoelasticProblem(maxwell_shear=1.24,relaxation_s=1.7,loading_rate=.2,
+            case='patch',mu=.35,local_spacing=.2,surface_spacing=.1)
+        # Large coordinates and 601 actual depth updates reproduce the old
+        # absolute-reconstruction false rejection, without a research solve.
+        p.rest[p.n:,1]+=80.-float(np.max(p.rest[p.n:,1]))
+        replay=p.rest[p.n:].copy();prior=p.start
+        for depth in np.r_[0.,np.arange(.005,3.,.005),3.]:
+            replay[:,1]-=float(depth)-float(prior);prior=depth
+        positions=p.rest.copy();positions[p.n:]=replay
+        state=dict(reference_xy=p.rest.copy(),triangles=p.mesh.triangles.copy(),
+            positions=positions,previous_positions=p.rest.copy(),depth_mm=3.,
+            previous_material_metric=p.material_metric.copy(),material_dt_s=.025)
+        self.assertGreater(np.max(abs(replay-p.prescribed_blade_positions(3.))),
+                           p.blade_boundary_roundoff_tolerance(3.))
+        with self.assertRaisesRegex(RuntimeError,'prescribed boundaries'):
+            p.audit_state(state,{})
+        # Reaching force assembly proves only the geometric gate here; the
+        # actual full numerical audit is separate and remains mandatory.
+        with patch.object(p,'acceptance',side_effect=RuntimeError('force assembly reached')):
+            with self.assertRaisesRegex(RuntimeError,'force assembly reached'):
+                p.audit_state(state,{},incremental_blade_positions=replay)
+            for axis in (0,1):
+                bad=positions.copy();bad[p.n,axis]=np.nextafter(bad[p.n,axis],np.inf)
+                with self.assertRaisesRegex(RuntimeError,'prescribed boundaries'):
+                    p.audit_state(dict(state,positions=bad),{},incremental_blade_positions=replay)
+            bad=positions.copy();bad[p.mesh.bottom_nodes[0],0]+=1e-12
+            with self.assertRaisesRegex(RuntimeError,'prescribed boundaries'):
+                p.audit_state(dict(state,positions=bad),{},incremental_blade_positions=replay)
+
+
 class MaterialRunControlTests(unittest.TestCase):
     def test_actual_angle_experiments_do_not_leak_to_other_cases(self):
         from tools.run_material_queue import make_command
@@ -389,6 +420,9 @@ class FrictionlessEntryTests(unittest.TestCase):
             report = dict(signature=signature(p), source_sha256={}, settings={}, steps=[record])
             result = audit(p, out, report)
         self.assertTrue(result['passed'])
+        self.assertEqual(result['rows'][0]['blade_boundary_check'],
+                         'exact full accepted-increment replay')
+        self.assertEqual(result['rows'][0]['blade_replay_max_error_mm'],0.)
         for mu in (-1., float('nan'), float('inf')):
             with self.assertRaises(ValueError):
                 ViscoelasticProblem(maxwell_shear=1.24, relaxation_s=1.7, loading_rate=.2, mu=mu)

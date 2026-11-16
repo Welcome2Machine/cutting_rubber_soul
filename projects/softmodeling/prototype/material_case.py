@@ -201,6 +201,10 @@ def audit(p,out,report,*,destination=None,progress=None,deadline=None,initial_st
     from .contact_trace import record_digest
     rows=[];prior_x=p.rest;prior_metric=np.tile(np.eye(3),p.material_metric.shape[:1]+(1,1))
     prior_depth=p.start;total_dissipation=0.
+    # Only the unchanged continuous vertical runner uses this representation.
+    # Start at the reference, never at a saved blade position. The prefix's
+    # depths, exact parents and physical dt are independently checked below.
+    blade_replay = p.rest[p.n:].copy() if type(p) is ViscoelasticProblem else None
     if initial_state is not None:
         if not getattr(p,'event_mode',False):raise ValueError('Explicit initial state only for conditional BE audit')
         prior_x=initial_state['positions'].copy();prior_metric=initial_state['material_metric'].copy()
@@ -226,7 +230,11 @@ def audit(p,out,report,*,destination=None,progress=None,deadline=None,initial_st
             np.testing.assert_allclose(record['event']['time_s'],float(state['event_time_s']),rtol=0,atol=1e-14)
             prior_velocity=state['velocity'].copy();prior_time=float(state['event_time_s'])
             prior_cohesive=state['cohesive_maximum'].copy()
-        row=p.audit_state(state,record)
+        if blade_replay is not None:
+            blade_replay[:,1] -= float(record['depth_mm'])-float(prior_depth)
+            row=p.audit_state(state,record,incremental_blade_positions=blade_replay)
+        else:
+            row=p.audit_state(state,record)
         total_dissipation+=record['material']['viscous_dissipation_increment_n_mm']
         np.testing.assert_allclose(float(state['cumulative_viscous_dissipation_n_mm']),
                                    total_dissipation,rtol=1e-10,atol=1e-10)
