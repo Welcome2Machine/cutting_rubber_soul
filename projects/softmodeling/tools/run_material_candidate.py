@@ -7,6 +7,7 @@ and reassembles every state. No damage and no force rescaling.
 import argparse
 import contextlib
 import csv
+from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
@@ -159,7 +160,8 @@ def main():
     parser.add_argument('--angle',type=float,default=60.,help='Specimen inclination in [0, 75] degrees')
     parser.add_argument('--mu',type=float,default=.35,
         help='Finite nonnegative Coulomb coefficient; 0 uses the existing frictionless branch; resume requires an identical value')
-    parser.add_argument('--depth',type=float,default=2.)
+    parser.add_argument('--depth',type=float,default=2.,
+        help='Explicit target <= 3 mm; default and historical 2 mm baseline unchanged')
     parser.add_argument('--increment',type=float,default=.01)
     parser.add_argument('--seconds',type=float,default=21600.)
     parser.add_argument('--resume',type=Path)
@@ -197,8 +199,8 @@ def main():
     args=parser.parse_args()
     if not np.isfinite(args.mu) or args.mu < 0:
         parser.error('mu must be finite and nonnegative')
-    if not all(np.isfinite(v) and v>0 for v in (args.depth,args.increment,args.seconds)) or args.depth>2:
-        parser.error('positive finite controls and target depth <= 2 mm required')
+    if not all(np.isfinite(v) and v>0 for v in (args.depth,args.increment,args.seconds)) or args.depth>3:
+        parser.error('positive finite controls and target depth <= 3 mm required')
     if args.threads<1:parser.error('threads must be positive')
     if not np.isfinite(args.angle) or not 0<=args.angle<=75:parser.error('Angle must be in [0,75] degrees')
     thickness=args.blade_thickness if args.blade_thickness is not None else BASELINE['model']['blade_thickness_mm']
@@ -254,6 +256,9 @@ def main():
           else contextlib.nullcontext()),compute_process_policy() as policy:
         report['runtime_process_policy']=policy
         report['thread_runtime']=runtime
+        report['started_at_utc']=datetime.now(timezone.utc).isoformat()
+        print(f'START utc={report["started_at_utc"]} target_mm={args.depth:.6f} '
+              f'loading_budget_s={args.seconds:g} source={args.resume or "own_initial_state"}',flush=True)
         print('RUNTIME_POLICY '+json.dumps(policy),flush=True)
         started=time.monotonic();p=None;x=None
         try:
@@ -278,7 +283,7 @@ def main():
             enable_performance(p,performance)
             print('PERFORMANCE_POLICY '+json.dumps(performance),flush=True)
             tracker=TipContactTracker(p.rest,p.mesh.triangles,p.n,p.config,p.dhat,p.nose_facets)
-            report['status']='running';write_json(out/'result.json',report)
+            report.update(status='running',phase='loading');write_json(out/'result.json',report)
             solve_start=time.monotonic();deadline=solve_start+args.seconds
             targets=np.r_[0.,np.arange(args.increment,args.depth-1e-12,args.increment),args.depth]
             def rejected(event):
@@ -293,7 +298,9 @@ def main():
                     record_tip_contact(tracker,x,record,report)
                     write_json(out/'result.json',report)
                     print(f'ACCEPT depth_mm={old:.6f} Fz_N={record["reaction_fz_n"]:.9g} '
-                          f'residual_N={record["residual_n"]:.4g}',flush=True)
+                          f'residual_N={record["residual_n"]:.4g} target_mm={args.depth:.6f} '
+                          f'utc={datetime.now(timezone.utc).isoformat()} '
+                          f'loading_elapsed_s={time.monotonic()-solve_start:.3f}',flush=True)
             report.update(status='completed',completed=True)
         except Exception as exc:
             report.update(status='budget_exhausted' if isinstance(exc,TimeoutError) else 'failed',
@@ -308,6 +315,12 @@ def main():
                                **p.checkpoint_data())
                     save_npz(out/'last_ptc.npz',**state)
         report['elapsed_s']=time.monotonic()-started
+        report['phase']='auditing'
+        print(f'LOADING_END utc={datetime.now(timezone.utc).isoformat()} '
+              f'status={report["status"]} accepted_depth_mm={report.get("last_depth_mm")} '
+              f'target_mm={args.depth:.6f} elapsed_s={report["elapsed_s"]:.3f}',flush=True)
+        print(f'AUDIT_BEGIN utc={datetime.now(timezone.utc).isoformat()} '
+              f'accepted_states={len(report["steps"])}',flush=True)
         write_json(out/'result.json',report)
         try:
             if p is not None and report['steps']:
@@ -318,6 +331,9 @@ def main():
             report.update(status='audit_failed',completed=False,audit_error=f'{type(exc).__name__}: {exc}')
             traceback.print_exc(file=log)
         finally:
+            report['phase']='finalizing'
+            print(f'AUDIT_END utc={datetime.now(timezone.utc).isoformat()} '
+                  f'status={report["status"]} audit_error={report.get("audit_error")}',flush=True)
             if p is not None:
                 report['performance_counters']=performance_summary(p)
                 try:close_performance(p)
@@ -332,6 +348,8 @@ def main():
     try:compare(out,report,args.reference,args.image_estimates,args.experiment,
                 experiment_angle=args.experiment_angle,image_angle=args.image_angle)
     except Exception as exc:report['comparison_error']=f'{type(exc).__name__}: {exc}'
+    report['phase']='ended'
+    report['ended_at_utc']=datetime.now(timezone.utc).isoformat()
     write_json(out/'result.json',report)
     bind_final_audit_result(out, report)
     write_json(out/'outcome.json',{k:report.get(k) for k in
