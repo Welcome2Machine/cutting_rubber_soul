@@ -18,8 +18,10 @@ class ViscoelasticProblem(IPCProblem):
         if not all(np.isfinite(x) and x>0 for x in
                    (maxwell_shear,relaxation_s,loading_rate)):
             raise ValueError('Explicit positive Maxwell shear, time and loading rate required')
-        if kwargs.get('element','p1')!='p1' or kwargs.get('mu',.35)<=0:
-            raise ValueError('This candidate requires P1 with the existing friction PTC host')
+        if kwargs.get('element','p1')!='p1':
+            raise ValueError('This candidate requires P1')
+        if not np.isfinite(kwargs.get('mu',.35)) or kwargs.get('mu',.35)<0:
+            raise ValueError('Coulomb coefficient must be finite and nonnegative')
         if bulk_modulus is not None and (not np.isfinite(bulk_modulus) or bulk_modulus<=0):
             raise ValueError('Explicit bulk modulus must be finite and positive')
         if volumetric not in ('quadratic_j','log_j'):
@@ -34,8 +36,6 @@ class ViscoelasticProblem(IPCProblem):
             self.config.validate()
             if not np.isclose(self.config.bulk_modulus_n_mm2,k,rtol=1e-12,atol=0):
                 raise ValueError('Bulk modulus is not representable at this shear/Poisson ratio')
-        if self.config.friction_coefficient<=0:
-            raise ValueError('Use the friction PTC host for this material candidate')
         self.material=replace(from_config(self.config),mu_ov=(float(maxwell_shear),),
                               alpha_ov=(2.,),relaxation_s=float(relaxation_s),
                               viscous_flow='isochoric_maxwell',volumetric=volumetric)

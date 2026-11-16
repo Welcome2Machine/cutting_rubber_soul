@@ -13,6 +13,29 @@
 优先复用已有数据。完整体队列仅在当前任务明确需要补算时使用；不由UI或旧脚本自动恢复队列。
 本轮不继续C2/F2。新增完整体路径严格受当前任务的数量、目标与预算约束，不复制历史2 mm或数小时默认命令。
 
+### 完整体运动学导出
+
+在FE子目录、计算节点执行已有状态后处理（不加载FE）：
+
+```bash
+python -m prototype.contact_trace export --source "$case" --output "$new_output" --qualified-prefix
+# 旧审查没有source_binding时，另外提供当时已绑定result/audit的清单：
+python -m prototype.contact_trace export --source "$case" --output "$new_output" --qualified-prefix --manifest "$prior_manifest"
+```
+
+`--audit`可指定独立审查sidecar。前缀从初态连续覆盖，逐态核对记录、NPZ、父位置、材料metric与真实dt；
+新建指纹不能代替旧审查的来源绑定。未显式选前缀时仍要求完整请求完成；缺可信审查的完整旧结果只能得到未认证观测。
+圆鼻片数和准备位置从实际元数据与保存拓扑核对，缺失/冲突拒绝，不默认64片或重建旧起点。
+`contact_trace.json`（`softcut-contact-kinematics/2`）、`kinematics.csv`和`index.html`保存全接受频率结果。
+固定顶面材料ROI为落点左右近场/远场，固定标距端点和实际ID写入定义；图示帧抽稀不参与求差分。
+`raw_mm_s`是实验室系同材料身份速度差的当前切向投影；`transported_mm_s`先用刀具有限刚体运动输运父态材料点。
+后者消除有限gap共同转动的伪相对运动，但仍只是几何邻近诊断。累计量按连续有效端点段及右端增量积分；
+接触新生步排除、正常相邻边跨越保留，失接触/歧义/非邻接跳变切段，不跨缺口积分。
+footprint是距刀具小于dhat的初始顶面范围与当前长度，不是压力承载区。
+`workbench.results.export_case(..., trace_path=...)`只消费同源共同观测，保留元数据与缺失，不另推断刀形。
+
+主运行CLI的`--mu 0`使用原有无摩擦分支；负数、NaN、Inf拒绝。固定εu历史不变，运动学表逐步列出εu/dt。
+
 ## 复用的支持能力
 
 | 工具/模块 | 当前用途 |

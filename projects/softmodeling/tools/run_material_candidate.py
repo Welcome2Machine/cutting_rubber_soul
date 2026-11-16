@@ -158,7 +158,7 @@ def main():
     parser.add_argument('--loading-rate',type=float,required=True)
     parser.add_argument('--angle',type=float,default=60.,help='Specimen inclination in [0, 75] degrees')
     parser.add_argument('--mu',type=float,default=.35,
-        help='Common positive Coulomb coefficient; exact-history resume requires an identical value')
+        help='Finite nonnegative Coulomb coefficient; 0 uses the existing frictionless branch; resume requires an identical value')
     parser.add_argument('--depth',type=float,default=2.)
     parser.add_argument('--increment',type=float,default=.01)
     parser.add_argument('--seconds',type=float,default=21600.)
@@ -195,7 +195,9 @@ def main():
     parser.add_argument('--experiment',type=Path,
         help='Authorized force-depth CSV in N and micrometres; assign its angle explicitly')
     args=parser.parse_args()
-    if not all(np.isfinite(v) and v>0 for v in (args.depth,args.increment,args.seconds,args.mu)) or args.depth>2:
+    if not np.isfinite(args.mu) or args.mu < 0:
+        parser.error('mu must be finite and nonnegative')
+    if not all(np.isfinite(v) and v>0 for v in (args.depth,args.increment,args.seconds)) or args.depth>2:
         parser.error('positive finite controls and target depth <= 2 mm required')
     if args.threads<1:parser.error('threads must be positive')
     if not np.isfinite(args.angle) or not 0<=args.angle<=75:parser.error('Angle must be in [0,75] degrees')

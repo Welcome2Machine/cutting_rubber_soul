@@ -76,6 +76,14 @@ flowchart LR
 
 ## 输出与扩展
 
+完整体运动学后处理使用`softcut-contact-kinematics/2`，与已有`softcut-result/1`兼容：
+标准包可通过显式`trace_path`消费同源trace，在series/frames中携带`blade_contact_footprint`、
+`relative_motion`及固定材料观测，metadata保留`tip_contact_tracking`。trace必须绑定相同result字节、
+审查NPZ和深度；原路径status/completed不因后处理成功改变。v2新增同材料身份速度、有限刚体刀具框架输运、
+分段累计和逐步εu/dt；未定义量为null。观测计算使用全部合格接受态，展示帧数不决定物理时间分辨率。
+raw和输运相对运动均是有限gap几何邻近诊断，不自动授予受力界面滑移或静摩擦锁定资格。
+固定材料ROI/标距的参考ID和轴向独立记录；变化中的footprint长度不能代替固定材料应变。
+
 输出 `softcut-comparison/1`：`manifest.json` 记录来源哈希、单位、注册、算法与资格；`frames.csv` 保留源轴及 FE 采样信息；`points.csv`、`mapping.csv`、`cohorts.csv` 保存身份与固定映射；`observables.csv` 保存共同位移、误差和覆盖；`validation.json` 区分接口一致性与物理精度；`index.html` 提供曲线及导出链接。逐点数据的实际文件名以 manifest 为准。
 
 目前范围是共同材料点位移接口。仿真原工作台提供力/场/接触/能量浏览。后续同标距应变、ΔL、共同表面地址、力—视频同步应各自新增观测算子及测试，不能仅更换标题冒充完成。

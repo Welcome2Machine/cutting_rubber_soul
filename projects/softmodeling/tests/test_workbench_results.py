@@ -220,3 +220,23 @@ def test_postprocess_matches_an_actual_saved_state_when_available():
     assert fields["J"].min() == pytest.approx(record["min_j"], abs=1e-10)
     assert area @ energy * report["signature"]["config"]["width_mm"] == pytest.approx(
         record["material"]["stored_energy_n_mm"], rel=1e-8, abs=1e-9)
+
+
+def test_common_contact_trace_is_consumed_without_geometry_inference(tmp_path):
+    source = manufactured_case(tmp_path/'source')
+    report = json.loads((source/'result.json').read_bytes())
+    audit = json.loads((source/'audit.json').read_bytes())
+    trace = dict(source_result_sha256=hashlib.sha256((source/'result.json').read_bytes()).hexdigest(),
+        qualification=dict(qualified_states=3), tip_contact_tracking=dict(method='single geometry observer'),
+        source_checkpoints_sha256={f'states/{i:04d}.npz': row['checkpoint_sha256'] for i,row in enumerate(audit['rows'])},
+        steps=[dict(depth_mm=s['depth_mm'],tip_contact=s['tip_contact'],
+                    blade_contact_footprint={'status':'no_support'},
+                    relative_motion={'valid':False,'raw_mm_s':None},fixed_material={'rois':{}}) for s in report['steps']])
+    path=tmp_path/'trace.json';path.write_text(json.dumps(trace))
+    bundle=export_case(source,tmp_path/'export',trace_path=path)
+    assert bundle['metadata']['tip_contact_tracking']==trace['tip_contact_tracking']
+    assert bundle['series'][0]['blade_contact_footprint']==trace['steps'][0]['blade_contact_footprint']
+    assert bundle['frames'][0]['relative_motion']['raw_mm_s'] is None
+    trace['source_result_sha256']='wrong';path.write_text(json.dumps(trace))
+    with pytest.raises(ValueError,match='different source'):
+        export_case(source,tmp_path/'invalid',trace_path=path)

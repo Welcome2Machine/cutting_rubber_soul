@@ -12,19 +12,20 @@ from unittest.mock import Mock, patch
 
 import numpy as np
 
-from prototype.contact_trace import export_trace, query_depth, validate_loading_schedule, write_trace_csv
+from prototype.contact_trace import (export_trace, query_depth, validate_loading_schedule,
+                                     write_trace_csv, geometry_metadata, accumulate_motion)
 from prototype.ipc_reference import record_tip_contact
 from tests.test_tip_contact import fixture
 
 
-def write_history(source, depths=(0., .05, .1), increment=.05, load_control=None):
+def write_history(source, depths=(0., .05, .1), increment=.05, load_control=None, facets=64):
     """Synthetic positive-J history is only an IO fixture, not equilibrium data."""
-    _, reference, triangles, count, config = fixture()
+    _, reference, triangles, count, config = fixture(facets=facets)
     source.mkdir()
     (source / 'states').mkdir()
     report = dict(status='completed', completed=True, case='oblique', target_mm=depths[-1],
                   config=vars(config), dhat_mm=.01, force_tolerance_n=1e-4,
-                  loading_increment_mm=increment, simplifications=dict(fracture=False, nose_facets=64),
+                  loading_increment_mm=increment, simplifications=dict(fracture=False, nose_facets=facets),
                   source_sha256={'synthetic_fixture': 'not a solver run'}, steps=[])
     if load_control is not None:
         report['load_control'] = load_control
@@ -281,3 +282,100 @@ class ContactTraceIntegrationTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+class QualifiedPrefixTests(unittest.TestCase):
+    def make_prefix(self, source):
+        report = write_history(source, facets=32)
+        report.update(status='budget_exhausted', completed=False)
+        rows = [dict(step, passed=i < 2, checkpoint_sha256=hashlib.sha256(
+            (source/'states'/f'{i:04d}.npz').read_bytes()).hexdigest()) for i, step in enumerate(report['steps'])]
+        (source/'result.json').write_text(json.dumps(report))
+        (source/'audit.json').write_text(json.dumps(dict(passed=False, rows=rows, qualified_prefix_states=2)))
+        manifest = source.parent/'manifest.json'
+        manifest.write_text(json.dumps(dict(files=[dict(path='source/'+name,
+            sha256=hashlib.sha256((source/name).read_bytes()).hexdigest()) for name in ('result.json', 'audit.json')])))
+        return report, manifest
+
+    def test_32_facet_authenticated_prefix_retains_failure_and_excludes_tail(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder)/'source'
+            report, manifest = self.make_prefix(source)
+            with patch('tools.visualize_ipc.plot_tip_contact'):
+                result = export_trace(source, Path(folder)/'export', qualified_prefix=True, manifest_path=manifest)
+            self.assertEqual(len(result['steps']), 2)
+            self.assertEqual(result['tip_contact_tracking']['nose_facets'], 32)
+            self.assertEqual(result['source_status'], 'budget_exhausted')
+            self.assertFalse(result['source_completed'])
+            self.assertEqual(json.loads((source/'result.json').read_text()), report)
+
+    def test_unbound_or_tampered_legacy_prefix_fails_closed(self):
+        for defect in ('unbound', 'source', 'checkpoint'):
+            with self.subTest(defect=defect), tempfile.TemporaryDirectory() as folder:
+                source = Path(folder)/'source'
+                report, manifest = self.make_prefix(source)
+                if defect == 'source':
+                    report['source_sha256']['synthetic_fixture'] = 'changed'
+                    (source/'result.json').write_text(json.dumps(report))
+                elif defect == 'checkpoint':
+                    with (source/'states'/'0001.npz').open('ab') as stream:
+                        stream.write(b'changed')
+                with self.assertRaises(ValueError):
+                    export_trace(source, Path(folder)/'export', qualified_prefix=True,
+                                 manifest_path=None if defect == 'unbound' else manifest)
+
+    def test_conflicting_metadata_and_missing_facet_evidence_rejected(self):
+        report = dict(config={}, signature=dict(config={'inclination_deg': 0}, dhat=.01),
+                      settings=dict(nose_facets=32), resolved_model=dict(geometry=dict(nose_facets=64)))
+        with self.assertRaisesRegex(ValueError, 'Conflicting'):
+            geometry_metadata(report)
+        report.pop('settings');report['resolved_model'] = {}
+        with self.assertRaisesRegex(ValueError, 'nose_facets'):
+            geometry_metadata(report)
+
+    def test_adjacent_edge_crossing_and_segment_gaps(self):
+        motion = dict(valid=True, status='valid_proximity', transported_mm_s=2.)
+        cumulative = {}
+        c = lambda edge, s: dict(status='unique', edge_nodes=edge, reference_s_mm=s)
+        a, b, far = c([1, 3], 1.), c([3, 5], 1.1), c([9, 11], 3.)
+        first = accumulate_motion(None, motion, a, None, None, cumulative, .1)
+        second = accumulate_motion(None, motion, b, a, first, cumulative, .1)
+        self.assertIsNone(second['break_reason'])
+        self.assertAlmostEqual(second['absolute_segment_mm'], .2)
+        jump = accumulate_motion(None, motion, far, b, second, cumulative, .1)
+        self.assertEqual(jump['break_reason'], 'nonadjacent_projection_jump')
+        self.assertEqual(jump['absolute_segment_mm'], 0.)
+        for status in ('no_tip_contact', 'ambiguous', 'nonunique_tangent'):
+            invalid = accumulate_motion(None, dict(valid=False, status=status), {}, b, second, cumulative, .1)
+            self.assertIsNone(invalid['absolute_segment_mm'])
+            born = accumulate_motion(None, motion, b, {}, invalid, cumulative, .1)
+            self.assertEqual(born['break_reason'], 'first_valid_endpoint_or_contact_birth')
+
+class AuditBindingTests(unittest.TestCase):
+    def test_modern_record_source_and_settings_binding_reject_tampering(self):
+        from prototype.contact_trace import record_digest, audit_coverage
+        with tempfile.TemporaryDirectory() as folder:
+            source=Path(folder)/'source'
+            report=write_history(source)
+            rows=[dict(s,passed=True,checkpoint_sha256='fixture',accepted_record_sha256=record_digest(s)) for s in report['steps']]
+            binding=dict(signature_sha256=record_digest(report.get('signature')),
+                producer_sources_sha256=record_digest(report.get('source_sha256')),
+                settings_sha256=record_digest(report.get('settings')))
+            (source/'audit.json').write_text(json.dumps(dict(passed=True,rows=rows,source_binding=binding)))
+            self.assertEqual(audit_coverage(source,report)[0],3)
+            for field in ('settings','source_sha256','steps'):
+                changed=json.loads(json.dumps(report))
+                if field=='steps':changed['steps'][0]['tip_contact']={'status':'tampered'}
+                else:changed[field]={'tampered':True}
+                with self.assertRaisesRegex(ValueError,'binding|record'):
+                    audit_coverage(source,changed)
+
+    def test_online_metadata_and_footprint_share_the_offline_observer(self):
+        from tests.test_tip_contact import place_pole
+        tracker,reference,_,n,_=fixture(facets=32)
+        x=place_pole(tracker,reference,n,[1.3,1.005])
+        report={};step=dict(depth_mm=0.)
+        with contextlib.redirect_stdout(io.StringIO()):
+            record_tip_contact(tracker,x,step,report)
+        self.assertEqual(step['tip_contact'],tracker.observe(x,0.))
+        self.assertEqual(step['blade_contact_footprint'],tracker.observe_footprint(x,0.))
+        self.assertEqual({k:v for k,v in report['tip_contact_tracking'].items() if k!='errors'},tracker.metadata)

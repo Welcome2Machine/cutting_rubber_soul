@@ -140,6 +140,8 @@ class TipContactTracker:
         reverse = self.s[edges[:, 0]] > self.s[edges[:, 1]]
         edges[reverse] = edges[reverse, ::-1]
         self.edges = edges[np.argsort(self.s[edges[:, 0]], kind="stable")]
+        self.body_nodes = int(body_nodes)
+        self.es, self.en = es, en
         if np.any(np.diff(self.s[self.edges], axis=1) <= self.tolerance):
             raise ValueError("Degenerate original top edge")
         self.nose_nodes = np.arange(body_nodes + 2, body_nodes + 3 + nose_facets)
@@ -182,6 +184,11 @@ class TipContactTracker:
             faceted_first_contact_s_interval_mm=[float(first_s.min()), float(first_s.max())],
             faceted_first_contact_offset_interval_mm=[float(first_s.min() - self.origin), float(first_s.max() - self.origin)],
             depth_origin="unchanged solver depth; not re-zeroed at positive-gap IPC onset",
+            initial_depth_mm=rest_depth,
+            mechanical_first_contact="not independently identified by geometric proximity",
+            footprint_method="whole_blade_exact_capsule_intervals_v1",
+            velocity_method="same_current_edge_weights_in_both_accepted_states_v1",
+            relative_motion="raw lab-frame difference and finite rigid-blade-frame transport; proximity diagnostics, not loaded-interface slip",
         )
 
     def observe(self, positions, depth_mm):
@@ -329,3 +336,88 @@ class TipContactTracker:
             **summarize(whole_support),
             parts=summaries,
         )
+
+    def relative_motion(self, positions, previous, observation, dt):
+        """Same material identity in both states; exact finite rigid transport.
+
+        The transported increment compares the current material position to
+        its previous position carried by the blade's rigid motion. This removes
+        the omega*gap artifact (and finite-rotation chord error), but supplies
+        neither contact traction nor proof of contact throughout the interval.
+        """
+        result = dict(status=observation['status'], valid=False,
+                      material_velocity_mm_s=None, blade_velocity_mm_s=None,
+                      tangent=None, local_edge_stretch=None, raw_mm_s=None,
+                      transported_mm_s=None, transport_correction_mm_s=None)
+        if observation['status'] != 'unique':
+            return result
+        x, old = np.asarray(positions), np.asarray(previous)
+        if x.shape != self.reference.shape or old.shape != x.shape or not np.isfinite(old).all():
+            raise ValueError('Incomplete kinematic parent')
+        if not np.isfinite(dt) or dt <= 0:
+            raise ValueError('Positive physical dt required')
+        edge = np.asarray(observation['edge_nodes'], dtype=int)
+        a = float(observation['edge_alpha'])
+        vector = x[edge[1]]-x[edge[0]]
+        tangent = vector/np.linalg.norm(vector)
+        # A corner can have a unique material identity and two different tangents.
+        endpoint = edge[0] if a <= 1e-10 else edge[1] if a >= 1-1e-10 else None
+        if endpoint is not None:
+            for other in self.edges[np.any(self.edges == endpoint, axis=1)]:
+                direction = x[other[1]]-x[other[0]]
+                direction /= np.linalg.norm(direction)
+                if np.linalg.norm(direction-tangent) > 1e-6:
+                    result['status'] = 'nonunique_tangent'
+                    return result
+        p = (1-a)*x[edge[0]]+a*x[edge[1]]
+        pold = (1-a)*old[edge[0]]+a*old[edge[1]]
+        blade, prior_blade = x[self.body_nodes:], old[self.body_nodes:]
+        c, cold = blade.mean(axis=0), prior_blade.mean(axis=0)
+        u, _, vh = np.linalg.svd((prior_blade-cold).T@(blade-c))
+        rotation = u@vh
+        if np.linalg.det(rotation) <= 0 or not np.allclose(
+                (prior_blade-cold)@rotation+c, blade, atol=self.tolerance, rtol=0):
+            raise ValueError('Blade motion is not rigid')
+        vm = (p-pold)/dt
+        vb = (x[self.tip_node]-old[self.tip_node])/dt
+        raw = float((vb-vm)@tangent)
+        transported = float(((pold-cold)@rotation+c-p)@tangent/dt)
+        result.update(valid=True, status='valid_proximity', edge_nodes=edge.tolist(), edge_alpha=a,
+                      material_velocity_mm_s=vm.tolist(), blade_velocity_mm_s=vb.tolist(),
+                      tangent=tangent.tolist(), local_edge_stretch=float(np.linalg.norm(vector)/
+                          np.linalg.norm(self.reference[edge[1]]-self.reference[edge[0]])),
+                      raw_mm_s=raw, transported_mm_s=transported,
+                      transport_correction_mm_s=transported-raw)
+        return result
+
+    def fixed_material_definition(self):
+        """A priori top ROIs and gauges, fixed in reference S, in millimetres."""
+        offsets = self.s-self.origin
+        top = np.unique(self.edges)
+        ranges = dict(left_far=(-3., -1.), left_near=(-1., 0.),
+                      right_near=(0., 1.), right_far=(1., 3.))
+        rois = {name: top[(offsets[top] >= lo) & (offsets[top] < hi)].tolist()
+                for name, (lo, hi) in ranges.items()}
+        ordered = top[np.argsort(self.s[top])]
+        gauges = {}
+        for name, limits in dict(near=(-.5, .5), left=(-2., -1.), right=(1., 2.)).items():
+            # Save actual endpoints: nearest reference nodes, never refit later.
+            nodes = [int(ordered[np.argmin(abs(offsets[ordered]-v))]) for v in limits]
+            if nodes[0] != nodes[1]:
+                gauges[name] = nodes
+        return dict(reference='undeformed material top', axes=dict(s=self.es.tolist(), n=self.en.tolist()),
+                    roi_offset_ranges_mm=ranges, roi_nodes=rois, gauge_nodes=gauges,
+                    roi_statistic='unweighted mean over fixed reference node IDs; mesh dependent')
+
+    def fixed_material_motion(self, positions, definition):
+        x = np.asarray(positions)
+        displacement = x[:self.body_nodes]-self.reference[:self.body_nodes]
+        rois = {}
+        for name, nodes in definition['roi_nodes'].items():
+            u = displacement[nodes].mean(axis=0) if nodes else None
+            rois[name] = dict(count=len(nodes), u_s_mm=float(u@self.es) if u is not None else None,
+                              u_n_mm=float(u@self.en) if u is not None else None)
+        gauges = {name: float(np.linalg.norm(x[j]-x[i])/
+                  np.linalg.norm(self.reference[j]-self.reference[i]))
+                  for name, (i, j) in definition['gauge_nodes'].items()}
+        return dict(rois=rois, gauge_stretch=gauges)

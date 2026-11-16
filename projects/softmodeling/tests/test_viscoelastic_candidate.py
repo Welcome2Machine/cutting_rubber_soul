@@ -354,3 +354,41 @@ class MaterialRunControlTests(unittest.TestCase):
 
 
 if __name__=='__main__':unittest.main()
+
+class FrictionlessEntryTests(unittest.TestCase):
+    def test_cli_rejects_invalid_mu_and_zero_reaches_construction(self):
+        from tools.run_material_candidate import main
+        import sys
+        base = ['run_material_candidate', '--maxwell-shear', '1.24', '--relaxation-s', '1.7', '--loading-rate', '.2']
+        with tempfile.TemporaryDirectory() as folder:
+            for i, mu in enumerate(('-1', 'nan', 'inf', '0')):
+                args = base+['--output', str(Path(folder)/str(i)), '--mu', mu]
+                with patch.object(sys, 'argv', args), contextlib.redirect_stderr(io.StringIO()):
+                    if mu != '0':
+                        with self.assertRaises(SystemExit) as error:
+                            main()
+                        self.assertEqual(error.exception.code, 2)
+                    else:
+                        with patch('tools.run_material_candidate.make_problem', side_effect=RuntimeError('construction reached')) as make:
+                            main()
+                        self.assertEqual(make.call_args.kwargs['mu'], 0.)
+
+    def test_zero_mu_uses_existing_frictionless_solve_and_audits_history(self):
+        import time
+        from prototype.material_case import audit, signature
+        p = ViscoelasticProblem(maxwell_shear=1.24, relaxation_s=1.7, loading_rate=.2,
+            case='patch', mu=0., local_spacing=.2, surface_spacing=.1, enforce_physical_chord=True)
+        self.assertIsNone(p.lag(p.rest))
+        with contextlib.redirect_stdout(io.StringIO()):
+            x, record = p.step(p.rest.copy(), p.start, 0., time.monotonic()+30.)
+        self.assertEqual(record['friction_work_n_mm'], 0.)
+        with tempfile.TemporaryDirectory() as folder:
+            out = Path(folder);(out/'states').mkdir()
+            np.savez(out/'states'/'0000.npz', reference_xy=p.rest, triangles=p.mesh.triangles,
+                body_nodes=p.n, positions=x, previous_positions=p.previous, depth_mm=0., **p.checkpoint_data())
+            report = dict(signature=signature(p), source_sha256={}, settings={}, steps=[record])
+            result = audit(p, out, report)
+        self.assertTrue(result['passed'])
+        for mu in (-1., float('nan'), float('inf')):
+            with self.assertRaises(ValueError):
+                ViscoelasticProblem(maxwell_shear=1.24, relaxation_s=1.7, loading_rate=.2, mu=mu)

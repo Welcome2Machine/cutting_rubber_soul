@@ -259,3 +259,32 @@ class BladeFootprintTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+class MaterialIdentityMotionTests(unittest.TestCase):
+    def test_translation_known_sliding_and_affine_stretch(self):
+        tracker, reference, _, n, _ = fixture()
+        old = place_pole(tracker, reference, n, [1.3, 1.005])
+        translated = old+[.2, -.1]
+        result = tracker.relative_motion(translated, old, tracker.observe(translated, .1), .5)
+        self.assertAlmostEqual(result['raw_mm_s'], 0., places=12)
+        self.assertAlmostEqual(result['transported_mm_s'], 0., places=12)
+        sliding = old.copy();sliding[n:, 0] += .1
+        result = tracker.relative_motion(sliding, old, tracker.observe(sliding, .1), .5)
+        self.assertAlmostEqual(result['raw_mm_s'], .2, places=12)
+        stretched = old.copy();stretched[:n, 0] *= 1.1
+        contact = tracker.observe(stretched, .1)
+        result = tracker.relative_motion(stretched, old, contact, .5)
+        expected = -.1*contact['reference_s_mm']/.5
+        self.assertAlmostEqual(result['raw_mm_s'], expected, places=12)
+        self.assertAlmostEqual(result['local_edge_stretch'], 1.1)
+
+    def test_finite_gap_corotation_raw_artifact_and_objective_transport(self):
+        tracker, reference, _, n, _ = fixture()
+        old = place_pole(tracker, reference, n, [1.3, 1.005])
+        theta = .1
+        R = np.array([[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]])
+        current = old@R.T+[.3, -.2]
+        result = tracker.relative_motion(current, old, tracker.observe(current, .1), .2)
+        self.assertTrue(result['valid'])
+        self.assertGreater(abs(result['raw_mm_s']), 1e-4)
+        self.assertAlmostEqual(result['transported_mm_s'], 0., places=11)

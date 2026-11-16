@@ -198,6 +198,7 @@ def make_problem(*,angle,equilibrium_shear,maxwell_shear,relaxation_s,loading_ra
     return p
 
 def audit(p,out,report,*,destination=None,progress=None,deadline=None,initial_state=None):
+    from .contact_trace import record_digest
     rows=[];prior_x=p.rest;prior_metric=np.tile(np.eye(3),p.material_metric.shape[:1]+(1,1))
     prior_depth=p.start;total_dissipation=0.
     if initial_state is not None:
@@ -233,11 +234,16 @@ def audit(p,out,report,*,destination=None,progress=None,deadline=None,initial_st
                                    total_dissipation,rtol=1e-10,atol=1e-10)
         prior_x=state['positions'].copy();prior_metric=state['material_metric'].copy()
         prior_depth=record['depth_mm']
-        row['checkpoint_sha256']=hashlib.sha256(path.read_bytes()).hexdigest();rows.append(row)
+        row['checkpoint_sha256']=hashlib.sha256(path.read_bytes()).hexdigest()
+        row['accepted_record_sha256']=record_digest(record)
+        rows.append(row)
         if progress:progress(row,len(rows),len(report['steps']))
         if len(rows)%25==0:print(f'AUDIT accepted_states={len(rows)}/{len(report["steps"])}',flush=True)
     prefix=next((i for i,row in enumerate(rows) if not row['passed']),len(rows))
     result=dict(passed=bool(rows) and prefix==len(rows),states=len(rows),rows=rows,
+                source_binding=dict(signature_sha256=record_digest(report.get('signature')),
+                    producer_sources_sha256=record_digest(report.get('source_sha256')),
+                    settings_sha256=record_digest(report.get('settings'))),
                 qualified_prefix_states=prefix,
                 endpoint_checks_passed=all(row.get('endpoint_passed',row['passed']) for row in rows),
                 trajectory_checked=bool(rows) and all('trajectory_passed' in row for row in rows),

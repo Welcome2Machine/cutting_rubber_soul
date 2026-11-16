@@ -166,7 +166,7 @@ def _case_label(report):
     return f"{angle}° · G∞/Gv={ge}/{gv} MPa · μ={mu} · r={radius} mm"
 
 
-def export_case(source, output, *, max_frames=11, movie=False, audit_path=None, fps=8):
+def export_case(source, output, *, max_frames=11, movie=False, audit_path=None, fps=8, trace_path=None):
     """Write curves.csv and a portable result.bundle.json, returning that bundle.
 
     Select actual saved frames, always including both qualified endpoints. All
@@ -199,6 +199,23 @@ def export_case(source, output, *, max_frames=11, movie=False, audit_path=None, 
     audit_bytes = audit_path.read_bytes() if audit_path.is_file() else None
     audit = json.loads(audit_bytes) if audit_bytes is not None else None
     prefix, reason = _qualified_prefix(report, audit)
+    observations = steps
+    tracking = report.get('tip_contact_tracking')
+    if trace_path is not None:
+        # Consume the common observer's output; presentation does not reconstruct
+        # a second geometry or infer a different pole/footprint definition.
+        trace = json.loads(Path(trace_path).read_bytes())
+        if trace['source_result_sha256'] != hashlib.sha256(result_bytes).hexdigest():
+            raise ValueError('Contact trace belongs to a different source result')
+        prefix = min(prefix, trace['qualification']['qualified_states'])
+        observations = trace['steps']
+        if len(observations) < prefix:
+            raise ValueError('Contact trace does not cover the qualified prefix')
+        for i in range(prefix):
+            if observations[i]['depth_mm'] != steps[i]['depth_mm'] or trace['source_checkpoints_sha256'].get(
+                    f'states/{i:04d}.npz') != audit['rows'][i]['checkpoint_sha256']:
+                raise ValueError('Contact trace checkpoint/depth mismatch')
+        tracking = trace['tip_contact_tracking']
     selected = np.unique(np.linspace(0, prefix - 1, min(prefix, max_frames)).round().astype(int)) if prefix else []
     series = []
     for i, step in enumerate(steps):
@@ -214,7 +231,8 @@ def export_case(source, output, *, max_frames=11, movie=False, audit_path=None, 
         if raw_fz is not None and not np.isfinite(raw_fz) or raw_fy is not None and not np.isfinite(raw_fy):
             raise ValueError(f"Non-finite force in source state {i}")
         fz, fy = number(raw_fz), number(raw_fy)
-        contact, mat = step.get("tip_contact") or {}, step.get("material") or {}
+        observation = observations[i] if i < len(observations) else {}
+        contact, mat = observation.get("tip_contact") or {}, step.get("material") or {}
         series.append(dict(depth_mm=float(step["depth_mm"]), qualified=qualified,
             qualification="audited_prefix" if qualified else "unqualified_masked",
             fz_N=fz, fy_N=fy, fyz_N=None if fz is None or fy is None else float(np.hypot(fz, fy)),
@@ -231,7 +249,10 @@ def export_case(source, output, *, max_frames=11, movie=False, audit_path=None, 
             normal_fz_N=number(step.get("reaction_normal_fz_n")),
             friction_fz_N=number(step.get("reaction_friction_fz_n")),
             tip_contact_status=contact.get("status", "not_recorded") if qualified else "unqualified",
-            contact_reference_offset_mm=number(contact.get("reference_offset_mm")) if contact.get("status") == "unique" else None))
+            contact_reference_offset_mm=number(contact.get("reference_offset_mm")) if contact.get("status") == "unique" else None,
+            blade_contact_footprint=observation.get('blade_contact_footprint') if qualified else None,
+            relative_motion=observation.get('relative_motion') if qualified else None,
+            fixed_material=observation.get('fixed_material') if qualified else None))
     frames, hashes, mesh = [], {}, None
     checks = []
     for index in selected:
@@ -273,7 +294,9 @@ def export_case(source, output, *, max_frames=11, movie=False, audit_path=None, 
         checks.append(dict(index=index, energy_difference_Nmm=stored-expected))
         frames.append(dict(index=index, depth_mm=float(depths[index]), positions=x.tolist(), blade=blade,
                            fields={key: value.tolist() for key, value in fields.items()},
-                           tip_contact=steps[index].get("tip_contact")))
+                           tip_contact=observations[index].get("tip_contact"),
+                           blade_contact_footprint=observations[index].get('blade_contact_footprint'),
+                           relative_motion=observations[index].get('relative_motion')))
     info = {key: dict(value, range=[min(min(f["fields"][key]) for f in frames),
                                   max(max(f["fields"][key]) for f in frames)])
             for key, value in FIELD_INFO.items()} if frames else {}
@@ -282,6 +305,7 @@ def export_case(source, output, *, max_frames=11, movie=False, audit_path=None, 
         result_sha256=hashlib.sha256(result_bytes).hexdigest(),
         audit_sha256=hashlib.sha256(audit_bytes).hexdigest() if audit_bytes is not None else None,
         source_sha256=report.get("source_sha256", {}), signature=signature,
+        tip_contact_tracking=tracking,
         angle_deg=signature.get("config", {}).get("inclination_deg"),
         target_mm=report.get("target_mm"), completed=bool(report.get("completed")),
         qualification=dict(qualified_states=prefix, accepted_states=len(steps),

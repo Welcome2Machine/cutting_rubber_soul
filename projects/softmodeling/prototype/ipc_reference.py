@@ -1296,6 +1296,10 @@ def run(args):
 
 def record_tip_contact(tracker, positions, step, report):
     """Read-only observation errors must not relabel a valid mechanical state."""
+    tracking = report.setdefault('tip_contact_tracking', {})
+    tracking.setdefault('errors', [])
+    if isinstance(tracker.metadata, dict):
+        tracking.update(tracker.metadata)
     try:
         step["tip_contact"] = tracker.observe(positions, step["depth_mm"])
     except Exception as exc:
