@@ -1,8 +1,31 @@
 # 当前研究状态
 
-2026-11-16（日本时间）；任务 `8c3f65c0330af6b12853a24401c8dbbcbbb394e3`。
-**本轮B1–B7工程与服务器机制报告已交付；57°连续完整体只认证到0.2 mm，不认证滑移停止或实验预测。**
-本轮两条新FE名额已全部使用，所有10项作业已终态，无活动FE/Slurm队列；不自动续算。
+2026-11-16（日本时间）；当前执行范围见[唯一任务书](../../../researchtopic/research_prototype_task.md)顶部长程授权。
+
+**当前长程启动：作业26924062已在xb0031运行，57°/A-low/μ=.35，连续完整体总目标3.0 mm。**
+生产树为独立`/LARGE1/gr10578/Zhao_Guorui/SoftCutting/long-intact-producer`，干净固定提交
+`8cd77e7d6db433de723e1d7478df76664a2f2039`（父c23f500；只改runner终点上限和时间/阶段记录）。
+全部物理来源指纹不变，原白名单未扩展；原41态已在计算节点独立审查通过并出现`RESUME_READY`，目前进入新增加载。
+起点为下文原主路径.2 mm，result SHA256仍为`4e235a021e615c1eb356163a6b22553d680de99cae83c84521ff7992860c3946`。
+[本次配置/来源](../../../runs/baseline_migration_long/producer_identity.json)、
+[作业/预算](../../../runs/baseline_migration_long/job.json)、
+[主run.log](../../../runs/baseline_migration_long/angle57/run.log)留在忽略目录。
+仅一条长路径；内部加载72000 s，Slurm24 h/no-requeue，2物理核/8 GiB、IPC1/BLAS1、native。
+原.005名义步、.000625最小回退、真实时间、固定εu和全部物理门不变；3 mm几何范围预检通过，不保证深段收敛。
+两套树根pytest各118通过/11无显示跳过、相关既有回归各22通过，CLI 2/3接受及越限拒绝、恢复来源/几何预检通过；验证作业26923967已COMPLETED。
+主树runner本地提交74497c7；本阶段不push、不打包、不上传。c23f500原全链数值末审保留，最终result字节绑定留不可变结果后续整理。
+初段推进检查已通过：.205/.210/.215 mm三个新真实接受态，残量最大3.7393e−5 N、最小J=.63420、整步弦safe_fraction=1。
+旧41份NPZ逐字节/审查哈希一致，新态父位置/材料度量字节一致、dt=.025 s、累计耗散与记录衔接、数组无NaN/Inf；
+[初段检查](../../../runs/baseline_migration_long/initial_check.json)是保存字节/记录核对，不冒充新的独立力学末审。
+全链恢复审查及FE在xb0031执行；主日志已推进>.215 mm，实际持续观察约24分钟后结束，由Slurm独立继续。
+本阶段没有外围自动重投或唤醒；最终result字节绑定及最新离线导出等用户通知后再做。
+达到3 mm未获证明；初段前两步各含一次原PTC停滞回退，随后恢复接受，不能外推固定计算速度。
+完整体深段不能解释对应实验裂后响应。
+
+以下为上一B1–B7阶段已完成交付（任务 `8c3f65c0330af6b12853a24401c8dbbcbbb394e3`），旧名额及资源账保留，不用于停止本次独立授权。
+
+**上一阶段B1–B7工程与服务器机制报告已交付；57°连续完整体只认证到0.2 mm，不认证滑移停止或实验预测。**
+上一阶段两条新FE名额已全部使用，当时所有10项作业已终态、无活动FE/Slurm队列；本次长程另有上述显式授权。
 
 [共同HTML报告](../../../runs/baseline_migration/index.html) ·
 [共同机器摘要](../../../runs/baseline_migration/research_summary.json) ·
