@@ -416,8 +416,16 @@ def write_research_report(output, result):
     def numbers(values):
         return [np.nan if v is None else v for v in values]
     fig, axes = plt.subplots(4, 2, figsize=(12, 14), layout='constrained')
-    for key, label in (('reference_offset_mm', 'M = S* - S_drop (mm)'), ('gap_mm', 'pole gap (mm)')):
-        axes[0, 0].plot(d, numbers([s['tip_contact'][key] for s in steps]), label=label)
+    migration = numbers([s['tip_contact']['reference_offset_mm'] for s in steps])
+    connected = [np.nan if s['relative_motion'].get('break_reason') == 'nonadjacent_projection_jump' else v
+                 for s, v in zip(steps, migration)]
+    line = axes[0, 0].plot(d, connected, label='M = S* - S_drop (mm)')[0]
+    axes[0, 0].scatter(d, migration, s=12, color=line.get_color())
+    gap_axis = axes[0, 0].twinx()
+    gap_axis.plot(d, [s['tip_contact']['gap_mm'] for s in steps], color='tab:orange', label='pole gap (mm)')
+    gap_axis.axhline(result['tip_contact_tracking']['dhat_mm'], color='tab:orange', ls=':', label='dhat (mm)')
+    gap_axis.set_ylabel('pole gap (mm)')
+    gap_axis.legend(loc='lower left', fontsize=7)
     for name in ('nose', 'left_flank', 'right_flank'):
         axes[0, 1].plot(d, [s['blade_contact_footprint']['parts'][name]['supported_current_length_mm'] for s in steps], label=name)
     for name in result['fixed_material_definition']['roi_nodes']:
@@ -431,7 +439,12 @@ def write_research_report(output, result):
         for i, s in enumerate(steps):
             if s['relative_motion'].get('break_reason'):
                 y[i] = np.nan
-        axes[2 if key.endswith('mm_s') else 3, 0].plot(d, y, label=key)
+        axis = axes[2 if key.endswith('mm_s') else 3, 0]
+        line = axis.plot(d, y, label=key)[0]
+        # A segment boundary excludes an integral interval, not its well-defined
+        # endpoint diagnostic. Show EVERY finite diagnostic, including births
+        # and unresolved nonadjacent changes, without connecting across gaps.
+        axis.scatter(d, numbers([s['relative_motion'].get(key) for s in steps]), s=12, color=line.get_color())
     axes[3, 1].plot(d, numbers([s['epsilon_u_over_dt_mm_s'] for s in steps]), label='epsilon_u/dt (mm/s)')
     for key in steps[0]['force']:
         axes[2, 1].plot(d, numbers([s['force'][key] for s in steps]), label=key)

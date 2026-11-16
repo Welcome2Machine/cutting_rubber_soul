@@ -80,8 +80,8 @@ flowchart LR
 标准包可通过显式`trace_path`消费同源trace，在series/frames中携带`blade_contact_footprint`、
 `relative_motion`及固定材料观测，metadata保留`tip_contact_tracking`。trace必须绑定相同result字节、
 审查NPZ和深度；原路径status/completed不因后处理成功改变。v2新增同材料身份速度、有限刚体刀具框架输运、
-最终result字节的原审查绑定与几何状态切换区间，运动学CSV显式给出valid/status。
-分段累计和逐步εu/dt；未定义量为null。观测计算使用全部合格接受态，展示帧数不决定物理时间分辨率。
+最终result字节的原审查绑定、几何状态切换区间、分段累计和逐步εu/dt。运动学CSV显式给出valid/status，
+未定义量为null。图中孤立的有效端点保留为点，连线不跨缺口。观测计算使用全部合格接受态，展示帧数不决定物理时间分辨率。
 raw和输运相对运动均是有限gap几何邻近诊断，不自动授予受力界面滑移或静摩擦锁定资格。
 固定材料ROI/标距的参考ID和轴向独立记录；变化中的footprint长度不能代替固定材料应变。
 

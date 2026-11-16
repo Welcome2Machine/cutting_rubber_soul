@@ -34,6 +34,7 @@ python -m prototype.contact_trace export --source "$case" --output "$new_output"
 后者消除有限gap共同转动的伪相对运动，但仍只是几何邻近诊断。累计量按连续有效端点段及右端增量积分；
 接触新生步排除、正常相邻边跨越保留，失接触/歧义/非邻接跳变切段，不跨缺口积分。
 几何状态切换另给实际接受步区间；CSV显式保留运动学valid/status，固定标距为端点间欧氏距离。
+图中保留全部有定义的速度端点，包括新生/未解析对应处的孤立点；仅连线和累计量按有效轨迹切段，不把有效端点隐去。
 footprint是距刀具小于dhat的初始顶面范围与当前长度，不是压力承载区。
 `workbench.results.export_case(..., trace_path=...)`只消费同源共同观测，保留元数据与缺失，不另推断刀形。
 

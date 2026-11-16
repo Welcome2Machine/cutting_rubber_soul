@@ -398,3 +398,23 @@ class FinalResultBindingTests(unittest.TestCase):
             (source/'result.json').write_text(json.dumps(report))
             with self.assertRaisesRegex(ValueError,'final result bytes'):
                 audit_coverage(source,report)
+
+
+class ReportEndpointTests(unittest.TestCase):
+    def test_isolated_velocity_at_segment_boundary_is_visible(self):
+        from prototype.contact_trace import write_research_report
+        import matplotlib.axes
+        with tempfile.TemporaryDirectory() as folder:
+            source=Path(folder)/'source';write_history(source)
+            output=Path(folder)/'export'
+            with patch('tools.visualize_ipc.plot_tip_contact'):
+                result=export_trace(source,output)
+            result['steps'][-1]['relative_motion'].update(valid=True,status='valid_proximity',raw_mm_s=123.,
+                transported_mm_s=123.,signed_segment_mm=0.,absolute_segment_mm=0.,break_reason='nonadjacent_projection_jump')
+            seen=[];original=matplotlib.axes.Axes.scatter
+            def record(axis,x,y,*args,**kwargs):
+                seen.extend(float(v) for v in y if v is not None)
+                return original(axis,x,y,*args,**kwargs)
+            with patch.object(matplotlib.axes.Axes,'scatter',record):
+                write_research_report(output,result)
+            self.assertIn(123.,seen)
