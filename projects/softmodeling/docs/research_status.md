@@ -1,26 +1,67 @@
 # 当前研究状态
 
-2026-11-16（日本时间）；当前执行范围见[唯一任务书](../../../researchtopic/research_prototype_task.md)顶部长程授权。
+2026-11-17（日本时间）；当前执行范围见[唯一任务书](../../../researchtopic/research_prototype_task.md)顶部。
 
-**当前长程启动：作业26924062已在xb0031运行，57°/A-low/μ=.35，连续完整体总目标3.0 mm。**
-生产树为独立`/LARGE1/gr10578/Zhao_Guorui/SoftCutting/long-intact-producer`，干净固定提交
-`8cd77e7d6db433de723e1d7478df76664a2f2039`（父c23f500；只改runner终点上限和时间/阶段记录）。
-全部物理来源指纹不变，原白名单未扩展；原41态已在计算节点独立审查通过并出现`RESUME_READY`，目前进入新增加载。
-起点为下文原主路径.2 mm，result SHA256仍为`4e235a021e615c1eb356163a6b22553d680de99cae83c84521ff7992860c3946`。
-[本次配置/来源](../../../runs/baseline_migration_long/producer_identity.json)、
-[作业/预算](../../../runs/baseline_migration_long/job.json)、
-[主run.log](../../../runs/baseline_migration_long/angle57/run.log)留在忽略目录。
-仅一条长路径；内部加载72000 s，Slurm24 h/no-requeue，2物理核/8 GiB、IPC1/BLAS1、native。
-原.005名义步、.000625最小回退、真实时间、固定εu和全部物理门不变；3 mm几何范围预检通过，不保证深段收敛。
-两套树根pytest各118通过/11无显示跳过、相关既有回归各22通过，CLI 2/3接受及越限拒绝、恢复来源/几何预检通过；验证作业26923967已COMPLETED。
-主树runner本地提交74497c7；本阶段不push、不打包、不上传。c23f500原全链数值末审保留，最终result字节绑定留不可变结果后续整理。
-初段推进检查已通过：.205/.210/.215 mm三个新真实接受态，残量最大3.7393e−5 N、最小J=.63420、整步弦safe_fraction=1。
-旧41份NPZ逐字节/审查哈希一致，新态父位置/材料度量字节一致、dt=.025 s、累计耗散与记录衔接、数组无NaN/Inf；
-[初段检查](../../../runs/baseline_migration_long/initial_check.json)是保存字节/记录核对，不冒充新的独立力学末审。
-全链恢复审查及FE在xb0031执行；主日志已推进>.215 mm，实际持续观察约24分钟后结束，由Slurm独立继续。
-本阶段没有外围自动重投或唤醒；最终result字节绑定及最新离线导出等用户通知后再做。
-达到3 mm未获证明；初段前两步各含一次原PTC停滞回退，随后恢复接受，不能外推固定计算速度。
-完整体深段不能解释对应实验裂后响应。
+**57°/A-low/μ=.35连续完整体保存到3.0 mm／601接受态，但全链末审失败；不认证为合格3 mm路径。**
+作业26924062已于2026-11-16 **22:40:20 JST**结束，Slurm `FAILED 22:0`；runner本身返回0，
+收尾检查正确写入`END reason=audit_failed`。当前无活动FE；没有重投、继续加载或新增比较路径。
+
+## 长程结果、审查故障与资格
+
+- 原.2 mm／41态已在续算前完整独立审查通过；本次在同一接受史上新增560态，总601态到3.0 mm。
+  不是追加3 mm，也不是0°、μ=0、seam或断裂算例。生产树保持干净，提交
+  `8cd77e7d6db433de723e1d7478df76664a2f2039`，父`c23f500`；仅runner终点与时间/阶段记录变化，物理指纹白名单未扩展。
+- 加载阶段到达3 mm后进入原生、未分批的全链末审。审查日志推进到400/601后抛出
+  `RuntimeError: Checkpoint geometry or prescribed boundaries differ`，没有生成最终`audit.json`。
+  原`result.status=audit_failed`、`completed=false`及`end.json`保持原样；不能以601个接受记录或runner退出码0替代独立资格。
+- 11月17日计算节点只读诊断逐态复现原几何比较：首个失败为index **417／2.085 mm**，
+  刀具坐标最大差 **1.9042545318370685e−12 mm**，原阈值 **1.900940389423268e−12 mm**。
+  全链参考坐标、三角形及固定底边逐项一致，刀具x差为0；末端最大刀具坐标差2.6005864128819667e−12 mm。
+  这与逐步竖直更新相对绝对位置重建的浮点累计舍入差相符，不是已发现的网格/底边更换。
+  本次未修改比较阈值、未更改保存位置、未重做力/材料/弦的全链认证。
+- **已保存正式独立审查仍只认证原.2 mm／41态。** 不因定位到微小坐标差而认证3 mm，也不以审查日志推断2.08 mm合格前缀。
+  后续完整资格需在不可变状态上核实边界表示、重新做原方程/完整父史/真实dt/弦审查并绑定最终result字节；本次不自动启动。
+
+下表仅为原接受记录，>.2 mm部分未通过完整独立末审，不是实验预测：
+
+| 深度 mm | Fz N | 横向reaction_x N | 刀尖参考迁移M mm | 对应状态 |
+| --- | ---: | ---: | ---: | --- |
+| .2 | 3.038710 | 1.582404 | .116293 | unique；原41态已有审查 |
+| .5 | 9.065410 | 2.007994 | .129827 | unique；记录值 |
+| 1 | 17.067406 | 2.793262 | .137275 | unique；记录值 |
+| 2 | 30.399370 | 7.902285 | 缺失 | no_tip_contact |
+| 3 | 46.225724 | 14.187218 | 缺失 | no_tip_contact |
+
+全部记录最大自由力残量9.999360864754957e−5 N、最小J=.03288078371834794；全部记录整步弦safe_fraction≥1。
+这些是生产记录，不冒充末审重算。极强局部压缩、时空收敛及压力承载资格仍需区分。
+M在早期缓增，但深段刀尖对应缺失，不能填零、延续曲线或称作滑移停止；本次没有新增合格同材料相对速度/分段累计。
+材料始终完整是模型假设，超过对应实验起裂窗口只能作为假想完整体对照；A-low不能代表Blade E，实验配准未完成。
+
+## 来源、数据位置、资源和发布
+
+原.2 mm源result SHA256：`4e235a021e615c1eb356163a6b22553d680de99cae83c84521ff7992860c3946`。
+当前3 mm result SHA256：`33a93700e4938f661f34d77b8800026df3fdcc6e3487f15a3da19c1aeac1f9c1`；
+END SHA256：`3998d56985112ba3f6f4f837052b891451596f97fd0a4fa6af3288f5319fbddc`。
+数据父目录为`/LARGE1/gr10578/Zhao_Guorui/SoftCutting/1029/runs/baseline_migration_long/`：
+[配置/实际源码](../../../runs/baseline_migration_long/producer_identity.json)、
+[原result](../../../runs/baseline_migration_long/angle57/result.json)、
+[run.log](../../../runs/baseline_migration_long/angle57/run.log)、
+[END](../../../runs/baseline_migration_long/angle57/end.json)、
+[只读故障诊断/逐态哈希](../../../runs/baseline_migration_long/current_summary.json)、
+[资源账](../../../runs/baseline_migration_long/accounting.json)。原状态、拒绝试探和原标签不覆盖，不打包数据入Git。
+
+主作业19:25:17–22:40:20 JST，共**3 h 15 min 03 s**；runner构造/恢复审查/加载elapsed=10973.299 s，
+至3 mm新增纯加载日志elapsed=10913.135 s，末审约716.55 s；计时范围分开，不称作全程求解器时间。
+内部72000 s及Slurm24 h均未耗尽。仅一条新FE路径，2物理核/8 GiB、IPC1/BLAS1、native、no-requeue；
+SysB AllocCPUS=4是HT2逻辑数。主作业申请物理核时6.501667 h，job层TotalCPU约3 h 13 min 36 s，
+最大step采样RSS339208 KiB（331.26 MiB），不是严格进程树同时峰值。
+启动验证26923967为36 s／COMPLETED；本次只读诊断与根pytest26931271为44 s／COMPLETED，均无新增FE加载。
+三项job层墙钟并集11783 s（3 h 16 min 23 s）、申请物理核时6.546111 h；不加总job与step，不重置上一阶段账。
+
+初段.205/.210/.215 mm的字节/父史/dt检查已通过，长期结果由上述失败终态取代启动时的运行中快照。
+根pytest本次118通过、11无显示GUI跳过；启动两套树的相关既有回归各22通过。
+11月17日用户授权将当前结果摘要及已有最小runner修改正常发布；这替代启动阶段“不push”的限制。
+不发布原始NPZ/CSV/图/日志，不重跑FE，不自动修阈值或追加计算。Git保存本页、当前任务和既有CLI/日志小修。
 
 以下为上一B1–B7阶段已完成交付（任务 `8c3f65c0330af6b12853a24401c8dbbcbbb394e3`），旧名额及资源账保留，不用于停止本次独立授权。
 
