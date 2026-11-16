@@ -407,6 +407,7 @@ class TipContactTracker:
                 gauges[name] = nodes
         return dict(reference='undeformed material top', axes=dict(s=self.es.tolist(), n=self.en.tolist()),
                     roi_offset_ranges_mm=ranges, roi_nodes=rois, gauge_nodes=gauges,
+                    gauge_measure='Euclidean distance between fixed material endpoints divided by initial distance; not surface arclength',
                     roi_statistic='unweighted mean over fixed reference node IDs; mesh dependent')
 
     def fixed_material_motion(self, positions, definition):

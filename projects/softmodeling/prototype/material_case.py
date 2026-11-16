@@ -248,8 +248,44 @@ def audit(p,out,report,*,destination=None,progress=None,deadline=None,initial_st
                 endpoint_checks_passed=all(row.get('endpoint_passed',row['passed']) for row in rows),
                 trajectory_checked=bool(rows) and all('trajectory_passed' in row for row in rows),
                 scope='fresh force/geometry/history checks; cohesive paths also check each physical chord; not space/time or experimental convergence')
+    source_result = out/'result.json'
+    if source_result.is_file():
+        raw = source_result.read_bytes()
+        if record_digest(json.loads(raw)) == record_digest(report):
+            result['source_result_sha256'] = hashlib.sha256(raw).hexdigest()
+            result['result_binding_stage'] = 'independent audit of these original result bytes'
     write_json(destination or out/'audit.json',result)
     return result
+
+
+def bind_final_audit_result(out, report):
+    """Finish the run's audit after IO metadata, without changing qualification.
+
+    Numerical fields must still match the independent audit's original bound
+    inputs and records. This is part of run finalization, not retroactive export
+    authentication. A standalone re-audit binds its unchanged source directly.
+    """
+    from .contact_trace import record_digest
+    path = out/'audit.json'
+    if not path.is_file():
+        return
+    checked = json.loads(path.read_bytes())
+    binding = checked.get('source_binding', {})
+    for field, key in (('signature_sha256', 'signature'), ('producer_sources_sha256', 'source_sha256'),
+                       ('settings_sha256', 'settings')):
+        if binding.get(field) != record_digest(report.get(key)):
+            raise ValueError('Final audit input binding differs: '+field)
+    if len(checked['rows']) != len(report['steps']):
+        raise ValueError('Final result differs from the independently audited history')
+    for row, record in zip(checked['rows'], report['steps']):
+        if row.get('accepted_record_sha256') != record_digest(record):
+            raise ValueError('Final accepted record differs from original independent audit')
+    raw = (out/'result.json').read_bytes()
+    if record_digest(json.loads(raw)) != record_digest(report):
+        raise ValueError('Final on-disk result differs from the run report')
+    checked['source_result_sha256'] = hashlib.sha256(raw).hexdigest()
+    checked['result_binding_stage'] = 'run finalization; original independently audited numerical inputs and records rechecked after final IO metadata'
+    write_json(path, checked)
 
 def resume_compatibility(old,report):
     """An audited CLI/reporting revision may differ; physical sources may not."""

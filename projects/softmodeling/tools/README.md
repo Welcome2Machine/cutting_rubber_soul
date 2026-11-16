@@ -25,12 +25,15 @@ python -m prototype.contact_trace export --source "$case" --output "$new_output"
 
 `--audit`可指定独立审查sidecar。前缀从初态连续覆盖，逐态核对记录、NPZ、父位置、材料metric与真实dt；
 新建指纹不能代替旧审查的来源绑定。未显式选前缀时仍要求完整请求完成；缺可信审查的完整旧结果只能得到未认证观测。
+新版审查绑定最终result字节、原数值输入和逐态记录。运行结束时在独立记录不变的条件下完成最终IO绑定；
+已有未绑定最终字节的审查须使用原清单或既有审查器另存sidecar，不在导出时追补认证。
 圆鼻片数和准备位置从实际元数据与保存拓扑核对，缺失/冲突拒绝，不默认64片或重建旧起点。
 `contact_trace.json`（`softcut-contact-kinematics/2`）、`kinematics.csv`和`index.html`保存全接受频率结果。
 固定顶面材料ROI为落点左右近场/远场，固定标距端点和实际ID写入定义；图示帧抽稀不参与求差分。
 `raw_mm_s`是实验室系同材料身份速度差的当前切向投影；`transported_mm_s`先用刀具有限刚体运动输运父态材料点。
 后者消除有限gap共同转动的伪相对运动，但仍只是几何邻近诊断。累计量按连续有效端点段及右端增量积分；
 接触新生步排除、正常相邻边跨越保留，失接触/歧义/非邻接跳变切段，不跨缺口积分。
+几何状态切换另给实际接受步区间；CSV显式保留运动学valid/status，固定标距为端点间欧氏距离。
 footprint是距刀具小于dhat的初始顶面范围与当前长度，不是压力承载区。
 `workbench.results.export_case(..., trace_path=...)`只消费同源共同观测，保留元数据与缺失，不另推断刀形。
 

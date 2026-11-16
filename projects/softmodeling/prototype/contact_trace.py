@@ -161,7 +161,9 @@ def audit_coverage(source, report, audit_path=None, manifest_path=None):
         for i in range(prefix):
             if audit['rows'][i].get('accepted_record_sha256') != record_digest(report['steps'][i]):
                 raise ValueError(f'Audit accepted record mismatch: {i}')
-        provenance['binding'] = 'original audit signature, sources, settings and each accepted record'
+        if audit.get('source_result_sha256') != hashlib.sha256((source/'result.json').read_bytes()).hexdigest():
+            raise ValueError('Audit lacks matching original final result bytes; use an independently bound sidecar')
+        provenance['binding'] = 'original audit final result bytes, signature, sources, settings and each accepted record'
     elif manifest_path:
         manifest_path = Path(manifest_path).resolve()
         manifest = json.loads(manifest_path.read_bytes())
@@ -344,8 +346,10 @@ def export_trace(source, output, *, qualified_prefix=False, audit_path=None, man
         fixed_material_definition=definition,
         relative_motion_definition=dict(raw='(v_blade_fixed_pole-v_material_same_current_edge_weights) dot current tangent',
             transported='previous material point carried by finite rigid blade motion minus current material point, dot current tangent / dt',
+            trajectory_identity='fixed knife pole and contiguous original top-material projection branch; material points along this branch can differ',
             integration='right endpoint increment, per valid contiguous endpoint segment; birth increment excluded; endpoint validity does not prove continuous physical contact',
             qualification='geometric proximity; no local pressure or traction qualification; not physical accumulated slip'),
+        contact_events=proximity_events(observed, tracker, start),
         snapshots=snapshots, steps=observed)
     write_trace_csv(output/'contact_trace.csv', observed)
     write_kinematics_table(output/'kinematics.csv', observed)
@@ -362,12 +366,31 @@ def export_trace(source, output, *, qualified_prefix=False, audit_path=None, man
     return result
 
 
+def proximity_events(steps, tracker, start):
+    """Geometric status changes are bracketed by actual saved endpoints."""
+    initial = tracker.observe_footprint(tracker.reference, start)
+    prior = dict(pole=tracker.observe(tracker.reference, start)['status'],
+                 **{name: part['status'] for name, part in initial['parts'].items()})
+    previous_depth, events = start, []
+    for step in steps:
+        current = dict(pole=step['tip_contact']['status'],
+                       **{name: part['status'] for name, part in step['blade_contact_footprint']['parts'].items()})
+        for name, status in current.items():
+            if prior[name] != status:
+                events.append(dict(probe=name, previous_status=prior[name], current_status=status,
+                    bracket_depth_mm=[previous_depth, step['depth_mm']],
+                    meaning='geometric proximity status transition; not an exact event time or mechanical first touch'))
+        prior, previous_depth = current, step['depth_mm']
+    return events
+
+
 def write_kinematics_table(path, steps):
     rows = []
     for step in steps:
         row = {k: step[k] for k in ('index', 'depth_mm', 'qualified', 'time_from_initial_s', 'dt_s', 'epsilon_u_mm', 'epsilon_u_over_dt_mm_s')}
         row.update({k: step['tip_contact'].get(k) for k in ('status', 'reference_s_mm', 'reference_offset_mm', 'gap_mm', 'edge_nodes', 'edge_alpha')})
         row.update({k: step['relative_motion'].get(k) for k in ('raw_mm_s', 'transported_mm_s', 'transport_correction_mm_s', 'segment_id', 'break_reason', 'signed_segment_mm', 'absolute_segment_mm', 'local_edge_stretch', 'migration_rate_mm_s')})
+        row.update(motion_valid=step['relative_motion']['valid'], motion_status=step['relative_motion']['status'])
         row.update(step['force'])
         for name, roi in step['fixed_material']['rois'].items():
             row.update({name+'_'+k: roi[k] for k in ('u_s_mm', 'u_n_mm', 'count')})

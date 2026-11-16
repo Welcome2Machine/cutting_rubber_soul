@@ -360,7 +360,7 @@ class AuditBindingTests(unittest.TestCase):
             binding=dict(signature_sha256=record_digest(report.get('signature')),
                 producer_sources_sha256=record_digest(report.get('source_sha256')),
                 settings_sha256=record_digest(report.get('settings')))
-            (source/'audit.json').write_text(json.dumps(dict(passed=True,rows=rows,source_binding=binding)))
+            (source/'audit.json').write_text(json.dumps(dict(passed=True,rows=rows,source_binding=binding, source_result_sha256=hashlib.sha256((source/'result.json').read_bytes()).hexdigest())))
             self.assertEqual(audit_coverage(source,report)[0],3)
             for field in ('settings','source_sha256','steps'):
                 changed=json.loads(json.dumps(report))
@@ -379,3 +379,22 @@ class AuditBindingTests(unittest.TestCase):
         self.assertEqual(step['tip_contact'],tracker.observe(x,0.))
         self.assertEqual(step['blade_contact_footprint'],tracker.observe_footprint(x,0.))
         self.assertEqual({k:v for k,v in report['tip_contact_tracking'].items() if k!='errors'},tracker.metadata)
+
+
+class FinalResultBindingTests(unittest.TestCase):
+    def test_final_binding_catches_status_and_request_edits(self):
+        from prototype.contact_trace import record_digest, audit_coverage
+        from prototype.material_case import bind_final_audit_result
+        with tempfile.TemporaryDirectory() as folder:
+            source=Path(folder)/'source';report=write_history(source)
+            rows=[dict(s,passed=True,checkpoint_sha256='fixture',accepted_record_sha256=record_digest(s)) for s in report['steps']]
+            binding=dict(signature_sha256=record_digest(report.get('signature')),producer_sources_sha256=record_digest(report.get('source_sha256')),settings_sha256=record_digest(report.get('settings')))
+            (source/'audit.json').write_text(json.dumps(dict(passed=True,rows=rows,source_binding=binding)))
+            with self.assertRaisesRegex(ValueError,'final result bytes'):
+                audit_coverage(source,report)
+            bind_final_audit_result(source,report)
+            self.assertEqual(audit_coverage(source,report)[0],3)
+            report['completed']=False;report['target_mm']=1.
+            (source/'result.json').write_text(json.dumps(report))
+            with self.assertRaisesRegex(ValueError,'final result bytes'):
+                audit_coverage(source,report)

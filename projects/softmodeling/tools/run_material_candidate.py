@@ -18,7 +18,7 @@ from threadpoolctl import threadpool_limits
 from run_support import source_hashes,write_json,save_npz,compute_process_policy
 from prototype.ipc_reference import BASELINE,adaptive_load_steps,record_tip_contact,export_contact_table
 from prototype.material_case import (make_problem, signature, audit, resume,
-                                     resume_compatibility, load_force_csv, failure_checkpoint, resolved_model)
+                                     resume_compatibility, load_force_csv, failure_checkpoint, resolved_model, bind_final_audit_result)
 from numerical_runtime import numerical_runtime
 from prototype.tip_contact import TipContactTracker
 from prototype.material_performance import (performance_policy, require_same_performance,
@@ -333,6 +333,7 @@ def main():
                 experiment_angle=args.experiment_angle,image_angle=args.image_angle)
     except Exception as exc:report['comparison_error']=f'{type(exc).__name__}: {exc}'
     write_json(out/'result.json',report)
+    bind_final_audit_result(out, report)
     write_json(out/'outcome.json',{k:report.get(k) for k in
         ('status','completed','last_depth_mm','elapsed_s','error','audit_error','comparison_error')})
     print(json.dumps({k:report.get(k) for k in ('status','last_depth_mm','elapsed_s','error')}))
