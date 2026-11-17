@@ -151,6 +151,20 @@ class TipContactTests(unittest.TestCase):
         self.assertEqual(result['status'], 'no_tip_contact')
         self.assertEqual(result['nose_status'], 'no_nose_contact')
 
+    def test_gap_crossing_retains_diagnostic_address_without_extending_migration(self):
+        tracker, reference, _, n, _ = fixture(dhat=.125)
+        for gap, status in ((.124, 'unique'), (.125, 'no_tip_contact'), (.126, 'no_tip_contact')):
+            with self.subTest(gap=gap):
+                observed = tracker.observe(place_pole(tracker, reference, n, [2.3, 1.+gap]), 0.)
+                diagnostic = tracker.pole_diagnostics(observed)
+                self.assertEqual(observed['status'], status)
+                self.assertEqual(diagnostic['nearest_is_migration'], status == 'unique')
+                self.assertAlmostEqual(diagnostic['nearest_projections'][0]['reference_s_mm'], 2.3)
+                self.assertAlmostEqual(diagnostic['gap_minus_dhat_mm'], gap-.125)
+                if status != 'unique':
+                    self.assertIsNone(observed['reference_offset_mm'])
+                    self.assertEqual(diagnostic['reason'], 'gap_not_below_dhat')
+
     def test_reordered_triangle_edges_do_not_change_result(self):
         tracker, reference, triangles, n, config = fixture()
         alternative = TipContactTracker(reference, triangles[::-1, ::-1], n, config, .01, 64)

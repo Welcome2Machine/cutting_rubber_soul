@@ -255,6 +255,25 @@ class TipContactTracker:
         )
         return result
 
+    def pole_diagnostics(self, observation):
+        """Expose the closest projection even when strict pole M is undefined.
+
+        A nearest address outside dhat is diagnostic geometry, never a valid
+        migration sample. Keep this separate so historical online observations
+        retain their exact schema and equality checks during offline replay.
+        """
+        nearest = observation['nearest_projection_candidates']
+        return dict(
+            reason=('gap_not_below_dhat' if observation['gap_mm'] >= self.dhat else
+                    'multiple_nearest_material_points' if observation['status'] == 'ambiguous' else
+                    'unique_nearest_within_dhat'),
+            dhat_mm=self.dhat,
+            gap_minus_dhat_mm=observation['gap_mm']-self.dhat,
+            nearest_projection_count=len(nearest),
+            nearest_projections=nearest,
+            nearest_is_migration=observation['status'] == 'unique',
+        )
+
     def observe_footprint(self, positions, depth_mm):
         """Measure original top-surface support across the entire rigid blade.
 

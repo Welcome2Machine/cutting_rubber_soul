@@ -288,7 +288,9 @@ def export_trace(source, output, *, qualified_prefix=False, audit_path=None, man
             np.testing.assert_allclose(float(state['depth_mm']), step['depth_mm'], atol=1e-10, rtol=0)
             np.testing.assert_allclose(x[n:], zero_knife-[0., step['depth_mm']], atol=1e-9, rtol=0)
             ds = np.stack((x[triangles[:, 1]]-x[triangles[:, 0]], x[triangles[:, 2]]-x[triangles[:, 0]]), axis=2)
-            minimum_j = float(np.min(np.linalg.det(ds)/reference_det))
+            jacobians = np.linalg.det(ds)/reference_det
+            min_j_element = int(np.argmin(jacobians))
+            minimum_j = float(jacobians[min_j_element])
             if minimum_j <= 0:
                 raise ValueError(f'State {i} contains an inverted body element')
             np.testing.assert_allclose(minimum_j, step['min_j'], atol=1e-9, rtol=1e-7)
@@ -325,7 +327,12 @@ def export_trace(source, output, *, qualified_prefix=False, audit_path=None, man
             observed.append(dict(index=i, depth_mm=step['depth_mm'], qualified=i < prefix,
                 time_from_initial_s=time_from_initial if dt is not None else None, dt_s=dt,
                 epsilon_u_mm=epsilon, epsilon_u_over_dt_mm_s=epsilon/dt if dt else None,
-                tip_contact=contact, blade_contact_footprint=footprint, relative_motion=motion,
+                tip_contact=contact, pole_diagnostics=tracker.pole_diagnostics(contact),
+                deformation=dict(min_j=minimum_j, min_j_element=min_j_element,
+                    min_j_reference_centroid_mm=reference[triangles[min_j_element]].mean(axis=0).tolist(),
+                    min_j_current_centroid_mm=x[triangles[min_j_element]].mean(axis=0).tolist(),
+                    reference_area_weighted_mean_j=float(np.dot(jacobians, abs(reference_det))/np.sum(abs(reference_det)))),
+                blade_contact_footprint=footprint, relative_motion=motion,
                 fixed_material=tracker.fixed_material_motion(x, definition),
                 force={k: step.get(k) for k in ('reaction_fz_n', 'reaction_x_n', 'reaction_normal_fz_n', 'reaction_friction_fz_n')},
                 material_markers=dict(nodes=sorted(set(sum(definition['gauge_nodes'].values(), []))),
@@ -397,6 +404,11 @@ def write_kinematics_table(path, steps):
     for step in steps:
         row = {k: step[k] for k in ('index', 'depth_mm', 'qualified', 'time_from_initial_s', 'dt_s', 'epsilon_u_mm', 'epsilon_u_over_dt_mm_s')}
         row.update({k: step['tip_contact'].get(k) for k in ('status', 'reference_s_mm', 'reference_offset_mm', 'gap_mm', 'edge_nodes', 'edge_alpha')})
+        pole = step.get('pole_diagnostics', {})
+        row.update(pole_reason=pole.get('reason'), dhat_mm=pole.get('dhat_mm'),
+                   gap_minus_dhat_mm=pole.get('gap_minus_dhat_mm'),
+                   nearest_projections=pole.get('nearest_projections'))
+        row.update(step.get('deformation', {}))
         row.update({k: step['relative_motion'].get(k) for k in ('raw_mm_s', 'transported_mm_s', 'transport_correction_mm_s', 'segment_id', 'break_reason', 'signed_segment_mm', 'absolute_segment_mm', 'local_edge_stretch', 'migration_rate_mm_s')})
         row.update(motion_valid=step['relative_motion']['valid'], motion_status=step['relative_motion']['status'])
         check = step['relative_motion'].get('continuity_check') or {}

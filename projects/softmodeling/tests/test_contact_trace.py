@@ -204,6 +204,17 @@ class ContactTraceIntegrationTests(unittest.TestCase):
             self.assertFalse(result['mechanical_solve_performed'])
             self.assertEqual(len(result['steps']), 3)
             self.assertEqual(len(result['source_checkpoints_sha256']), 3)
+            for step in result['steps']:
+                self.assertEqual(step['pole_diagnostics']['reason'], 'unique_nearest_within_dhat')
+                self.assertGreater(step['deformation']['min_j'], 0.)
+                self.assertEqual(len(step['deformation']['min_j_current_centroid_mm']), 2)
+            with (output/'kinematics.csv').open(newline='') as stream:
+                rows = list(csv.DictReader(stream))
+            self.assertEqual(len(rows), 3)
+            self.assertEqual(rows[0]['pole_reason'], 'unique_nearest_within_dhat')
+            self.assertEqual(json.loads(rows[0]['nearest_projections']),
+                             result['steps'][0]['tip_contact']['nearest_projection_candidates'])
+            self.assertEqual(float(rows[0]['min_j']), result['steps'][0]['deformation']['min_j'])
             self.assertEqual(result['source_result_sha256'], hashlib.sha256(before['result.json']).hexdigest())
             self.assertTrue((output / 'contact_trace.json').is_file())
             self.assertTrue((output / 'contact_trace.csv').is_file())
