@@ -1,26 +1,10 @@
-# 研究主题与执行入口
+# 研究主题与唯一执行入口
 
-更新：2026-11-16。本目录只维护一个当前任务书；本轮仅服务器执行基线修复及迁移／变形／滑移分析，旧断裂末端任务不再作为启动指令。
+更新：2026-11-17。仅服务器执行[当前任务](research_prototype_task.md)：安全磁盘/仓库清理审计、1.365mm刀尖极点观测缺失定位、既有3mm/601态的FE可视化与证据实际上传；本地暂停。
 
-| 入口 | 用途 |
-|---|---|
-| [科研原型任务](research_prototype_task.md) | **唯一现行任务**：第0节新agent背景／接管导读，后续B1–B7修复、运动学、有界计算与验收 |
-| [Git 协作规则](../docs/git_workflow.md) | 分支、文件责任、按提交交接、运行目录与仓库清洁 |
-| [新服务器agent提示词](server_agent_prompt.md) | 无需旧对话即可接管；继承已有进度和预算，继续本轮唯一服务器任务 |
-| [本地启动提示词](baseline_agent_tasks_20261031.md) | 本轮不接新任务；保留a39ce7成果与既有证据 |
-| [实际研究状态](../projects/softmodeling/docs/research_status.md) | 已完成结果、证据位置与尚未完成的阶段 |
+- [完整当前任务](research_prototype_task.md) / [直接给服务器agent的提示词](server_agent_prompt.md)
+- [601态独立审查与科研结论](../projects/softmodeling/docs/research_status.md) / [Git协作与安全清理规则](../docs/git_workflow.md)
+- [斜切实验与研究背景](oblique_cutting_experiment_and_research.md)
+- [旧任务归档于固定Git提交](https://github.com/Welcome2Machine/cutting_rubber_soul/blob/d07c5324315927684fd3b2891aef20fca6e70d51/researchtopic/research_prototype_task.md)
 
-服务器集成分支为 `codex/server-fracture-20261029`；本地数据/基线分支为
-`codex/intact-baseline-upgrade-20261031`。本轮服务器同时负责所需数值修复、运动学后处理与现有数据比较；
-本地只保留已有参考和成果。负责人维护任务与协作规则。
-服务器不等待本地上传；任务更新不代表代码已修复或新仿真已经完成。
-
-## 原始目标与历史依据
-
-- [研究主题与实验信息](oblique_cutting_experiment_and_research.md)
-- [2026-11-02 历史审查](project_review.md)：保留数值事实和复杂度审查，后续决策以当前任务为准。
-- [2026-10-31 历史审查](project_review_20261031.md)
-- [原始断裂任务](fracture_agent_task_brief.md)
-
-更早的日期任务和轮次文档只用于追溯，不逐个重新执行。新增进展原位更新现有任务/状态入口；
-旧版本由 Git 保存，不再新增一份日期任务书、总审查或归档副本。
+旧B1–B7、断裂末端、短程FE和长程启动阶段都已结束，不代表本轮可重启；历史审查、结果及方法文档保留。

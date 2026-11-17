@@ -1,28 +1,10 @@
 # Repository requirements
 
-## Current user task and ownership (2026-11-16)
+## Current user task and ownership (2026-11-17)
 
-The only current task is [research_prototype_task](../../researchtopic/research_prototype_task.md).
-Read it and [Git workflow](../../docs/git_workflow.md) before acting. The first paper is experiments
-plus explanatory forward simulation; learning, differentiable solvers and PINNs are possible second-paper
-work, not implementation tasks now. The user authorizes SERVER-ONLY execution of baseline repairs,
-material-coordinate migration, fixed-material deformation and contact-relative motion analysis.
-The local agent preserves its a39ce7 results and workspace; no new local FE, fit, code edits or duplicate
-packaging is assigned. Missing local raw data does not block the server's work; do not merge that branch.
+Read [single current task](../../researchtopic/research_prototype_task.md) and [Git rules](../../docs/git_workflow.md). The server alone handles a safe repository/server-directory space inventory and minimal cleanup, diagnosis of the lost fixed knife-pole correspondence near 1.365 mm, and a new full 601-state extraction and FE visualization with a portable audited evidence package. The local agent is paused.
 
-The current task explicitly supersedes the November 10 read-only fracture-endpoint task and its probe.
-Implement its B1-B7 fixes in existing modules: actual geometry/initial-position metadata, consistent
-online/offline observables, independently qualified-prefix export, the mu=0 CLI, material-identity
-kinematics and one research report. First reuse the server's F0 and available oblique accepted histories.
-Only the current task's conditional bounded intact paths are authorized; retain its resource limits.
-Do not continue F2, repeat seam sampling repairs, or develop solver/spectral/dynamic/3D/learning frameworks.
-Finite-gap proximity motion, material-address migration and loaded-interface slip have distinct meanings.
-Preserve missing/ambiguous samples and source failure labels; postprocessing success is not solve completion.
-The physical-chord gate, F0/F1 and the independently re-audited 61-state F2 prefix remain historical evidence.
-
-Read [research status](docs/research_status.md), [model specification](docs/current_model_spec.md),
-[code map](prototype/README.md) and [project conventions](README.md) as evidence of implemented behavior.
-They do not make an unimplemented task an existing capability. Root AGENTS and publication gates still apply.
+The original 57deg A-low, mu=.35 intact 3mm history has 601 states covered by an independent sidecar audit. Preserve its entire raw chain, original failed audit labels, provenance and other users' files. Do not edit model physics, change dhat to manufacture contact, splice flank material addresses into strict pole migration, hide missing observations, or delete research history to reclaim bytes. Only when a concrete physical/numerical defect has been proven and cannot be resolved by replaying these states is one separate 3mm FE run conditionally authorized. All previous B1-B7 repairs and fracture tasks are completed history, not outstanding instructions. Upload only a compact genuinely accessible visualization/data package; inaccessible server-only paths do not count as delivery.
 
 ## Physical scope and interpretation
 
@@ -30,13 +12,12 @@ They do not make an unimplemented task an existing capability. Root AGENTS and p
   Preserve reference configurations and historical model identities; this does not forbid explicitly
   authorized new shared inputs, a real damage-off mode or a declared interface formulation.
 - Common reference material, measured blade data and source qualifications live in the current task;
-  do not maintain a competing parameter table here. Speed is 0.2 mm/s and travel does not exceed 2 mm.
+  do not maintain a competing parameter table here. Standard loading speed is 0.2 mm/s; the separately authorized A-low intact long path reaches 3 mm.
   The original s=7 mm geometry and the symmetric s=15 mm control are distinct experiments in the model.
 - The workbench represents a symmetric wedge/circular nose, not arbitrary CAD. Lubrication is a
   condition label plus explicit Coulomb mu, not an oil-film model. Public Fy maps solver reaction_x_n;
   Fyz is a resultant. Force components, surface projections and energy shares are different quantities.
-- The baseline formulation and established physical/solver gates remain fixed. The current task authorizes
-  targeted IO/observability/CLI repairs and only its explicitly bounded comparison configurations.
+- The baseline formulation and established physical/solver gates remain fixed. The current task authorizes narrowly scoped observability and evidence-delivery changes; it does not authorize a new friction law or solver.
   Do not silently change friction regularization or historical input identities. General common-parameter
   calibration within defensible intact windows remains a later option.
   The fracture agent must not tune strength/Gc,
