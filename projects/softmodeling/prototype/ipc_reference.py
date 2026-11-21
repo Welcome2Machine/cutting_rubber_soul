@@ -24,7 +24,7 @@ from scipy.sparse.linalg import spsolve, splu, eigsh, LinearOperator, ArpackNoCo
 from threadpoolctl import threadpool_limits
 from run_support import write_json, save_npz, source_hashes, compute_process_policy
 from .model_config import FEMConfig, local_to_lab, _rotation_vectors
-from .geometry import GeometryOptions, intact_mesh, blade_boundary_vertices,subdivide_blade
+from .geometry import GeometryOptions, intact_mesh, blade_boundary_vertices,subdivide_blade,rounded_outline
 from .material import bulk
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -136,7 +136,7 @@ class IPCProblem:
         friction_globalization="model-error",
         blade_spacing=None,
         blade_thickness=None,
-        blade_angle=None,
+        blade_angle=None, blade_shape=None,
         coarse_spacing=None,
         drop_s=None, preparation_clearance_mm=None,
         friction_smoothing_mm=BASELINE["friction_smoothing_mm"],
@@ -225,6 +225,7 @@ class IPCProblem:
         if not np.isfinite(friction_smoothing_mm) or friction_smoothing_mm <= 0:
             raise ValueError('Positive displacement friction smoothing required')
         self.friction_smoothing_mm = float(friction_smoothing_mm)
+        self.blade_landmarks = None
         if case == "patch":
             blade = np.array(
                 [
@@ -234,6 +235,8 @@ class IPCProblem:
                     [-0.2, 1.3 - self.start],
                 ]
             )
+        elif blade_shape is not None:
+            blade,self.blade_landmarks = rounded_outline(self.config,self.options,self.start,nose_facets,blade_shape)
         else:
             vertices = blade_boundary_vertices(self.config, self.options, self.start)
             angle = np.deg2rad(self.config.blade_tip_angle_deg / 2)

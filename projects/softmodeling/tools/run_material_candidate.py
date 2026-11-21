@@ -173,7 +173,11 @@ def main():
     parser.add_argument('--drop-s',type=float)
     parser.add_argument('--dhat',type=float,default=.0025)
     parser.add_argument('--preparation-clearance-mm',type=float)
-    parser.add_argument('--friction-smoothing-mm',type=float,default=1e-5)
+    parser.add_argument('--blade-shape',choices=['double','single_up','single_down'])
+    parser.add_argument('--minimum-increment-mm',type=float,default=.000625)
+    group=parser.add_mutually_exclusive_group()
+    group.add_argument('--friction-velocity-mm-s',type=float)
+    group.add_argument('--friction-smoothing-mm',type=float,default=1e-5)
     parser.add_argument('--enforce-physical-chord',action='store_true',
         help='Reject unsafe full accepted loading chords before committing histories')
     parser.add_argument('--physical-core-affinity',action='store_true')
@@ -201,6 +205,8 @@ def main():
         parser.error('mu must be finite and nonnegative')
     if not all(np.isfinite(v) and v>0 for v in (args.depth,args.increment,args.seconds)) or args.depth>3:
         parser.error('positive finite controls and target depth <= 3 mm required')
+    if not np.isfinite(args.minimum_increment_mm) or args.minimum_increment_mm<=0 or args.minimum_increment_mm>args.increment:parser.error('Invalid minimum increment')
+    if args.friction_velocity_mm_s is not None and not (np.isfinite(args.friction_velocity_mm_s) and args.friction_velocity_mm_s>0):parser.error('Invalid velocity threshold')
     if args.threads<1:parser.error('threads must be positive')
     if not np.isfinite(args.angle) or not 0<=args.angle<=75:parser.error('Angle must be in [0,75] degrees')
     thickness=args.blade_thickness if args.blade_thickness is not None else BASELINE['model']['blade_thickness_mm']
@@ -241,7 +247,7 @@ def main():
         parameter_status='conditional material hypothesis; not independently calibrated',
         loading_rate_status='conditional inherited 0.2 mm/s unless explicitly replaced',
         tip_contact_tracking=dict(errors=[]),settings=vars(args).copy(),performance_policy=performance,
-        load_control=dict(mode='adaptive_bisection',minimum_increment_mm=.000625,
+        load_control=dict(mode='adaptive_bisection',minimum_increment_mm=args.minimum_increment_mm,
                           maximum_increment_mm=args.increment,output_grid_increment_mm=args.increment))
     report['settings']={k:str(v) if isinstance(v,Path) else v for k,v in report['settings'].items()}
     write_json(out/'result.json',report)
@@ -265,7 +271,7 @@ def main():
             construction={k:getattr(args,k) for k in ('angle','equilibrium_shear','maxwell_shear',
                 'relaxation_s','loading_rate','bulk_modulus','mu','equilibrium_alpha','maxwell_alpha','blade_spacing',
                 'blade_thickness','blade_angle','tip_radius','local_spacing','surface_spacing','coarse_spacing',
-                'fine_halfwidth','nose_facets','drop_s','dhat','preparation_clearance_mm','friction_smoothing_mm','enforce_physical_chord')}
+                'fine_halfwidth','nose_facets','drop_s','dhat','preparation_clearance_mm','friction_smoothing_mm','enforce_physical_chord','blade_shape','friction_velocity_mm_s')}
             p=make_problem(**construction)
             p.solver_diagnostics=args.diagnostics
             report['resolved_model']=resolved_model(p)
@@ -282,14 +288,14 @@ def main():
                 x,old=resume(p,args.resume,out,report)
             enable_performance(p,performance)
             print('PERFORMANCE_POLICY '+json.dumps(performance),flush=True)
-            tracker=TipContactTracker(p.rest,p.mesh.triangles,p.n,p.config,p.dhat,p.nose_facets)
+            tracker=TipContactTracker(p.rest,p.mesh.triangles,p.n,p.config,p.dhat,p.nose_facets,p.blade_landmarks)
             report.update(status='running',phase='loading');write_json(out/'result.json',report)
             solve_start=time.monotonic();deadline=solve_start+args.seconds
             targets=np.r_[0.,np.arange(args.increment,args.depth-1e-12,args.increment),args.depth]
             def rejected(event):
                 report['rejected_load_attempts'].append(event);write_json(out/'result.json',report)
             for depth in targets[targets>old+1e-12]:
-                for x,record in adaptive_load_steps(p,x,old,float(depth),deadline,.000625,rejected):
+                for x,record in adaptive_load_steps(p,x,old,float(depth),deadline,args.minimum_increment_mm,rejected):
                     index=len(report['steps']);old=record['depth_mm']
                     save_npz(out/'states'/f'{index:04d}.npz',reference_xy=p.rest,
                         triangles=p.mesh.triangles,positions=x,previous_positions=p.previous,

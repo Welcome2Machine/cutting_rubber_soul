@@ -234,6 +234,10 @@ def export_trace(source, output, *, qualified_prefix=False, audit_path=None, man
     tracker, prior, prior_metric, prior_depth = None, None, None, None
     hashes, observed, snapshots = {}, [], []
     display_indices = set(np.linspace(0, len(steps)-1, min(4, len(steps))).round().astype(int))
+    if sig.get('blade_landmarks'):
+        anchors=(.5,1.,1.5,2.)
+        hits={i for i,s in enumerate(steps) if any(abs(s['depth_mm']-a)<1e-10 for a in anchors)}
+        if hits:display_indices=hits
     prior_contact, prior_motion, cumulative = None, None, {}
     time_from_initial = 0.
     first_valid = None
@@ -252,7 +256,7 @@ def export_trace(source, output, *, qualified_prefix=False, audit_path=None, man
             n = int(state['body_nodes'])
             if tracker is None:
                 reference, triangles = state['reference_xy'].copy(), state['triangles'].copy()
-                tracker = TipContactTracker(reference, triangles, n, config, dhat, facets)
+                tracker = TipContactTracker(reference, triangles, n, config, dhat, facets, report.get("resolved_model",{}).get("geometry",{}).get("landmarks"))
                 prior, body_nodes = reference, n
                 zero_knife = x[n:].copy()
                 shifts = zero_knife-reference[n:]
@@ -324,6 +328,9 @@ def export_trace(source, output, *, qualified_prefix=False, audit_path=None, man
                 first_valid = dict(index=i, bracket_depth_mm=[prior_depth, step['depth_mm']], reference_s_mm=contact['reference_s_mm'])
             epsilon = report.get('resolved_model', {}).get('friction', {}).get('epsilon_u_mm',
                 report.get('settings', {}).get('friction_smoothing_mm', sig.get('friction_smoothing_mm', 1e-5))) if maxwell else None
+            if maxwell and 'friction_regularization' in sig:
+                epsilon = sig['friction_regularization']['epsilon_v_mm_s']*dt
+                np.testing.assert_allclose(epsilon, float(state['epsilon_u_mm']),rtol=1e-13,atol=0)
             observed.append(dict(index=i, depth_mm=step['depth_mm'], qualified=i < prefix,
                 time_from_initial_s=time_from_initial if dt is not None else None, dt_s=dt,
                 epsilon_u_mm=epsilon, epsilon_u_over_dt_mm_s=epsilon/dt if dt else None,
@@ -413,6 +420,9 @@ def write_kinematics_table(path, steps):
         row.update(motion_valid=step['relative_motion']['valid'], motion_status=step['relative_motion']['status'])
         check = step['relative_motion'].get('continuity_check') or {}
         row.update(continuity_status=check.get('status'), continuity_chord_intervals=check.get('intervals'))
+        for offset,values in step['fixed_material'].get('fixed_offset_points',{}).items():
+            row.update({f's_offset_{offset}_{k}':v for k,v in values.items()})
+        row.update({'fixed_gauge_'+k:v for k,v in step['fixed_material'].get('fixed_offset_stretch',{}).items()})
         row.update(step['force'])
         for name, roi in step['fixed_material']['rois'].items():
             row.update({name+'_'+k: roi[k] for k in ('u_s_mm', 'u_n_mm', 'count')})

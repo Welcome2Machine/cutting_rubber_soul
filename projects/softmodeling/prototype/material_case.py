@@ -21,7 +21,11 @@ def signature(p):
                 mesh_sha256=hashlib.sha256(p.rest.tobytes()+p.mesh.triangles.tobytes()).hexdigest(),
                 contact_formulation=p.contact_formulation,dhat=p.dhat,
                 physical_force_tolerance_n=BASELINE['force_tolerance_n'])
-    if getattr(p,'friction_smoothing_mm',BASELINE['friction_smoothing_mm']) != BASELINE['friction_smoothing_mm']:
+    if getattr(p,'blade_landmarks',None):
+        value['blade_landmarks'] = p.blade_landmarks
+    if getattr(p,'friction_velocity_mm_s',None) is not None:
+        value['friction_regularization'] = dict(mode='fixed_velocity',epsilon_v_mm_s=p.friction_velocity_mm_s)
+    elif getattr(p,'friction_smoothing_mm',BASELINE['friction_smoothing_mm']) != BASELINE['friction_smoothing_mm']:
         value['friction_smoothing_mm'] = p.friction_smoothing_mm
     if p.enforce_physical_chord:
         value["enforce_physical_chord"] = True
@@ -45,14 +49,14 @@ def resolved_model(p):
         inertia=(dict(density_kg_m3=p.event_density_kg_m3,total_mass_n_s2_mm=float(p.mass.sum()),
             mirror_factor=1,blade_mass=0) if getattr(p,'event_mode',False) else None),
         friction=dict(coefficient=p.config.friction_coefficient,
-            smoothing_kind=('fixed_velocity' if getattr(p,'event_mode',False) else 'fixed_increment_displacement'),
-            epsilon_u_mm=p.friction_smoothing_mm,
-            epsilon_v_mm_s=(p.event_friction_velocity_mm_s if getattr(p,'event_mode',False) else None),
+            smoothing_kind=('fixed_velocity' if getattr(p,'event_mode',False) or getattr(p,'friction_velocity_mm_s',None) is not None else 'fixed_increment_displacement'),
+            epsilon_u_mm=None if getattr(p,'friction_velocity_mm_s',None) is not None else p.friction_smoothing_mm,
+            epsilon_v_mm_s=(p.event_friction_velocity_mm_s if getattr(p,'event_mode',False) else getattr(p,'friction_velocity_mm_s',None)),
             scope='same coefficient for blade and body self-contact; closure penalty excluded from IPC friction load'),
         contact=dict(formulation=p.contact_formulation,dhat_mm=p.dhat,
             enforce_physical_chord=p.enforce_physical_chord,
             ccd=getattr(p,'network_ccd_policy',{'mode':'toolkit_default'})),
-        geometry=dict(actual_wedge_included_angle_deg=float(angle),
+        geometry=dict(landmarks=getattr(p,"blade_landmarks",None),actual_wedge_included_angle_deg=float(angle),
             actual_blade_thickness_mm=float(np.ptp(blade[:,0])),
             actual_arc_radius_mm=float(radii.mean()),arc_fit_max_error_mm=float(np.max(abs(radii-radii.mean()))),
             radius_status='assumed, not independently measured',
@@ -84,8 +88,13 @@ def failure_checkpoint(p, x):
 def probe_ptc_state(p,state):
     """Probe without changing either pre-increment history of the caller."""
     before=(p.previous,p.previous_material_metric,p.material_dt)
-    try:return _probe_ptc_state(p,state)
-    finally:p.previous,p.previous_material_metric,p.material_dt=before
+    friction=(p.friction,p.friction_smoothing_mm)
+    try:
+        p.set_friction_dt(float(state['material_dt_s']))
+        return _probe_ptc_state(p,state)
+    finally:
+        p.previous,p.previous_material_metric,p.material_dt=before
+        p.friction,p.friction_smoothing_mm=friction
 
 
 def _probe_ptc_state(p,state):
@@ -180,7 +189,8 @@ def make_problem(*,angle,equilibrium_shear,maxwell_shear,relaxation_s,loading_ra
                  volumetric='quadratic_j',blade_spacing=None,blade_thickness=None,blade_angle=None,
                  tip_radius=.02,local_spacing=.05,surface_spacing=.005,nose_facets=64,
                  fine_halfwidth=3.,coarse_spacing=None,drop_s=None,dhat=.0025,
-                 preparation_clearance_mm=None,friction_smoothing_mm=1e-5,enforce_physical_chord=False):
+                 preparation_clearance_mm=None,friction_smoothing_mm=1e-5,enforce_physical_chord=False,
+                 blade_shape=None,friction_velocity_mm_s=None):
     """Shared construction for actual-angle runs and completed-reference audits."""
     if not all(np.isfinite(a) and 1 <= a <= 4 for a in (equilibrium_alpha,maxwell_alpha)):
         raise ValueError('Explicit candidate exponents must be in [1, 4]')
@@ -190,6 +200,7 @@ def make_problem(*,angle,equilibrium_shear,maxwell_shear,relaxation_s,loading_ra
         surface_spacing=surface_spacing,nose_facets=nose_facets,inclination=angle,tip_radius=tip_radius,
         fine_halfwidth=fine_halfwidth,max_iterations=500,predictor='secant',hessian_mode='regularized',element='p1',
         blade_spacing=blade_spacing,blade_thickness=blade_thickness,blade_angle=blade_angle,
+        blade_shape=blade_shape,friction_velocity_mm_s=friction_velocity_mm_s,
         coarse_spacing=coarse_spacing,drop_s=drop_s,preparation_clearance_mm=preparation_clearance_mm,
         friction_smoothing_mm=friction_smoothing_mm,enforce_physical_chord=enforce_physical_chord)
     p.stagnation_window=40
@@ -299,6 +310,9 @@ def resume_compatibility(old,report):
     """An audited CLI/reporting revision may differ; physical sources may not."""
     if old['signature']!=report['signature']:
         raise ValueError('Resume requires identical material, angle, mesh, contact and acceptance')
+    for field in ('minimum_increment_mm','maximum_increment_mm','output_grid_increment_mm'):
+        if old.get('load_control',{}).get(field) != report.get('load_control',{}).get(field) and report.get('load_control'):
+            raise ValueError('Resume load control differs: '+field)
     native_policy=dict(version=1,predictor='secant',affine_stagnation_window=0)
     if old.get('solver_policy',native_policy)!=report.get('solver_policy',native_policy):
         raise ValueError('Resume nonlinear solver policy differs; start an independent path')

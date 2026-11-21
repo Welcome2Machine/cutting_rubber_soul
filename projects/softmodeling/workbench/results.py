@@ -253,6 +253,10 @@ def export_case(source, output, *, max_frames=11, movie=False, audit_path=None, 
             blade_contact_footprint=observation.get('blade_contact_footprint') if qualified else None,
             relative_motion=observation.get('relative_motion') if qualified else None,
             fixed_material=observation.get('fixed_material') if qualified else None))
+    if signature.get('blade_landmarks') and prefix:
+        anchors=(.5,1.,1.5,2.)
+        selected=np.unique(np.r_[selected,[i for i,d in enumerate(depths[:prefix])
+            if any(abs(d-a)<1e-10 for a in anchors)]]).astype(int)
     frames, hashes, mesh = [], {}, None
     checks = []
     for index in selected:
@@ -339,6 +343,29 @@ def export_case(source, output, *, max_frames=11, movie=False, audit_path=None, 
         except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as error:
             partial_movie.unlink(missing_ok=True)
             bundle["metadata"]["movie"] = dict(status="failed", reason=str(error))
+    if signature.get('blade_landmarks'):
+        from matplotlib.figure import Figure
+        for frame in frames:
+            depth=frame['depth_mm']
+            if not any(abs(depth-a)<1e-10 for a in (.5,1.,1.5,2.)):continue
+            fig=Figure(figsize=(11,4),layout='constrained')
+            overview,detail=fig.subplots(1,2)
+            xy=np.asarray(frame['positions'])
+            knife=np.asarray(frame['blade'])
+            pole=knife[signature['blade_landmarks']['pole_local']]
+            for axes in (overview,detail):
+                axes.tripcolor(*xy.T,mesh['triangles'],facecolors=frame['fields']['J'],
+                               cmap='viridis',vmin=0,vmax=1.2)
+                axes.fill(*knife.T,color='0.25')
+                axes.set_aspect('equal');axes.set_xlabel('Laboratory x (mm)')
+                axes.set_ylabel('Laboratory z (mm)')
+            for k,set_limits in enumerate((overview.set_xlim,overview.set_ylim)):
+                set_limits(xy[:,k].min()-.25,xy[:,k].max()+.25)
+            detail.set_xlim(pole[0]-.45,pole[0]+.45)
+            detail.set_ylim(pole[1]-.45,pole[1]+.45)
+            fig.colorbar(detail.collections[0],ax=detail,label='J')
+            fig.suptitle(f'Accepted vertical travel {depth:.3f} mm')
+            fig.savefig(output/f'deformation_{depth:.3f}mm.png',dpi=150)
     _write_json(output / "result.bundle.json", bundle)
     return bundle
 

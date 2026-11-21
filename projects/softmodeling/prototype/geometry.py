@@ -101,6 +101,51 @@ def blade_boundary_vertices(config, options, depth):
                       [center[0]+w,shoulder_z],[center[0]+w,top]))
 
 
+def rounded_outline(config, options, depth, facets, shape):
+    """Contact-ready control polygon. Lab x points downhill, lab z points up."""
+    beta = np.deg2rad(config.blade_tip_angle_deg)
+    left, right = {'double': (beta/2, beta/2), 'single_up': (beta, 0.),
+                   'single_down': (0., beta)}[shape]
+    es, en = _rotation_vectors(config.inclination_deg)
+    # Surface-normal first touch, and the fixed lab-lowest pole, are actual vertices.
+    contact_angle = -np.pi/2 - np.deg2rad(config.inclination_deg)
+    canonical_left,canonical_right=(right,left) if shape=='single_down' else (left,right)
+    lo,hi=-np.pi+canonical_left,-canonical_right
+    reflected=-np.pi-contact_angle
+    limits = np.unique([lo,hi,-np.pi/2]+[v for v in (contact_angle,reflected) if lo<v<hi])
+    if contact_angle < -np.pi+left or contact_angle > -right:
+        raise ValueError('First touch is outside rounded nose')
+    lengths = np.diff(limits)
+    counts = np.ones(len(lengths), dtype=int)
+    for _ in range(facets-len(counts)):
+        counts[np.argmax(lengths/counts)] += 1
+    theta = np.r_[np.concatenate([np.linspace(a,b,k,endpoint=False)
+        for a,b,k in zip(limits[:-1],limits[1:],counts)]),limits[-1]]
+    if shape=='single_down':theta=-np.pi-theta[::-1]
+    r = options.tip_radius_mm
+    contact = local_to_lab(np.array([[config.drop_s_mm, config.height_mm]]),config)[0]
+    center = contact + r*en - [0.,depth]
+    arc = r*np.column_stack([np.cos(theta),np.sin(theta)])
+    # At height h relative to center, each tangent has horizontal offset
+    # r/cos(side) + h*tan(side). This also covers a vertical side exactly.
+    shoulder = (config.blade_thickness_mm-r*(1/np.cos(left)+1/np.cos(right)))/(np.tan(left)+np.tan(right))
+    if shoulder <= max(arc[0,1],arc[-1,1]):
+        raise ValueError('Blade thickness cannot accommodate tangent flanks')
+    xl = -r/np.cos(left)-shoulder*np.tan(left)
+    xr = r/np.cos(right)+shoulder*np.tan(right)
+    top = 2*(config.length_mm+config.height_mm)
+    outline = center + np.vstack(([xl,top],[xl,shoulder],arc,[xr,shoulder],[xr,top]))
+    pole = 2+int(np.argmin(arc[:,1]))
+    metadata = dict(shape=shape,pole_local=pole,nose_first=2,nose_last=facets+2,
+                    left_flank=[1,2],right_flank=[facets+2,facets+3],
+                    left_angle_deg=float(np.rad2deg(left)),right_angle_deg=float(np.rad2deg(right)))
+    # Check the entire closed outline against the original plane at nominal zero.
+    separation = (outline + [0.,depth] - contact) @ en
+    if abs(np.min(separation)) > 1e-10:
+        raise ValueError('Nominal zero is inconsistent with whole-outline contact')
+    return outline,metadata
+
+
 def subdivide_blade(blade,nose_facets,spacing):
     """Split straight edges without moving any original vertex or nose facet.
 

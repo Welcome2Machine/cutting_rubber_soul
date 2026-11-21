@@ -1,6 +1,33 @@
-# 当前唯一任务：安全清理盘点、刀尖追踪缺失机理与可核验证据交付
+# 本地连续完整体七工况与服务器既有证据
 
-更新：2026-11-17。**只由服务器agent执行，本地不分配新工作。** 本任务替代旧短程B1–B7和长程启动指示；不重启F2、断裂旧队列。上一完整任务的固定历史：[d07c532版任务](https://github.com/Welcome2Machine/cutting_rubber_soul/blob/d07c5324315927684fd3b2891aef20fca6e70d51/researchtopic/research_prototype_task.md)。当前已完成事实见[研究状态](../projects/softmodeling/docs/research_status.md)。
+2026-11-21。本地负责从各自几何首触连续下行 2.000 mm 的条件基线。由本地有限队列依次执行共同双刃 33°、0°、57°、33° 低摩擦、朝上/朝下两单刃、2 µm 双刃。每次运行使用独立材料、摩擦历史和固定代码身份。服务器此前的 3 mm 证据及其资格见下文。
+
+本地实际工况输入见 projects/softmodeling/configs/intact_2mm_local.json；入口是 tools.run_material_queue 的 --case-config 和已有的 tools.run_material_candidate。共同 G∞=.14 MPa、Gv=1.24 MPa、τ=1.7 s、K=23.34333333333331 MPa、两指数均为 2；平面应变宽度 20 mm、落点 s=7 mm、下行速度 .2 mm/s。上表面向实验室右方下倾，x 指向右，z 向上。single_up 的开刃斜面在左侧（上坡侧），single_down 的斜面在右侧。首触与最低极点分别标识。13.31684633759535° 总夹角和 .24577088241513723 mm 厚度取自 configs/blade_profiles.measured.json。受控单刃形状、两种半径和两种摩擦系数均属假设。原始实验力只用于验证。
+
+Fz 为竖直刀具反力，Fy 对应有符号 reaction_x_n。M 按固定刀具极点到原自由表面的合格材料地址定义，失联保留空值。跨网格比较使用相同参考 S 上插值的固定材料位移与标距。相对切向速度和分段累计量保留近界面运动学资格，局部正压力及真实滑移须有独立证据。真实步长决定 εu=εv Δt，准备段单列。保留 1e−4 N 残差、正 J、连续碰撞与整步弦检查。短程控制不构成全行程网格收敛或实验认证。
+
+加密半宽按旧 A 刀完整体的真实接受态选择。核对旧态及独立审查 SHA 后，以 0.25 mm 间隔抽取至 2 mm，0°、33°、57° 全刀近邻区的参考 S 最大偏距分别为 0.327、0.395、0.302 mm；最小 J 单元中心最大偏距分别为 0.013、0.032、0.162 mm。本批取 ±0.8 mm，并在每个合格态复核近邻区是否越界。此检查不赋予新刀形或 2 µm 锐尖全程精度资格。原始逐态比较记录在本地批次父目录 historical_band.json。
+
+在批次目录下运行以下只读命令可查看七个工况的实际状态。
+
+```powershell
+(Get-Content -Raw queue_status.json | ConvertFrom-Json).jobs | Select-Object case_id,status,solver_pid,qualified_depth_mm
+```
+
+如需手动停止，先在同一批次目录中读取启动回执，仅当进程命令行、创建时间和绝对目录全部符合时终止该有限进程树。手动终止可能留下尚未重审的前缀，后续恢复须由同版本单工况入口通过独立审查。
+
+```powershell
+$batchPath=(Get-Location).Path
+$receipt=Get-Content -Raw launch.json | ConvertFrom-Json
+$worker=Get-CimInstance Win32_Process -Filter ("ProcessId="+$receipt.worker_pid)
+if ($worker -and $worker.CommandLine.Contains($batchPath) -and $worker.CommandLine.Contains('tools.run_material_queue') -and $worker.CommandLine.Contains('--worker') -and [Math]::Abs(($worker.CreationDate.ToUniversalTime()-([datetimeoffset]$receipt.started_utc).UtcDateTime).TotalSeconds) -lt 10) {
+    taskkill /PID $worker.ProcessId /T /F
+}
+```
+
+## 服务器历史任务：安全清理盘点、刀尖追踪缺失机理与可核验证据交付
+
+更新：2026-11-17。当时的服务器工作范围如下。 本任务替代旧短程B1–B7和长程启动指示；不重启F2、断裂旧队列。上一完整任务的固定历史：[d07c532版任务](https://github.com/Welcome2Machine/cutting_rubber_soul/blob/d07c5324315927684fd3b2891aef20fca6e70d51/researchtopic/research_prototype_task.md)。当前已完成事实见[研究状态](../projects/softmodeling/docs/research_status.md)。
 
 ## 1. 研究目标与冻结证据
 

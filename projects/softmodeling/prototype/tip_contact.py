@@ -86,7 +86,7 @@ class TipContactTracker:
     vertices, two right flank vertices. Flat-punch patch cases are rejected.
     """
 
-    def __init__(self, reference_xy, triangles, body_nodes, config, dhat, nose_facets):
+    def __init__(self, reference_xy, triangles, body_nodes, config, dhat, nose_facets, landmarks=None):
         self.reference = np.array(reference_xy, dtype=float, copy=True)
         tri = np.asarray(triangles)
         if self.reference.ndim != 2 or self.reference.shape[1] != 2 or not np.all(np.isfinite(self.reference)):
@@ -145,19 +145,21 @@ class TipContactTracker:
         if np.any(np.diff(self.s[self.edges], axis=1) <= self.tolerance):
             raise ValueError("Degenerate original top edge")
         self.nose_nodes = np.arange(body_nodes + 2, body_nodes + 3 + nose_facets)
-        self.tip_node = int(body_nodes + 2 + nose_facets // 2)
+        pole = int(landmarks["pole_local"])-2 if landmarks else nose_facets//2
+        if not 0 < pole < nose_facets:raise ValueError("Invalid blade pole")
+        self.tip_node = int(body_nodes + 2 + pole)
         arc = self.reference[self.nose_nodes]
         if np.argmin(self.reference[body_nodes:, 1]) + body_nodes != self.tip_node:
             raise ValueError("Reference knife pole is inconsistent with rounded blade ordering")
         # The fit checks topology and records the faceted versus ideal-circle
         # first-touch baseline; it does not replace the collision polygon.
-        offset = arc[[0, -1]] - arc[nose_facets // 2]
+        offset = arc[[0, -1]] - arc[pole]
         try:
             relative_center = np.linalg.solve(2 * offset, np.sum(offset * offset, axis=1))
         except np.linalg.LinAlgError as exc:
             raise ValueError("Rounded nose is not circular") from exc
         radius = float(np.linalg.norm(relative_center))
-        center = arc[nose_facets // 2] + relative_center
+        center = arc[pole] + relative_center
         if (not np.isfinite(radius) or radius <= 0 or not np.all(np.isfinite(center))
                 or not np.allclose(np.linalg.norm(arc - center, axis=1), radius, rtol=1e-8, atol=self.tolerance)):
             raise ValueError("Rounded nose is not circular")
@@ -424,7 +426,14 @@ class TipContactTracker:
             nodes = [int(ordered[np.argmin(abs(offsets[ordered]-v))]) for v in limits]
             if nodes[0] != nodes[1]:
                 gauges[name] = nodes
-        return dict(reference='undeformed material top', axes=dict(s=self.es.tolist(), n=self.en.tolist()),
+        markers={}
+        for offset in (-2.,-1.,-.5,.5,1.,2.):
+            target=self.origin+offset
+            if self.s[ordered[0]]<=target<=self.s[ordered[-1]]:
+                index=int(np.clip(np.searchsorted(self.s[ordered],target),1,len(ordered)-1))
+                i,j=ordered[index-1:index+1]
+                markers[str(offset)]=dict(nodes=[int(i),int(j)],weight=float((target-self.s[i])/(self.s[j]-self.s[i])))
+        return dict(fixed_offset_markers=markers,reference='undeformed material top', axes=dict(s=self.es.tolist(), n=self.en.tolist()),
                     roi_offset_ranges_mm=ranges, roi_nodes=rois, gauge_nodes=gauges,
                     gauge_measure='Euclidean distance between fixed material endpoints divided by initial distance; not surface arclength',
                     roi_statistic='unweighted mean over fixed reference node IDs; mesh dependent')
@@ -440,7 +449,17 @@ class TipContactTracker:
         gauges = {name: float(np.linalg.norm(x[j]-x[i])/
                   np.linalg.norm(self.reference[j]-self.reference[i]))
                   for name, (i, j) in definition['gauge_nodes'].items()}
-        return dict(rois=rois, gauge_stretch=gauges)
+        points={}
+        positions={}
+        for key, marker in definition.get('fixed_offset_markers',{}).items():
+            i,j=marker['nodes'];w=marker['weight']
+            u=(1-w)*displacement[i]+w*displacement[j]
+            positions[key]=(1-w)*x[i]+w*x[j]
+            points[key]=dict(u_s_mm=float(u@self.es),u_n_mm=float(u@self.en))
+        stretches={name:float(np.linalg.norm(positions[str(b)]-positions[str(a)])/(b-a))
+            for name,a,b in [('near',-.5,.5),('left',-2.,-1.),('right',1.,2.)]
+            if str(a) in positions and str(b) in positions}
+        return dict(rois=rois,gauge_stretch=gauges,fixed_offset_points=points,fixed_offset_stretch=stretches)
 
     def projection_continuity(self, previous, positions, prior_contact, contact):
         """Resolve fast crossings of adjacent reference edges on a geometric chord.

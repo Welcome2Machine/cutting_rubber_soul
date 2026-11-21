@@ -14,7 +14,10 @@ from .ipc_reference import IPCProblem
 
 class ViscoelasticProblem(IPCProblem):
     def __init__(self, *, maxwell_shear, relaxation_s, loading_rate,
-                 bulk_modulus=None, volumetric='quadratic_j', **kwargs):
+                 bulk_modulus=None, volumetric='quadratic_j', friction_velocity_mm_s=None, **kwargs):
+        if friction_velocity_mm_s is not None and not (np.isfinite(friction_velocity_mm_s) and friction_velocity_mm_s>0):
+            raise ValueError('Positive friction velocity threshold required')
+        self.friction_velocity_mm_s=friction_velocity_mm_s
         if not all(np.isfinite(x) and x>0 for x in
                    (maxwell_shear,relaxation_s,loading_rate)):
             raise ValueError('Explicit positive Maxwell shear, time and loading rate required')
@@ -115,14 +118,22 @@ class ViscoelasticProblem(IPCProblem):
         """Reference volumes; explicit quadrature candidates override this."""
         return self.mesh.bulk_data[0]*self.config.width_mm
 
+    def set_friction_dt(self,dt):
+        if self.friction_velocity_mm_s is not None:
+            self.friction_smoothing_mm=self.friction_velocity_mm_s*dt
+            self.friction=self.ipc.FrictionPotential(self.friction_smoothing_mm)
+
     def step(self,x,old,depth,deadline):
         dt=(float(depth)-float(old))/self.loading_rate
         if not np.isfinite(dt) or dt<=0:raise ValueError('Positive physical increment required')
         self.previous_material_metric=self.material_metric.copy()
         self.material_dt=dt
+        self.set_friction_dt(dt)
         # No update of committed material history occurs inside super.step.
         # If it rejects/times out, the next attempt starts from the same metric.
         value,record=super().step(x,old,depth,deadline)
+        if self.friction_velocity_mm_s is not None:
+            record['epsilon_u_mm']=self.friction_smoothing_mm
         trial=self.material_response(value)
         self.material_metric=trial['metric'].copy()
         self.material_dissipation+=record['material']['viscous_dissipation_increment_n_mm']
@@ -130,7 +141,8 @@ class ViscoelasticProblem(IPCProblem):
         return value,record
 
     def checkpoint_data(self):
-        return dict(material_metric=self.material_metric,
+        return dict(**(dict(epsilon_u_mm=self.friction_smoothing_mm,epsilon_v_mm_s=self.friction_velocity_mm_s) if self.friction_velocity_mm_s is not None else {}),
+                    material_metric=self.material_metric,
                     previous_material_metric=self.previous_material_metric,
                     material_dt_s=self.material_dt,
                     cumulative_viscous_dissipation_n_mm=self.material_dissipation)
@@ -164,6 +176,7 @@ class ViscoelasticProblem(IPCProblem):
         and require exact equality, without widening a coordinate tolerance.
         Standalone and other-formulation callers retain the absolute check.
         """
+        before_friction=(self.friction,self.friction_smoothing_mm)
         before=(self.previous.copy(),self.previous_material_metric.copy(),self.material_dt)
         if hasattr(self,'_fresh_material_cache'):raise RuntimeError('Nested material audit')
         self._fresh_material_cache=None
@@ -171,6 +184,12 @@ class ViscoelasticProblem(IPCProblem):
             self.previous=state['previous_positions'].copy()
             self.previous_material_metric=state['previous_material_metric'].copy()
             self.material_dt=float(state['material_dt_s'])
+            self.set_friction_dt(self.material_dt)
+            if self.friction_velocity_mm_s is not None and (
+                    float(state['epsilon_v_mm_s'])!=self.friction_velocity_mm_s or
+                    float(state['epsilon_u_mm'])!=self.friction_smoothing_mm or
+                    record['epsilon_u_mm']!=self.friction_smoothing_mm):
+                raise RuntimeError('Friction regularization differs at saved dt')
             positions=state['positions']
             depth=float(state['depth_mm'])
             expected_blade=self.prescribed_blade_positions(depth)
@@ -187,10 +206,12 @@ class ViscoelasticProblem(IPCProblem):
             trial=self.material_response(positions)
             if not np.allclose(trial['metric'],state['material_metric'],rtol=1e-10,atol=1e-11):
                 raise RuntimeError('Material history does not reproduce saved accepted metric')
+            if not np.isclose(fresh['reaction_x_n'],record['reaction_x_n'],rtol=1e-9,atol=1e-8):
+                raise RuntimeError('Fresh horizontal force differs from saved force')
             if not np.isclose(fresh['reaction_fz_n'],record['reaction_fz_n'],rtol=1e-9,atol=1e-8):
                 raise RuntimeError('Fresh force differs from saved force')
             result = dict(depth_mm=record['depth_mm'],residual_n=fresh['residual_n'],
-                          min_j=fresh['min_j'],reaction_fz_n=fresh['reaction_fz_n'],passed=True,
+                          min_j=fresh['min_j'],reaction_fz_n=fresh['reaction_fz_n'],reaction_x_n=fresh['reaction_x_n'],passed=True,
                           **self._audit_extra_acceptance(fresh,record))
             if incremental_blade_positions is not None:
                 result.update(blade_boundary_check='exact full accepted-increment replay',
@@ -204,5 +225,6 @@ class ViscoelasticProblem(IPCProblem):
                               physical_chord_safe_fraction=fraction)
             return result
         finally:
+            self.friction,self.friction_smoothing_mm=before_friction
             del self._fresh_material_cache
             self.previous,self.previous_material_metric,self.material_dt=before

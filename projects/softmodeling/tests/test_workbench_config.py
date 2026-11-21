@@ -179,12 +179,14 @@ class WorkbenchProblemConstructionTests(unittest.TestCase):
             shear_modulus=.14, ogden_alpha=2., dhat=.0025, local_spacing=.05,
             surface_spacing=.005, nose_facets=64, inclination=57., tip_radius=.02,
             fine_halfwidth=3., max_iterations=500, predictor='secant', hessian_mode='regularized',
-            element='p1', blade_spacing=None, blade_thickness=None, blade_angle=None, coarse_spacing=None)
+            element='p1', blade_spacing=None, blade_thickness=None, blade_angle=None, coarse_spacing=None,
+            blade_shape=None,friction_velocity_mm_s=None,drop_s=None,preparation_clearance_mm=None,
+            friction_smoothing_mm=1e-5,enforce_physical_chord=False)
         with patch('prototype.material_case.ViscoelasticProblem', return_value=SimpleNamespace()) as constructor:
             p = make_problem(**inputs)
             constructor.assert_called_once_with(**expected)
             self.assertEqual(p.stagnation_window, 40)
-        overrides = dict(blade_thickness=.3, blade_angle=27., coarse_spacing=1.5,
+        overrides = dict(blade_shape="single_up",friction_velocity_mm_s=.0004,blade_thickness=.3, blade_angle=27., coarse_spacing=1.5,
                          tip_radius=.03, local_spacing=.08, surface_spacing=.008,
                          fine_halfwidth=2., nose_facets=48, blade_spacing=.01)
         with patch('prototype.material_case.ViscoelasticProblem', return_value=SimpleNamespace()) as constructor:

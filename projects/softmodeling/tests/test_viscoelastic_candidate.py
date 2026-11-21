@@ -132,9 +132,36 @@ class MaxwellCandidateTests(unittest.TestCase):
         self.assertLess(abs(c-b),abs(b-a))
         self.assertGreater(ramp(.005,.5),ramp(.005,2.))
 
+    def test_fixed_velocity_rebuilds_friction_at_retry_and_during_audit(self):
+        p=ViscoelasticProblem(maxwell_shear=1.24,relaxation_s=1.7,loading_rate=.2,
+            case='patch',mu=.35,local_spacing=.2,surface_spacing=.1,friction_velocity_mm_s=.0004)
+        metric=p.material_metric.copy()
+        def reject(*args):
+            self.assertEqual(p.friction_smoothing_mm,.0004*p.material_dt)
+            raise LoadStepFailure('rejected')
+        with patch.object(IPCProblem,'step',side_effect=reject):
+            for depth in (.005,.0025):
+                with self.assertRaises(LoadStepFailure):p.step(p.rest,0.,depth,0.)
+                np.testing.assert_array_equal(p.material_metric,metric)
+        before=p.friction
+        snapshot=dict(previous_positions=p.rest,previous_material_metric=metric,material_dt_s=.025,
+            epsilon_u_mm=.0004*.025,epsilon_v_mm_s=.0004,reference_xy=p.rest,
+            triangles=p.mesh.triangles,positions=p.rest,depth_mm=p.start,material_metric=metric)
+        record=dict(depth_mm=p.start,reaction_x_n=1.,reaction_fz_n=0.,epsilon_u_mm=.0004*.025)
+        def acceptance(*args):
+            self.assertEqual(p.friction_smoothing_mm,.0004*.025)
+            return dict(reaction_x_n=0.,reaction_fz_n=0.)
+        with patch.object(p,'acceptance',side_effect=acceptance),patch.object(p,'material_response',return_value={'metric':metric}):
+            with self.assertRaisesRegex(RuntimeError,'horizontal force'):p.audit_state(snapshot,record)
+        self.assertIs(p.friction,before)
+        self.assertAlmostEqual(p.friction_smoothing_mm,.0004*(.0025/.2))
+        with self.assertRaisesRegex(RuntimeError,'regularization'):
+            p.audit_state(dict(snapshot,epsilon_u_mm=1.),record)
+
     def test_failed_step_never_commits_metric_or_dissipation(self):
         p=ViscoelasticProblem.__new__(ViscoelasticProblem)
         p.loading_rate=.2;p.material_metric=np.eye(3)[None];p.material_dissipation=0.
+        p.friction_velocity_mm_s=None  # This synthetic host bypasses __init__.
         def fail(*args):raise LoadStepFailure('rejected physical equilibrium')
         with patch.object(IPCProblem,'step',side_effect=fail):
             with self.assertRaises(LoadStepFailure):p.step(np.zeros((1,2)),.1,.12,0.)

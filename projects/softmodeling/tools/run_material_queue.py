@@ -91,8 +91,8 @@ def make_command(manifest,job):
         '--maxwell-shear',str(material.get('maxwell_shear',1.24)),
         '--relaxation-s',str(material.get('relaxation_s',1.7)),
         '--loading-rate',str(material.get('loading_rate',.2)),
-        '--mu',str(manifest.get('mu',.35)),
-        '--depth',str(job['target_mm']),'--increment',str(manifest.get('increment',.01)),
+        '--mu',str(job.get('mu',manifest.get('mu',.35))),
+        '--depth',str(job['target_mm']),'--increment',str(job.get('increment',manifest.get('increment',.01))),
         '--seconds',str(job.get('solve_seconds',manifest['solve_seconds_per_case'])),'--threads',str(manifest.get('threads',2))]
     if material.get('bulk_modulus') is not None:
         cmd+=['--bulk-modulus',str(material['bulk_modulus'])]
@@ -106,6 +106,11 @@ def make_command(manifest,job):
     if manifest.get('blade_spacing') is not None:cmd+=['--blade-spacing',str(manifest['blade_spacing'])]
     # Legacy 'resume' remains ignored. Only the explicit, prequalified entry
     # below is allowed; the candidate runner repeats its full resume audit.
+    for key,value in job.get('options',{}).items():
+        flag='--'+key.replace('_','-')
+        if key=='enforce_physical_chord':
+            if value:cmd.append(flag)
+        else:cmd.extend([flag,str(value)])
     if job.get('resume_source'):cmd+=['--resume',job['resume_source']]
     # Explicit per-input angles prevent cross-angle comparison.
     if job['angle']==manifest.get('reference_angle',60):
@@ -147,11 +152,19 @@ def run_case(out,manifest,job,state,*,command_factory=None):
         child=subprocess.Popen(cmd,cwd=manifest['source'],env=env,stdin=subprocess.DEVNULL,
             stdout=stdout,stderr=stderr,**kwargs)
         job.update(status='running',solver_pid=child.pid);write_json(out/'queue_status.json',state)
+        try:import psutil
+        except ImportError:psutil=None
         try:
             deadline=time.monotonic()+job.get('solve_seconds',manifest['solve_seconds_per_case'])+manifest['audit_allowance_s']
             while child.poll() is None:
+                if 'case_id' in job and psutil is not None:
+                    try:
+                        usage=psutil.Process(child.pid).memory_info()
+                        job['peak_solver_memory_bytes']=max(job.get('peak_solver_memory_bytes',0),getattr(usage,'peak_wset',usage.rss))
+                    except psutil.Error:pass
                 if time.monotonic()>=deadline:raise subprocess.TimeoutExpired(cmd,deadline-started)
-                try:write_snapshot(out,refresh=True)
+                try:
+                    if 'case_id' not in job:write_snapshot(out,refresh=True)
                 except Exception as exc:state.setdefault('postprocessing_errors',[]).append(str(exc))
                 try:child.wait(timeout=min(15,max(.01,deadline-time.monotonic())))
                 except subprocess.TimeoutExpired:pass
@@ -171,6 +184,14 @@ def run_case(out,manifest,job,state,*,command_factory=None):
             from tools.qualify_intact_baseline import verify_case
             files=verify_case(Path(job['output']))
             r=read(Path(job['output'])/'result.json')
+            if 'case_id' in job:
+                expected=job['resolved_model'];actual=r['resolved_model']
+                for key in ('config','material','friction','initial_depth_mm','loading_rate_mm_s','damage_off_semantics'):
+                    if expected[key]!=actual[key]:raise ValueError('Different resolved case '+key)
+                for key in ('blade_reference_sha256','body_reference_sha256','triangles_sha256','landmarks'):
+                    if expected['geometry'][key]!=actual['geometry'][key]:raise ValueError('Different actual geometry '+key)
+                for key,value in dict(job['options'],increment=job['increment'],depth=job['target_mm']).items():
+                    if r['settings'].get(key)!=value:raise ValueError('Different recorded setting '+key)
             if r.get('performance_policy')!=manifest['performance_policy']:
                 raise ValueError('Recorded performance policy differs')
             if any(manifest['source_sha256'].get(k)!=v for k,v in r['source_sha256'].items()):
@@ -183,12 +204,65 @@ def run_case(out,manifest,job,state,*,command_factory=None):
             result['verified_files']=len(files)
         except Exception as exc:
             result.update(status='evidence_failed',mechanics_completed=False,error=str(exc))
+    if 'case_id' in job:
+        folder=Path(job['output'])
+        if (folder/'audit.json').is_file() and (folder/'result.json').is_file():
+            audited=read(folder/'audit.json')
+            prefix=audited.get('qualified_prefix_states',0)
+            if prefix:
+                from prototype.contact_trace import export_trace
+                from workbench.results import export_case
+                try:
+                    exports=out/'exports'/job['case_id']
+                    trace=export_trace(folder,exports/'contact_trace',qualified_prefix=True)
+                    export_case(folder,exports/'presentation',trace_path=exports/'contact_trace/contact_trace.json')
+                    eligible=[s for s in trace['steps'] if s['qualified']]
+                    valid=[s for s in eligible if s['tip_contact']['status']=='unique']
+                    final=eligible[-1]
+                    halfwidth=job['options']['fine_halfwidth']
+                    intervals=[pair for step in eligible for pair in
+                        step['blade_contact_footprint']['reference_offset_intervals_mm']]
+                    extent=max((abs(v) for pair in intervals for v in pair),default=None)
+                    result.update(contact_address_abs_max_mm=extent,
+                        fine_halfwidth_mm=halfwidth,footprint_leaves_fine_band=extent>halfwidth if extent is not None else None,
+                        min_j=min(step['deformation']['min_j'] for step in eligible),
+                        relative_motion_qualification=trace['relative_motion_definition']['qualification'])
+                    if result['mechanics_completed'] and len(eligible)!=len(read(folder/'result.json')['steps']):
+                        raise ValueError('Final authenticated trace did not cover the full solver path')
+                    result.update(qualified_depth_mm=final['depth_mm'],qualified_states=len(eligible),
+                        pole_valid_states=len(valid),pole_valid_fraction=len(valid)/len(eligible),
+                        pole_last_mm=valid[-1]['tip_contact']['reference_offset_mm'] if valid else None,
+                        pole_last_depth_mm=valid[-1]['depth_mm'] if valid else None,
+                        pole_endpoint_status=final['tip_contact']['status'],
+                        result_sha256=trace['source_result_sha256'],
+                        audit_sha256=hashlib.sha256((folder/'audit.json').read_bytes()).hexdigest(),
+                        presentation=str(exports/'presentation'), trace=str(exports/'contact_trace'),
+                        fz_2mm_n=final['force']['reaction_fz_n'] if result['mechanics_completed'] and job['target_mm']==2. else None,
+                        fx_2mm_n=final['force']['reaction_x_n'] if result['mechanics_completed'] and job['target_mm']==2. else None)
+                    if trace.get('visualization',{}).get('status')!='completed':
+                        raise ValueError(str(trace.get('visualization')))
+                except Exception as exc:
+                    result.update(status='export_failed',export_error=str(exc),full_delivery=False)
+            else:result.update(qualified_states=0,qualified_depth_mm=None)
     result.update(wall_elapsed_s=time.monotonic()-started,finished_utc=now())
     return result
 
 
 def export_summary(out,state):
     """Keep only observed accepted curves; no interpolation of missing contact."""
+    if any('case_id' in j for j in state['jobs']):
+        fields=['case_id','angle','mu','status','accepted_states','qualified_states','qualified_depth_mm',
+                'mechanics_completed','fresh_audit_passed','fz_2mm_n','fx_2mm_n','pole_last_mm',
+                'pole_last_depth_mm','pole_valid_fraction','pole_endpoint_status','wall_elapsed_s',
+                'error','export_error','output','result_sha256','audit_sha256','peak_solver_memory_bytes','min_j','fine_halfwidth_mm','contact_address_abs_max_mm','footprint_leaves_fine_band']
+        with (out/'summary.csv').open('w',encoding='utf-8',newline='') as f:
+            writer=csv.DictWriter(f,fieldnames=fields+['blade_shape','tip_radius','accuracy'])
+            writer.writeheader()
+            for job in state['jobs']:
+                row={k:job.get(k) for k in fields}
+                writer.writerow(dict(row,blade_shape=job['options']['blade_shape'],
+                    tip_radius=job['options']['tip_radius'],accuracy='short path screening only'))
+        return
     lines=['# Finite-Maxwell angle queue','',
         'Each case retains its accepted prefix even on failure. No fracture is enabled.',
         'Parameters remain hypotheses; force agreement does not validate contact migration.','',
@@ -238,10 +312,31 @@ def worker(out):
     write_json(out/'queue_status.json',state)
     for job in state['jobs']:
         print(f"START angle={job['angle']} output={job['output']}",flush=True)
+        if 'case_id' in job:
+            try:
+                verify_inputs(manifest)
+                for name,digest in manifest['source_sha256'].items():
+                    if hashlib.sha256((Path(manifest['source'])/name).read_bytes()).hexdigest()!=digest:
+                        raise RuntimeError('Source changed: '+name)
+                if shutil.disk_usage(out).free<manifest.get('minimum_free_bytes',0):
+                    raise OSError('Insufficient free disk space for next case')
+            except (ValueError,OSError,RuntimeError) as exc:
+                state.update(status='system_error',error=str(exc),finished_utc=now())
+                write_json(out/'queue_status.json',state);export_summary(out,state);return
         try:result=run_case(out,manifest,job,state)
         except Exception as exc:
             result=dict(status='worker_case_failed',mechanics_completed=False,error=f'{type(exc).__name__}: {exc}',finished_utc=now())
             (out/(job['name']+'.traceback.log')).write_text(traceback.format_exc(),encoding='utf-8')
+        if 'case_id' in job:
+            problem=' '.join(str(result.get(k,'')) for k in ('error','export_error'))
+            stderr=out/(job['name']+'.stderr.log')
+            if stderr.exists():problem+=' '+stderr.read_bytes()[-4096:].decode('utf-8','replace')
+            system_error=(result.get('status')=='worker_case_failed' or not (Path(job['output'])/'result.json').exists()
+                or any(s in problem for s in ('No space left','not enough space','MemoryError','DLL load failed',
+                                             'ModuleNotFoundError','PermissionError','WinError 112')))
+            if system_error:
+                job.update(result);state.update(status='system_error',error=problem,finished_utc=now())
+                write_json(out/'queue_status.json',state);export_summary(out,state);return
         job.update(result);write_json(out/(job['name']+'.outcome.json'),job)
         write_json(out/'queue_status.json',state)
         try:export_summary(out,state)
@@ -264,9 +359,9 @@ def worker(out):
         except Exception as exc:
             state.setdefault('postprocessing_errors',[]).append(f'joint comparison: {type(exc).__name__}: {exc}')
     state.update(status='finished',finished_utc=now(),
-        all_cases_completed=all(j.get('mechanics_completed') is True for j in state['jobs']))
+        all_cases_completed=all(j.get('mechanics_completed') is True and j.get('status')=='completed' for j in state['jobs']))
     write_json(out/'queue_status.json',state)
-    write_snapshot(out)
+    if not any('case_id' in j for j in state['jobs']):write_snapshot(out)
 
 
 def main():
@@ -293,6 +388,8 @@ def main():
     parser.add_argument('--material-batch-size',type=int,default=0)
     parser.add_argument('--linear-backend',choices=('native','pardiso'),default='native')
     parser.add_argument('--linear-threads',type=int,default=4)
+    parser.add_argument('--short-evidence',type=Path,help='Completed short-path screening evidence to bind in the manifest')
+    parser.add_argument('--case-config',type=Path,help='Explicit ordered case identities, options and budgets')
     parser.add_argument('--prepare-only',action='store_true')
     parser.add_argument('--launch-prepared',action='store_true')
     parser.add_argument('--worker',action='store_true',help=argparse.SUPPRESS)
@@ -358,16 +455,76 @@ def main():
     jobs=[dict(name=f'{i:02d}_angle{angle}',angle=angle,mu=args.mu,target_mm=args.depth,
         output=str(out/f'{i:02d}_angle{angle}'),status='pending',resume=None)
         for i,angle in enumerate(args.angles,1)]
+    if args.case_config:
+        import re
+        path=args.case_config.resolve()
+        inputs[str(path)]=hashlib.sha256(path.read_bytes()).hexdigest()
+        settings=read(path);jobs=[]
+        allowed={'blade_shape','tip_radius','blade_thickness','blade_angle','dhat','nose_facets',
+                 'local_spacing','surface_spacing','fine_halfwidth','coarse_spacing','drop_s',
+                 'preparation_clearance_mm','friction_velocity_mm_s','enforce_physical_chord',
+                 'minimum_increment_mm','blade_spacing'}
+        for case in settings['cases']:
+            name=case['case_id']
+            if not re.fullmatch(r'[A-Za-z0-9_]+',name) or any(j['name'].lower()==name.lower() for j in jobs):
+                raise ValueError('Case ID must be path-safe and unique')
+            opts=dict(settings['common'])
+            opts.update(case.get('options',{}))
+            if set(opts)-allowed or opts.get('enforce_physical_chord') is not True:
+                raise ValueError('Unknown case setting or missing full-chord acceptance')
+            if not (isinstance(case['seconds'],(int,float)) and math.isfinite(case['seconds']) and case['seconds']>0
+                    and 0<=case['angle']<=75 and math.isfinite(case['mu']) and case['mu']>=0):
+                raise ValueError('Invalid case loading controls: '+name)
+            if opts.get('blade_shape') not in ('double','single_up','single_down'):
+                raise ValueError('Unknown blade shape: '+name)
+            if any(not isinstance(v,(int,float)) or not math.isfinite(v) or v<=0
+                   for k,v in opts.items() if k not in ('blade_shape','enforce_physical_chord')):
+                raise ValueError('Invalid numerical setting: '+name)
+            jobs.append(dict(case_id=name,name=name,angle=case['angle'],mu=case['mu'],options=opts,
+                increment=case.get('increment',args.increment),solve_seconds=case['seconds'],
+                output=str(out/name),target_mm=args.depth,status='queued'))
+        if not jobs:raise ValueError('Case list is empty')
+        for relative in ('run_support.py','workbench/results.py','workbench/config.py'):
+            hashes[relative]=hashlib.sha256((root/relative).read_bytes()).hexdigest()
     for job in jobs:
         if str(job['angle']) in resumes:job['resume_source']=resumes[str(job['angle'])]
     manifest=dict(created_utc=now(),python=sys.executable,source=str(root),source_sha256=hashes,
-        runtime_path=str(root)+os.pathsep+str(root/'.runtime/ipc-python'),
-        pardiso_runtime=str(root/'.runtime/pardiso'),target_mm=args.depth,increment=args.increment,
+        runtime_path=str(root)+os.pathsep+str(Path(os.environ.get('SOFTMODELING_IPC_RUNTIME',root/'.runtime/ipc-python'))),
+        minimum_free_bytes=8*1024**3,pardiso_runtime=str(Path(os.environ.get('SOFTMODELING_PARDISO_RUNTIME',root/'.runtime/pardiso'))),target_mm=args.depth,increment=args.increment,
         mu=args.mu,threads=args.threads,performance_policy=policy,diagnostics=args.diagnostics,
         blade_spacing=args.blade_spacing,
         solve_seconds_per_case=args.seconds,audit_allowance_s=1800.,jobs=jobs,
         material=material,input_sha256=inputs,experiments=experiments,
         policy='Independent rest histories unless explicit own-source prefix passed all resume guards; one common material; bounded serial cases')
+    if args.short_evidence:
+        proof=args.short_evidence.resolve()
+        manifest['short_evidence']=str(proof)
+        manifest['input_sha256'][str(proof)]=hashlib.sha256(proof.read_bytes()).hexdigest()
+    if args.case_config:
+        manifest.update(batch_id=out.name,case_config=str(args.case_config.resolve()),
+            free_disk_bytes_at_prepare=shutil.disk_usage(out).free,logical_cpus=os.cpu_count(),
+            code_commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=root,text=True).strip(),
+            case_state_path=str(out/'queue_status.json'),summary_path=str(out/'summary.csv'))
+        manifest['audit_allowance_s']=7200
+        from prototype.material_case import make_problem, resolved_model
+        for job in jobs:
+            options={k:v for k,v in job['options'].items() if k!='minimum_increment_mm'}
+            host=make_problem(angle=job['angle'],mu=job['mu'],**material,**options)
+            job['resolved_model']=resolved_model(host)
+            job['reference_contact_check']=host.reference_contact_check
+            import numpy as np
+            points=host.mesh.reference_xy[host.mesh.triangles]
+            edges=np.roll(points,-1,axis=1)-points
+            lengths=np.linalg.norm(edges,axis=2)
+            cosines=np.sum(edges*np.roll(-edges,1,axis=1),axis=2)/(lengths*np.roll(lengths,1,axis=1))
+            job['mesh_quality']=dict(minimum_angle_deg=float(np.degrees(np.arccos(np.clip(cosines,-1,1))).min()),
+                h_over_R=options['surface_spacing']/options['tip_radius'],
+                dhat_over_R=options['dhat']/options['tip_radius'],
+                nose_sagitta_mm=float(np.max(options['tip_radius']-np.sqrt(np.maximum(0.,
+                    options['tip_radius']**2-.25*np.linalg.norm(np.diff(host.rest[host.n+2:host.n+3+options['nose_facets']],axis=0),axis=1)**2)))))
+
+            job['command']=make_command(manifest,job)
+            del host
     write_json(out/'manifest.json',manifest)
     if args.prepare_only:print('PREPARED '+str(out));return
     launch(out,manifest)

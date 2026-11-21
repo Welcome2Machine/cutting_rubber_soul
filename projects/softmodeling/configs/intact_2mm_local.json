@@ -1,0 +1,82 @@
+{
+  "common": {
+    "blade_shape": "double",
+    "tip_radius": 0.02,
+    "blade_thickness": 0.24577088241513723,
+    "blade_angle": 13.31684633759535,
+    "dhat": 0.00125,
+    "local_spacing": 0.05,
+    "surface_spacing": 0.005,
+    "coarse_spacing": 0.75,
+    "fine_halfwidth": 0.8,
+    "nose_facets": 64,
+    "drop_s": 7.0,
+    "preparation_clearance_mm": 0.005,
+    "friction_velocity_mm_s": 0.0004,
+    "minimum_increment_mm": 0.00015625,
+    "blade_spacing": 0.025,
+    "enforce_physical_chord": true
+  },
+  "cases": [
+    {
+      "case_id": "D20_A33_REF",
+      "angle": 33,
+      "mu": 0.35,
+      "seconds": 43200,
+      "options": {}
+    },
+    {
+      "case_id": "D20_A0_REF",
+      "angle": 0,
+      "mu": 0.35,
+      "seconds": 43200,
+      "options": {}
+    },
+    {
+      "case_id": "D20_A57_REF",
+      "angle": 57,
+      "mu": 0.35,
+      "seconds": 43200,
+      "options": {}
+    },
+    {
+      "case_id": "D20_A33_LOW",
+      "angle": 33,
+      "mu": 0.1,
+      "seconds": 43200,
+      "options": {}
+    },
+    {
+      "case_id": "S20_UP_A33_REF",
+      "angle": 33,
+      "mu": 0.35,
+      "seconds": 43200,
+      "options": {
+        "blade_shape": "single_up"
+      }
+    },
+    {
+      "case_id": "S20_DOWN_A33_REF",
+      "angle": 33,
+      "mu": 0.35,
+      "seconds": 43200,
+      "options": {
+        "blade_shape": "single_down"
+      }
+    },
+    {
+      "case_id": "D2_A33_REF",
+      "angle": 33,
+      "mu": 0.35,
+      "seconds": 345600,
+      "options": {
+        "tip_radius": 0.002,
+        "surface_spacing": 0.0005,
+        "dhat": 0.000125,
+        "preparation_clearance_mm": 0.00035,
+        "minimum_increment_mm": 1.953125e-05
+      },
+      "increment": 0.0025
+    }
+  ]
+}

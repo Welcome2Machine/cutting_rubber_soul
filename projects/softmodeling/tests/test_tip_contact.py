@@ -35,6 +35,34 @@ def place_pole(tracker, reference, body_nodes, point):
 
 
 class CapsuleIntervalTests(unittest.TestCase):
+    def test_idealized_blades_use_the_full_outline_and_fixed_pole(self):
+        from dataclasses import replace
+        from prototype.model_config import FEMConfig, _rotation_vectors
+        from prototype.geometry import GeometryOptions, rounded_outline
+        for angle in (0.,33.,57.):
+            cfg=replace(FEMConfig(),inclination_deg=angle,blade_tip_angle_deg=13.31684633759535,
+                        blade_thickness_mm=.24577088241513723)
+            es,en=_rotation_vectors(angle)
+            for radius in (.002,.020):
+                shapes={}
+                for shape in ('double','single_up','single_down'):
+                    contour,marks=rounded_outline(cfg,GeometryOptions(tip_radius_mm=radius),0.,64,shape)
+                    shapes[shape]=contour
+                    self.assertAlmostEqual(np.ptp(contour[:,0]),cfg.blade_thickness_mm,places=10)
+                    self.assertAlmostEqual((contour@en).min(),cfg.height_mm,places=10)
+                    self.assertAlmostEqual(contour[np.argmin(contour@en)]@es,cfg.drop_s_mm,places=9)
+                    self.assertEqual(marks['pole_local'],int(np.argmin(contour[:,1])))
+                    center=contour[marks['pole_local']]+[0,radius]
+                    np.testing.assert_allclose(np.linalg.norm(contour[2:67]-center,axis=1),radius,atol=1e-11)
+                    for i,j in (marks['left_flank'],marks['right_flank']):
+                        nose=contour[j if i==1 else i]
+                        self.assertAlmostEqual((nose-center)@(contour[j]-contour[i]),0.,places=11)
+                axis=shapes['double'][np.argmin(shapes['double'][:,1]),0]
+                mirror=shapes['single_up'][::-1].copy()
+                mirror[:,0]=2*axis-mirror[:,0]
+                np.testing.assert_allclose(mirror,shapes['single_down'],atol=1e-12)
+
+
     def test_straight_blade_subdivision_preserves_shape_and_contact_identity(self):
         from prototype.geometry import subdivide_blade
         tracker,reference,triangles,n,config=fixture()
