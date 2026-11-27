@@ -6,7 +6,7 @@
 
 用户工作根由用户启动提示词指定，以 `<USER_WORK_ROOT>` 表示。若尚未有仓库，推荐其下 `cutting_rubber_soul/`；已有正确仓库直接复用，不强制复制。运行、证据、调度脚本位于仓库忽略的 `runs/server_intact/`，不覆盖旧 `SoftCutting/1029`。
 
-已有Linux FE解释器的具体路径从旧服务器环境记录与现场核对；公开模板以 `<EXISTING_FE_ENV>/bin/python` 表示。历史记录Python3.11.13，需现场验证。
+本次在计算节点实测既有 FE 解释器为 Python 3.11.13，NumPy 2.2.6、SciPy 1.15.3、ipctk 1.6.0、threadpoolctl 3.6.0、psutil 7.1.0。忽略目录引用服务器已有的 pypardiso 0.4.7，实际加载 oneMKL 2023.2 的 `libmkl_rt.so.2`。原虚拟环境继续使用同一解释器。现场准确路径保存在 `runs/server_intact/env.sh`。
 
 旧现场曾使用 SysB/2022、slurm/2022、intel/2023.2、intelmpi/2023.2 和 Python FE 环境；这些是寻找已有环境的线索，必须现场检查 `module list/avail/show`、解释器和实际导入，不能照搬 Windows DLL、盘符或 PYTHONPATH 分号。
 
@@ -24,7 +24,7 @@ System B（Laurel 3）为每节点双路 Xeon Platinum 8480+，112 物理核、5
 
 现场先查 `spartition`、`qgroup` 和自己的 `squeue`，确认候选队列 `<VERIFIED_B_PARTITION>`、DefTime/MaxTime、Rstd 与剩余额度。Rstd 是单作业上限，Rmax 是组队列并发总限；不能把整组额度视为个人可独占。不要套用 `pjsub` 或普通 Slurm 的 `#SBATCH --cpus-per-task/--mem/--nodes/--ntasks/--exclusive`，本站要求资源通过 `--rsc`。程序执行位置使用 `srun`。[批处理](https://web.kudpc.kyoto-u.ac.jp/manual/en/run/batch) · [站点限制](https://web.kudpc.kyoto-u.ac.jp/manual/en/run/tips)
 
-本项目不是 MPI：先 `p=1`。首轮建议 4 物理核/16G、IPC1、BLAS1、PARDISO最多4（若可用），再对同一输入有限比较4/8/16核；仅在明显受益后试32/64。主程序 material batching 是分块，不是多个并行worker。记录装配、材料更新、线性求解、有效接受步耗时和峰值内存，再选配置。最多同时两项独立作业，初期总申请不超过用户已用过的64核/128G且不超过当前组余额；这是项目启动策略，不是系统硬件最大值。
+本轮对同一 33° H1 从准备到首个 0.0025 mm 做了 4/8/16 物理核比较。两步耗时分别为 33.521、33.639、33.276 秒，峰值 RSS 为 340.0、359.8、376.8 MiB，材料更新约占 19 秒。每档均用 IPC 1、BLAS 1，PARDISO 线程数等于所申请物理核数。浅窗批次据此使用一个进程、4 物理核、6 GiB。组内初期同时最多两项独立作业，且合计不超过 64 物理核、128 GiB 和现场组余额。
 
 线程池按实际嵌套关系核验，避免 IPC/BLAS/PARDISO/后处理worker 超订阅。站点 `SLURM_CPUS_PER_TASK` 是逻辑核数，不能直接拿它作物理核预算；核对 `SLURM_DPC_CPUS`、cpuset、lscpu及NUMA。比较墙钟耗时和物理核时，不把申请核数称为利用率。[环境变量](https://web.kudpc.kyoto-u.ac.jp/manual/en/run/tips)
 
@@ -36,7 +36,7 @@ System B（Laurel 3）为每节点双路 Xeon Platinum 8480+，112 物理核、5
 #!/bin/bash
 #SBATCH -p <VERIFIED_B_PARTITION>
 #SBATCH -t 02:00:00
-#SBATCH --rsc p=1:t=4:c=4:m=16G
+#SBATCH --rsc p=1:t=4:c=4:m=6G
 #SBATCH --no-requeue
 #SBATCH -J rubber_intact
 #SBATCH -o runs/server_intact/logs/%x.%j.out
@@ -46,7 +46,7 @@ set -euo pipefail
 : "${SOFTCUT_PYTHON:?set existing FE interpreter}"
 : "${SOFTCUT_BATCH:?set prepared manifest directory}"
 # 这里加载现场已确认的模块和库路径；不写死旧Windows运行库。
-export OMP_NUM_THREADS=4
+export OMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
 cd "$SOFTCUT_REPO/projects/softmodeling"
@@ -61,6 +61,8 @@ srun "$SOFTCUT_PYTHON" -m tools.run_material_queue \
 ## 4. 查询、暂停与恢复
 
 启动后只短时核实JobID、日志和一个新接受态（或有时限的诊断实际推进），然后汇报，不持续监控。
+
+本次批次可以直接从仓库根使用 `runs/server_intact/control.sh 33 status`、`log`、`pause` 或 `resume`。查询 Slurm 用 `squeue -j JOBID`。恢复入口核对已暂停作业的退出回执，再为同一批次和剩余预算申请新的 JobID。主算例日志随 attempt 读取。控制实测的旧四份检查点在新作业逐字节保留。
 
 ```bash
 squeue -j JOBID
