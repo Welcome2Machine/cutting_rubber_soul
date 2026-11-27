@@ -110,7 +110,7 @@ def make_command(manifest,job):
     # below is allowed; the candidate runner repeats its full resume audit.
     for key,value in job.get('options',{}).items():
         flag='--'+key.replace('_','-')
-        if key=='enforce_physical_chord':
+        if key in ('enforce_physical_chord','parent_chord_search'):
             if value:cmd.append(flag)
         else:cmd.extend([flag,str(value)])
     if job.get('resume_source'):cmd+=['--resume',job['resume_source']]
@@ -259,6 +259,11 @@ def run_case(out,manifest,job,state,*,command_factory=None):
                     trace=export_trace(folder,exports/'contact_trace',qualified_prefix=True,
                         checkpoint=lambda:control.checkpoint(out/'pause_requested.json'))
                     export_case(folder,exports/'presentation',trace_path=exports/'contact_trace/contact_trace.json')
+                    if manifest.get('observation_protocol'):
+                        from tools.verify_intact_numerics import observe_sa
+                        observations=observe_sa(folder,read(manifest['observation_protocol']),job['target_mm'])
+                        write_json(exports/'independent_sa.json',observations)
+                        result['independent_sa_frames']=len(observations['rows'])
                     eligible=[s for s in trace['steps'] if s['qualified']]
                     valid=[s for s in eligible if s['tip_contact']['status']=='unique']
                     final=eligible[-1]
@@ -452,6 +457,7 @@ def main():
     parser.add_argument('--material-batch-size',type=int,default=0)
     parser.add_argument('--linear-backend',choices=('native','pardiso'),default='native')
     parser.add_argument('--linear-threads',type=int,default=4)
+    parser.add_argument('--observation-protocol',type=Path,help='Frozen independent pole and nose gap bands for audited cases')
     parser.add_argument('--short-evidence',type=Path,help='Completed short-path screening evidence to bind in the manifest')
     parser.add_argument('--case-config',type=Path,help='Explicit ordered case identities, options and budgets')
     parser.add_argument('--prepare-only',action='store_true')
@@ -550,7 +556,8 @@ def main():
         allowed={'blade_shape','tip_radius','blade_thickness','blade_angle','dhat','nose_facets',
                  'local_spacing','surface_spacing','fine_halfwidth','coarse_spacing','contact_layer_depth','reference_layout','size_gradient','drop_s',
                  'preparation_clearance_mm','friction_velocity_mm_s','enforce_physical_chord',
-                 'minimum_increment_mm','blade_spacing','friction_globalization','predictor','max_iterations'}
+                 'minimum_increment_mm','blade_spacing','friction_globalization','predictor','max_iterations',
+                 'preparation_force_tolerance_n','parent_chord_search'}
         for case in settings['cases']:
             name=case['case_id']
             if not re.fullmatch(r'[A-Za-z0-9_]+',name) or any(j['name'].lower()==name.lower() for j in jobs):
@@ -587,7 +594,7 @@ def main():
                 raise ValueError('Invalid iteration limit: '+name)
             if any(isinstance(v,bool) or not isinstance(v,(int,float)) or not math.isfinite(v)
                    or v<0 or (v==0 and k!='contact_layer_depth')
-                   for k,v in opts.items() if k not in ('blade_shape','enforce_physical_chord','predictor','friction_globalization','reference_layout')):
+                   for k,v in opts.items() if k not in ('blade_shape','parent_chord_search','enforce_physical_chord','predictor','friction_globalization','reference_layout')):
                 raise ValueError('Invalid numerical setting: '+name)
             if 'reference_layout' in opts:
                 layout_path=(path.parent/opts['reference_layout']).resolve()
@@ -617,6 +624,12 @@ def main():
         solve_seconds_per_case=args.seconds,audit_allowance_s=1800.,jobs=jobs,
         material=material,input_sha256=inputs,experiments=experiments,
         policy='Independent rest histories unless explicit own-source prefix passed all resume guards; one common material; bounded serial cases')
+    if args.observation_protocol:
+        if not args.case_config:parser.error('Independent SA requires explicit cases')
+        protocol=args.observation_protocol.resolve()
+        manifest['observation_protocol']=str(protocol)
+        manifest['input_sha256'][str(protocol)]=hashlib.sha256(protocol.read_bytes()).hexdigest()
+        hashes['tools/verify_intact_numerics.py']=hashlib.sha256((root/'tools/verify_intact_numerics.py').read_bytes()).hexdigest()
     if args.trial_map:
         if not args.case_config or experiments:parser.error('--trial-map requires explicit cases and exclusive experiment mapping')
         path=args.trial_map.resolve()

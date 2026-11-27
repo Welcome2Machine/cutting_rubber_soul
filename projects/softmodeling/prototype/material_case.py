@@ -27,6 +27,10 @@ def signature(p):
         value['friction_regularization'] = dict(mode='fixed_velocity',epsilon_v_mm_s=p.friction_velocity_mm_s)
     elif getattr(p,'friction_smoothing_mm',BASELINE['friction_smoothing_mm']) != BASELINE['friction_smoothing_mm']:
         value['friction_smoothing_mm'] = p.friction_smoothing_mm
+    if getattr(p, 'preparation_force_tolerance_n', None) is not None:
+        value['preparation_force_tolerance_n'] = p.preparation_force_tolerance_n
+    if getattr(p, 'parent_chord_search', False):
+        value['parent_chord_search'] = True
     if p.enforce_physical_chord:
         value["enforce_physical_chord"] = True
     return value
@@ -193,12 +197,17 @@ def make_problem(*,angle,equilibrium_shear,maxwell_shear,relaxation_s,loading_ra
                  fine_halfwidth=3.,coarse_spacing=None,contact_layer_depth=0.,reference_layout=None,size_gradient=.4,drop_s=None,dhat=.0025,
                  preparation_clearance_mm=None,friction_smoothing_mm=1e-5,enforce_physical_chord=False,
                  blade_shape=None,friction_velocity_mm_s=None,friction_globalization='model-error',
-                 predictor='secant',max_iterations=500):
+                 predictor='secant',max_iterations=500,parent_chord_search=False,preparation_force_tolerance_n=None):
     """Shared construction for actual-angle runs and completed-reference audits."""
     if not all(np.isfinite(a) and 1 <= a <= 4 for a in (equilibrium_alpha,maxwell_alpha)):
         raise ValueError('Explicit candidate exponents must be in [1, 4]')
     if type(max_iterations) is not int or max_iterations < 1:
         raise ValueError('max_iterations must be a positive integer')
+    if type(parent_chord_search) is not bool or (parent_chord_search and (not enforce_physical_chord or mu <= 0)):
+        raise ValueError('Parent chord search requires frictional PTC with whole-step protection')
+    if preparation_force_tolerance_n is not None and (mu <= 0 or not np.isfinite(preparation_force_tolerance_n)
+            or not 0 < preparation_force_tolerance_n <= BASELINE['force_tolerance_n']):
+        raise ValueError('Strict preparation requires frictional PTC and a positive target within physical tolerance')
     p=ViscoelasticProblem(maxwell_shear=maxwell_shear,relaxation_s=relaxation_s,
         loading_rate=loading_rate,bulk_modulus=bulk_modulus,volumetric=volumetric,case='oblique',mu=mu,
         shear_modulus=equilibrium_shear,ogden_alpha=equilibrium_alpha,dhat=dhat,local_spacing=local_spacing,
@@ -210,6 +219,8 @@ def make_problem(*,angle,equilibrium_shear,maxwell_shear,relaxation_s,loading_ra
         coarse_spacing=coarse_spacing,contact_layer_depth=contact_layer_depth,reference_layout=reference_layout,size_gradient=size_gradient,
         drop_s=drop_s,preparation_clearance_mm=preparation_clearance_mm,
         friction_smoothing_mm=friction_smoothing_mm,enforce_physical_chord=enforce_physical_chord)
+    p.parent_chord_search=parent_chord_search
+    p.preparation_force_tolerance_n=preparation_force_tolerance_n
     p.stagnation_window=40
     if maxwell_alpha != 2.:
         p.material=replace(p.material,mu_ov=(2*maxwell_shear/maxwell_alpha,),alpha_ov=(float(maxwell_alpha),))

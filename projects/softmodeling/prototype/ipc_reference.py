@@ -461,6 +461,17 @@ class IPCProblem:
         geometric_fraction = self.safe_step(x, direction)
         alpha = min(1., .5*self.options.tip_radius_mm/maximum, geometric_fraction)
         trial = x+alpha*direction
+        if getattr(self, 'parent_chord_search', False):
+            # The line search has fixed blade DOFs. Shorten the *Newton update*
+            # at this load, never the physical increment or its material time.
+            for cut in range(9):
+                if self.physical_chord_certificate(self.previous, trial)['safe_fraction'] == 1.:
+                    break
+                self.parent_chord_reductions += 1
+                if cut == 8:
+                    return x, 0., geometric_fraction
+                alpha *= .5
+                trial = x+alpha*direction
         return trial, alpha, geometric_fraction
 
     def linear_direction(self, matrix, rhs):
@@ -476,6 +487,8 @@ class IPCProblem:
         previous always remains the last accepted loading state.
         """
         tolerance = getattr(self, 'force_tolerance_n', BASELINE['force_tolerance_n'])
+        if depth <= 0 and getattr(self, 'preparation_force_tolerance_n', None) is not None:
+            tolerance = min(tolerance, self.preparation_force_tolerance_n)
         if not 0 < tolerance <= BASELINE['force_tolerance_n']:
             raise ValueError('A specialized host may tighten, never loosen, force acceptance')
         initial_shift = .1
@@ -622,6 +635,8 @@ class IPCProblem:
                                 guard_accept = (nt <= BASELINE['force_tolerance_n'] or
                                     residual_armijo_decrease(norm, nt, guard_slope, alpha))
                                 accepted = accepted and guard_accept
+                            if accepted and getattr(self, 'parent_chord_search', False):
+                                accepted = self.physical_chord_certificate(self.previous, trial)['safe_fraction'] == 1.
                             record_model_trial(halvings, 'accepted' if accepted else 'rejected')
                             if accepted:
                                 break
@@ -702,8 +717,11 @@ class IPCProblem:
         lag = self.lag(x)
         E, g, _, minj = self.evaluate(x, lag, tangent=False)
         norm = float(np.linalg.norm(g[self.free]))
-        if not np.isfinite(norm) or norm > BASELINE["force_tolerance_n"]:
-            raise LoadStepFailure(f"Unbalanced IPC acceptance: residual={norm:.6g} N")
+        limit = BASELINE["force_tolerance_n"]
+        if depth <= 0 and getattr(self, 'preparation_force_tolerance_n', None) is not None:
+            limit = self.preparation_force_tolerance_n
+        if not np.isfinite(norm) or norm > limit:
+            raise LoadStepFailure(f"Unbalanced IPC acceptance: residual={norm:.6g} N, limit={limit:g} N")
         c = self.collisions(x)
         distance = float(np.sqrt(c.compute_minimum_distance(self.cmesh, x[self.surface])))
         if distance <= 0 or minj <= 0 or self.ipc.has_intersections(self.cmesh, x[self.surface]):
@@ -847,7 +865,10 @@ class IPCProblem:
         delta = depth - old
         self.trial = affine.copy()
         if self.predictor == 'affine':
-            if self.safe_step(x, affine-x) < 1.0-1e-10:
+            if getattr(self, 'parent_chord_search', False):
+                if self.physical_chord_certificate(x, affine)['safe_fraction'] != 1.:
+                    raise LoadStepFailure('Affine predictor failed full parent chord')
+            elif self.safe_step(x, affine-x) < 1.0-1e-10:
                 raise LoadStepFailure('Prescribed-motion predictor is not collision free; reduce loading step')
             return affine
         fixed = np.setdiff1d(np.arange(2*self.n), self.free)
@@ -872,9 +893,10 @@ class IPCProblem:
                         or not np.allclose(candidate.ravel()[fixed], self.rest.ravel()[fixed], rtol=0, atol=1e-12)
                         or not np.array_equal(candidate[self.n:], affine[self.n:])):
                     raise ValueError('Nonfinite or invalid prescribed candidate')
-                fraction = float(self.safe_step(x, candidate-x))
+                fraction = (self.physical_chord_certificate(x, candidate)['safe_fraction']
+                            if getattr(self, 'parent_chord_search', False) else float(self.safe_step(x, candidate-x)))
                 record['safe_fraction'] = fraction
-                if not np.isfinite(fraction) or fraction < 1.0-1e-10:
+                if not np.isfinite(fraction) or fraction < (1. if getattr(self, 'parent_chord_search', False) else 1.0-1e-10):
                     raise ValueError('Candidate path fails CCD/J protection')
                 _, gradient, _, minj = self.evaluate(candidate, self.lag(candidate), tangent=False)
                 norm = float(np.linalg.norm(gradient[self.free]))
@@ -938,6 +960,7 @@ class IPCProblem:
     def step(self, x, old, depth, deadline):
         self.phase_seconds = {}
         self.ptc_state = {}
+        self.parent_chord_reductions = 0
         self.previous = x.copy()
         x = self._loading_predictor(x, old, depth)
         self.trial = x.copy()

@@ -413,6 +413,12 @@ def failed_increment(folder):
     problem = make_problem(**{k:v for k,v in settings.items() if k in inspect.signature(make_problem).parameters})
     enable_performance(problem, report['performance_policy'])
     problem.solver_diagnostics = settings['diagnostics']
+    return restore_failed_pair(problem, folder, report, audit)
+
+
+def restore_failed_pair(problem, folder, report, audit):
+    """Bind the two predictor states and both physical histories for a diagnostic."""
+    rows = report['steps']
     history = []
     for i in range(len(rows)-2, len(rows)):
         path = folder/'states'/f'{i:04d}.npz'
@@ -424,6 +430,7 @@ def failed_increment(folder):
             np.testing.assert_array_equal(state['triangles'], problem.mesh.triangles)
             if history:
                 np.testing.assert_array_equal(state['previous_positions'], history[-1][1])
+                np.testing.assert_array_equal(state['previous_material_metric'], problem.material_metric)
             history.append((float(state['depth_mm']), state['positions']))
             problem.material_metric = state['material_metric']
             problem.material_dissipation = float(state['cumulative_viscous_dissipation_n_mm'])

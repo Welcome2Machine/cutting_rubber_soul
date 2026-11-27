@@ -481,3 +481,28 @@ class ReferenceContactGeometryTests(unittest.TestCase):
         self.assertFalse(self.ipc.has_intersections(p.cmesh, rest))
         with self.assertRaisesRegex(ValueError, 'contact-induced prestress'):
             p.check_reference_contact()
+
+
+def test_parent_loading_chord_backtracks_at_fixed_physical_boundary():
+    from types import SimpleNamespace
+    p=object.__new__(IPCProblem)
+    p.options=SimpleNamespace(tip_radius_mm=2.)
+    p.previous=np.array([[0.,0.],[1.,1.]])
+    x=p.previous.copy()
+    x[1,1]-=.1
+    direction=np.array([[1.,0.],[0.,0.]])
+    p.safe_step=lambda current,delta: 1.
+    p.parent_chord_search=True
+    p.parent_chord_reductions=0
+    def certificate(parent,trial):
+        np.testing.assert_array_equal(parent,p.previous)
+        np.testing.assert_array_equal(trial[1],x[1])
+        return {'safe_fraction':1. if trial[0,0]<=.3 else .4}
+    p.physical_chord_certificate=certificate
+    trial,alpha,_=p._ptc_trial(x,direction,1.)
+    assert alpha==.25 and p.parent_chord_reductions==2
+    np.testing.assert_array_equal(trial,x+alpha*direction)
+    p.physical_chord_certificate=lambda start,end: {'safe_fraction':float('nan')}
+    trial,alpha,_=p._ptc_trial(x,direction,1.)
+    np.testing.assert_array_equal(trial,x)
+    assert alpha==0.

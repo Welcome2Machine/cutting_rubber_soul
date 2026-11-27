@@ -184,6 +184,8 @@ def main():
     group.add_argument('--friction-smoothing-mm',type=float,default=1e-5)
     parser.add_argument('--enforce-physical-chord',action='store_true',
         help='Reject unsafe full accepted loading chords before committing histories')
+    parser.add_argument('--parent-chord-search',action='store_true')
+    parser.add_argument('--preparation-force-tolerance-n',type=float)
     parser.add_argument('--physical-core-affinity',action='store_true')
     parser.add_argument('--blade-spacing',type=float,
         help='Optional straight-blade subdivision (mm); preserves shape/nose and requires an independent history')
@@ -285,7 +287,7 @@ def main():
                 'relaxation_s','loading_rate','bulk_modulus','mu','equilibrium_alpha','maxwell_alpha','blade_spacing',
                 'blade_thickness','blade_angle','tip_radius','local_spacing','surface_spacing','coarse_spacing','contact_layer_depth','reference_layout','size_gradient',
                 'fine_halfwidth','nose_facets','drop_s','dhat','preparation_clearance_mm','friction_smoothing_mm','enforce_physical_chord','blade_shape','friction_velocity_mm_s',
-                'friction_globalization','predictor','max_iterations')}
+                'friction_globalization','predictor','max_iterations','parent_chord_search','preparation_force_tolerance_n')}
             def build_problem():
                 result=make_problem(**construction)
                 result.queue_checkpoint=checkpoint
