@@ -267,10 +267,13 @@ def response(F,previous_metric,dt,material,*,tangent=True,kinematics="plane_stre
         L=dt*((np.eye(3)-np.ones((3,3))/3)/(2*eta_i)+np.ones((3,3))/(9*eta_v))
     local=np.empty((len(F),4,4));r=np.empty((len(F),4))
     for iteration in range(35):
-        eeq=np.column_stack((eq2,q))
-        weq,teq,heq=principal(eeq,material)
+        # At fixed F, plane-strain equilibrium stretches and trial stretches
+        # stay fixed throughout the local viscous iteration. Plane stress
+        # updates q and therefore has to rebuild both at every iteration.
+        if iteration == 0 or kinematics == "plane_stress":
+            weq,teq,heq=principal(np.column_stack((eq2,q)),material)
+            trial=np.column_stack((tr2,q+.5*np.log(A[:,2,2])))
         wov,tov,hov=principal(e,material,True)
-        trial=np.column_stack((tr2,q+.5*np.log(A[:,2,2])))
         r[:,0]=teq[:,2]+tov[:,2]
         r[:,1:]=e-trial+np.einsum('ij,nj->ni',L,tov)
         local[:,0,0]=heq[:,2,2];local[:,0,1:]=hov[:,2,:]

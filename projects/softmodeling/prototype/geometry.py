@@ -1,5 +1,8 @@
 """Intact P1 specimen mesh and rigid rounded-blade geometry (mm)."""
 from dataclasses import dataclass
+import hashlib
+import json
+from pathlib import Path
 import numpy as np
 from scipy.spatial import Delaunay
 from .model_config import FEMMesh, local_to_lab, _rotation_vectors
@@ -11,6 +14,9 @@ class GeometryOptions:
     refinement_mm: float = 0.15
     surface_spacing_mm: float = 0.0025
     mesh_grading: str = 'legacy'
+    contact_layer_depth_mm: float = 0.
+    reference_layout: str | None = None
+    size_gradient: float = .4
 
     def validate(self, config):
         for name in ('tip_radius_mm', 'refinement_mm', 'surface_spacing_mm'):
@@ -19,8 +25,133 @@ class GeometryOptions:
                 raise ValueError(f'{name} must be finite and positive')
         if self.mesh_grading not in ('legacy', 'graded'):
             raise ValueError('Unknown mesh grading')
+        if not np.isfinite(self.size_gradient) or self.size_gradient <= 0:
+            raise ValueError('Positive mesh size gradient required')
+        depth = self.contact_layer_depth_mm
+        if not np.isfinite(depth) or not 0 <= depth < config.height_mm or (depth and self.mesh_grading != 'graded'):
+            raise ValueError('Contact layer requires a graded mesh and depth inside the specimen')
         if self.tip_radius_mm >= config.blade_thickness_mm / 2:
             raise ValueError('Tip radius must be smaller than half blade thickness')
+
+
+def reference_mesh_digest(sn, triangles):
+    """Identify the original material coordinates and ordered, oriented connectivity."""
+    return hashlib.sha256(np.asarray(sn, dtype='<f8').tobytes() +
+                          np.asarray(triangles, dtype='<i8').tobytes()).hexdigest()
+
+
+def relocate_reference_nodes(sn, triangles, layout):
+    """Apply an interior-only material-coordinate layout to its exact parent topology."""
+    if layout.get('schema') != 'intact-reference-layout/1' or layout.get('base_sha256') != reference_mesh_digest(sn, triangles):
+        raise ValueError('Reference layout does not match the parent mesh')
+    indices = np.asarray(layout['node_ids'])
+    coordinates = np.asarray(layout['local_sn_mm'], dtype=float)
+    if (indices.ndim != 1 or not np.issubdtype(indices.dtype, np.integer) or not len(indices)
+            or indices.min() < 0 or indices.max() >= len(sn) or len(np.unique(indices)) != len(indices)
+            or coordinates.shape != (len(indices), 2) or not np.isfinite(coordinates).all()):
+        raise ValueError('Invalid material node IDs or coordinates in reference layout')
+    edges = np.sort(np.concatenate((triangles[:, [0, 1]], triangles[:, [1, 2]], triangles[:, [2, 0]])), axis=1)
+    unique, counts = np.unique(edges, axis=0, return_counts=True)
+    if np.isin(indices, unique[counts == 1]).any():
+        raise ValueError('Reference layout must preserve all boundary nodes')
+    relocated = sn.copy()
+    relocated[indices] = coordinates
+    points = relocated[triangles]
+    edge1 = points[:, 1] - points[:, 0]
+    edge2 = points[:, 2] - points[:, 0]
+    if np.any(edge1[:, 0]*edge2[:, 1] - edge1[:, 1]*edge2[:, 0] <= 0):
+        raise ValueError('Reference layout would invert or collapse an element')
+    return relocated
+
+
+def optimize_reference_layout(sn, triangles, deformed_samples, movable, step_mm):
+    """Raise the worst signed mean ratio on each movable vertex star across supplied P1 maps.
+
+    This offline operation changes reference nodes only. The material history for a
+    simulation on the resulting layout must be integrated afresh from rest.
+    """
+    from matplotlib.tri import Triangulation
+    sn = np.asarray(sn, dtype=float)
+    triangles = np.asarray(triangles)
+    samples = np.concatenate((sn[None], np.asarray(deformed_samples)), axis=0)
+    movable = np.asarray(movable, dtype=int)
+    if (not len(movable) or not np.isfinite(step_mm) or step_mm <= 0 or not np.isfinite(samples).all()
+            or len(np.unique(movable)) != len(movable) or movable.min() < 0 or movable.max() >= len(sn)):
+        raise ValueError('Invalid reference layout design inputs')
+    finder = Triangulation(*sn.T, triangles).get_trifinder()
+    corners = sn[triangles]
+    inverse = np.linalg.inv((corners[:, 1:] - corners[:, :1]).transpose(0, 2, 1))
+    moving_set = set(movable.tolist())
+    stars = {i: [] for i in movable}
+    for tri in triangles:
+        for i, node in enumerate(tri):
+            if node in moving_set:
+                stars[node].append((tri[(i+1) % 3], tri[(i+2) % 3]))
+    colors = {}
+    for node in movable:
+        used = {colors[j] for pair in stars[node] for j in pair if j in colors}
+        colors[node] = next(c for c in range(len(used)+1) if c not in used)
+    groups = []
+    for color in range(max(colors.values())+1):
+        ids = np.array([i for i in movable if colors[i] == color])
+        degree = max(len(stars[i]) for i in ids)
+        opposite = np.array([stars[i] + [stars[i][-1]]*(degree-len(stars[i])) for i in ids])
+        groups.append((ids, opposite[:, :, 0], opposite[:, :, 1]))
+    moved = samples.copy()
+    directions = np.stack((np.cos(np.arange(8)*np.pi/4), np.sin(np.arange(8)*np.pi/4)), axis=1)
+
+    def cross(a, b):
+        return a[..., 0]*b[..., 1] - a[..., 1]*b[..., 0]
+
+    # Preserve each sampled configuration's original worst shape, up to q=.45.
+    # A mild reference anisotropy is intentional; rest has its own area and q bounds.
+    floors = []
+    for sample in samples[1:]:
+        points = sample[triangles]
+        ab, ac = points[:, 1]-points[:, 0], points[:, 2]-points[:, 0]
+        q = 2*np.sqrt(3)*cross(ab, ac) / np.sum(ab*ab + ac*ac + (ab-ac)**2, axis=1)
+        if q.min() <= 0:
+            raise ValueError('Design requires positive, oriented P1 maps')
+        floors.append(min(.45, q.min())-1e-10)
+    floors = np.asarray(floors)[:, None]
+
+    for sweep, fraction in enumerate((.5, .5, .5, .5, .35, .35, .25, .25, .25, .125, .125, .0625, .0625)):
+        for ids, left, right in (groups if sweep % 2 == 0 else reversed(groups)):
+            b, c = moved[:, left], moved[:, right]
+            length_sq = np.sum((b-c)**2, axis=-1)
+            area0 = cross(sn[left]-sn[ids, None], sn[right]-sn[ids, None])
+
+            def score(proposal):
+                ab = b-proposal[:, :, None]
+                ac = c-proposal[:, :, None]
+                area = cross(ab, ac)
+                quality = 2*np.sqrt(3)*area / (length_sq + np.sum(ab*ab + ac*ac, axis=-1))
+                valid = np.all((area[0] >= .30*area0) & (area[0] <= 3*area0) & (quality[0] >= .35), axis=1)
+                valid &= np.all(quality[1:].min(axis=2) >= floors, axis=0)
+                return np.where(valid, quality.min(axis=(0, 2)), -np.inf)
+
+            best = moved[:, ids].copy()
+            scores = score(best)
+            for direction in directions:
+                query = moved[0, ids] + fraction*step_mm*direction
+                element = finder(*query.T)
+                weights = np.einsum('nij,nj->ni', inverse[element], query-corners[element, 0])
+                vertices = samples[:, triangles[element]]
+                proposal = vertices[:, :, 0] + np.einsum('fniq,ni->fnq',
+                              vertices[:, :, 1:]-vertices[:, :, :1], weights)
+                proposal[0] = query
+                values = score(proposal)
+                improve = (element >= 0) & (values > scores+1e-10)
+                best[:, improve] = proposal[:, improve]
+                scores[improve] = values[improve]
+            moved[:, ids] = best
+    ids = movable[np.any(moved[0, movable] != sn[movable], axis=1)]
+    if not len(ids):
+        raise ValueError('No admissible improvement of the reference layout')
+    layout = dict(schema='intact-reference-layout/1', base_sha256=reference_mesh_digest(sn, triangles),
+                  node_ids=ids.tolist(), local_sn_mm=moved[0, ids].tolist())
+    relocate_reference_nodes(sn, triangles, layout)
+    return layout
 
 
 def intact_mesh(config, options, *, fine_halfwidth_mm=None):
@@ -57,6 +188,7 @@ def intact_mesh(config, options, *, fine_halfwidth_mm=None):
         ys = np.r_[np.arange(config.height_mm,0,-base),0.][::-1]
         cells = [(a,b,c,d) for a,b in zip(xs[:-1],xs[1:]) for c,d in zip(ys[:-1],ys[1:])]
         points = []
+        interior = []
         fine_halfwidth = fine_halfwidth_mm if fine_halfwidth_mm is not None else max(2*options.refinement_mm,8*options.tip_radius_mm)
         while cells:
             a,b,c,d = cells.pop()
@@ -66,16 +198,36 @@ def intact_mesh(config, options, *, fine_halfwidth_mm=None):
             fine_lateral = max(abs(sx-config.drop_s_mm)-fine_halfwidth,0.)
             distance = np.hypot(fine_lateral,config.height_mm-ny)
             target = min(config.mesh_size_mm,
-                         options.refinement_mm+.4*np.hypot(lateral,below),h+.4*distance)
+                         options.refinement_mm+options.size_gradient*np.hypot(lateral,below),h+options.size_gradient*distance)
             if max(b-a,d-c)>target*(1+1e-10):
                 cells.extend([(a,sx,c,ny),(sx,b,c,ny),(a,sx,ny,d),(sx,b,ny,d)])
             else:
                 points.extend([(a,c),(b,c),(a,d),(b,d)])
+                if options.contact_layer_depth_mm:
+                    interior.append((a,b,c,d))
+        # Split original leaves towards a subsurface rectangle. Keep every original
+        # boundary point and introduce interior points only, including beneath the
+        # first surface row. The surrounding graded mesh controls the far field.
+        while interior:
+            a,b,c,d = interior.pop()
+            sx,ny = (a+b)/2,(c+d)/2
+            outside = max(abs(sx-config.drop_s_mm)-fine_halfwidth/2, 0.)
+            below = max(config.height_mm-ny-options.contact_layer_depth_mm, 0.)
+            target = h/2 + options.size_gradient*np.hypot(outside, below)
+            if max(b-a,d-c) <= target*(1+1e-10):
+                continue
+            points.extend((x,y) for x,y in ((sx,c),(sx,d),(a,ny),(b,ny),(sx,ny))
+                          if 0 < x < config.length_mm and 0 < y < config.height_mm)
+            interior.extend(((a,sx,c,ny),(sx,b,c,ny),(a,sx,ny,d),(sx,b,ny,d)))
     sn = np.unique(np.round(points, 10), axis=0)
     xy = local_to_lab(sn, config)
     tri = Delaunay(sn).simplices.copy()
     signed = np.linalg.det(np.stack((xy[tri[:,1]]-xy[tri[:,0]],xy[tri[:,2]]-xy[tri[:,0]]),axis=2))
     tri[signed < 0] = tri[signed < 0][:,[0,2,1]]
+    if options.reference_layout is not None:
+        layout = json.loads(Path(options.reference_layout).read_bytes())
+        sn = relocate_reference_nodes(sn, tri, layout)
+        xy = local_to_lab(sn, config)
     mesh = FEMMesh(xy,sn,tri,np.empty((0,2),int),np.empty(0),
                    np.flatnonzero(np.isclose(sn[:,1],0)),np.empty(0,int),np.zeros(len(sn),int))
     edges = np.sort(np.concatenate((tri[:,[0,1]],tri[:,[1,2]],tri[:,[2,0]])),axis=1)

@@ -1,10 +1,11 @@
 # Repository requirements
 
-## Current user task and ownership (2026-11-17)
+## Current user task and ownership (2026-11-27)
 
-Read [single current task](../../researchtopic/research_prototype_task.md) and [Git rules](../../docs/git_workflow.md). The server alone handles a safe repository/server-directory space inventory and minimal cleanup, diagnosis of the lost fixed knife-pole correspondence near 1.365 mm, and a new full 601-state extraction and FE visualization with a portable audited evidence package. The local agent is paused.
+Read [single current task](../../researchtopic/research_prototype_task.md), [current results](docs/research_status.md), [System B environment](../../docs/environment.md) and [Git rules](../../docs/git_workflow.md).
+The server is the sole execution owner on codex/deformation-sliding-baseline, under <USER_WORK_ROOT>; the local agent is paused. Prior 3mm/601-state and fracture tasks are historical.
 
-The original 57deg A-low, mu=.35 intact 3mm history has 601 states covered by an independent sidecar audit. Preserve its entire raw chain, original failed audit labels, provenance and other users' files. Do not edit model physics, change dhat to manufacture contact, splice flank material addresses into strict pole migration, hide missing observations, or delete research history to reclaim bytes. Only when a concrete physical/numerical defect has been proven and cannot be resolved by replaying these states is one separate 3mm FE run conditionally authorized. All previous B1-B7 repairs and fracture tasks are completed history, not outstanding instructions. Upload only a compact genuinely accessible visualization/data package; inaccessible server-only paths do not count as delivery.
+Preserve established source/data identities. The immediate task is the proven 57-degree parent-to-endpoint blade/surface crossing, strict preparation lineage, independent SA observation and short-window spatial qualification. Reuse completed B1-B6 evidence; numerical/compute repairs are authorized when supported by a concrete defect. Changes to physical constitutive/contact laws, specimen support or geometry need physical evidence.
 
 ## Physical scope and interpretation
 
@@ -12,12 +13,12 @@ The original 57deg A-low, mu=.35 intact 3mm history has 601 states covered by an
   Preserve reference configurations and historical model identities; this does not forbid explicitly
   authorized new shared inputs, a real damage-off mode or a declared interface formulation.
 - Common reference material, measured blade data and source qualifications live in the current task;
-  do not maintain a competing parameter table here. Standard loading speed is 0.2 mm/s; the separately authorized A-low intact long path reaches 3 mm.
+  do not maintain a competing parameter table here. Standard loading speed is 0.2 mm/s; current material and numerical values are defined in the single task. The old 3mm path is historical.
   The original s=7 mm geometry and the symmetric s=15 mm control are distinct experiments in the model.
 - The workbench represents a symmetric wedge/circular nose, not arbitrary CAD. Lubrication is a
   condition label plus explicit Coulomb mu, not an oil-film model. Public Fy maps solver reaction_x_n;
   Fyz is a resultant. Force components, surface projections and energy shares are different quantities.
-- The baseline formulation and established physical/solver gates remain fixed. The current task authorizes narrowly scoped observability and evidence-delivery changes; it does not authorize a new friction law or solver.
+- The baseline physics and established physical acceptance gates remain fixed. Current evidence-based numerical solver, discretization and portability repairs are authorized by the single task; a new physical friction law needs evidence.
   Do not silently change friction regularization or historical input identities. General common-parameter
   calibration within defensible intact windows remains a later option.
   The fracture agent must not tune strength/Gc,
@@ -52,7 +53,7 @@ The original 57deg A-low, mu=.35 intact 3mm history has 601 states covered by an
 - The paused q50 path at 57 degrees remains qualified only through 1.25 mm; its 1.26 mm metric failure
   is not erased by mechanical completion at 2 mm. It is distinct from the original-material baseline.
 - Keep original recovery/iteration policies within their actual route. Numerical stagnation does not
-  prove no root exists. The current task does not authorize a sweep of controllers or universal tolerances.
+  prove no root exists. The current task permits bounded, evidence-led repairs, not an unbounded controller sweep or weakened acceptance tolerances.
 - Do not edit numerical code used by a live solve. New work uses an isolated worktree/version and bounded
   outputs. UI startup or server restart never starts FE, tracking, an old queue or automatic continuation.
   Use the current task's budget and stricter machine scheduler/resource constraints; no automatic extensions.

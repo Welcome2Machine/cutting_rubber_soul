@@ -1,5 +1,7 @@
 # 当前科研工具入口
 
+**当前服务器执行（2026-11-27）：** 以[唯一任务](../../../researchtopic/research_prototype_task.md)和[System B运行说明](../../../docs/environment.md)为准。主要入口为现有`run_material_candidate`、`run_material_queue --foreground`、`verify_intact_numerics`、`audit_virtual_chord`、`contact_trace`。旧工具保留复现用途，不按文件名自动重启。下文2026-11-16段落属于旧接口说明。
+
 更新：2026-11-16。执行范围见[科研原型任务](../../../researchtopic/research_prototype_task.md)，模型见[当前规格](../docs/current_model_spec.md)，结果见[研究状态](../docs/research_status.md)。本轮仅服务器执行基线修复与运动学分析。
 
 ## 本轮主要入口

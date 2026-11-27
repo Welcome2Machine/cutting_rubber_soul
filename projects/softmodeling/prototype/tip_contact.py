@@ -148,7 +148,13 @@ class TipContactTracker:
         pole = int(landmarks["pole_local"])-2 if landmarks else nose_facets//2
         if not 0 < pole < nose_facets:raise ValueError("Invalid blade pole")
         self.tip_node = int(body_nodes + 2 + pole)
+        self.top_edge_map = {tuple(sorted(edge)): edge for edge in self.edges}
+        self.top_node_edge = {int(node): edge for edge in self.edges for node in edge}
         arc = self.reference[self.nose_nodes]
+        self.nose_length = np.r_[0., np.cumsum(np.linalg.norm(np.diff(arc, axis=0), axis=1))]
+        self.anchor_arc = self.nose_length[pole]
+        self.blade_part_cache = {}
+        self.arc_resolution = float(np.max(np.diff(self.nose_length)))
         if np.argmin(self.reference[body_nodes:, 1]) + body_nodes != self.tip_node:
             raise ValueError("Reference knife pole is inconsistent with rounded blade ordering")
         # The fit checks topology and records the faceted versus ideal-circle
@@ -257,6 +263,164 @@ class TipContactTracker:
         )
         return result
 
+    @staticmethod
+    def _projection(point, a, b):
+        edge = b-a
+        return float(np.clip((point-a) @ edge / (edge @ edge), 0., 1.))
+
+    def _blade_part(self, nodes):
+        key = tuple(sorted(map(int,nodes)))
+        if key not in self.blade_part_cache:
+            first,last = self.nose_nodes[[0,-1]]
+            if all(first <= n <= last for n in nodes):
+                part = 'nose'
+            else:
+                midpoint = self.reference[nodes].mean(axis=0)
+                parts = [('left_shank',first-2,first-1),('left_flank',first-1,first),
+                         ('right_flank',last,last+1),('right_shank',last+1,last+2),
+                         ('top_cap',last+2,first-2)]
+                def distance(item):
+                    a,b = self.reference[list(item[1:])]
+                    return np.linalg.norm(midpoint-a-self._projection(midpoint,a,b)*(b-a))
+                part = min(parts,key=distance)[0]
+            self.blade_part_cache[key] = part
+        return self.blade_part_cache[key]
+
+    def native_accounting(self, problem, x, step):
+        """Signed stencil contributions. Shared vertices follow fixed feature ownership."""
+        du = problem.step_increment(x)
+        rows = {}
+        for key,collection,potential,values in (
+                ('normal',problem.collisions(x),problem.barrier,x),
+                ('friction',problem.lag(x),problem.friction,du)):
+            if collection is None:
+                continue
+            for stencil in [*collection.ev_collisions,*collection.vv_collisions]:
+                local = np.asarray(stencil.vertex_ids(problem.cmesh.edges,problem.cmesh.faces))
+                local = local[local>=0]
+                nodes = problem.surface[local]
+                tool = nodes >= self.body_nodes
+                if tool.any():
+                    name = self._blade_part(nodes[tool])
+                else:
+                    adjacent = len(nodes)==2 and tuple(sorted(map(int,local))) in problem._connected_boundary_pairs
+                    name = 'connected_body_vv' if adjacent else 'body_self_other'
+                row = rows.setdefault(name,dict(normal_fx_n=0.,normal_fz_n=0.,friction_fx_n=0.,
+                    friction_fz_n=0.,friction_work_n_mm=0.))
+                gradient = potential.gradient(stencil,values[nodes].ravel()).reshape(-1,2)
+                reaction = -gradient[tool].sum(axis=0)
+                row[key+'_fx_n'] += float(reaction[0])
+                row[key+'_fz_n'] += float(reaction[1])
+                if key == 'friction':
+                    row['friction_work_n_mm'] += float(np.sum(gradient*du[nodes]))
+        force = [sum(r['normal_'+c]+r['friction_'+c] for r in rows.values()) for c in ('fx_n','fz_n')]
+        closure = (np.asarray(force)-[step['reaction_x_n'],step['reaction_fz_n']]).tolist()
+        return dict(parts=rows,force_closure_fx_fz_n=closure,
+            friction_work_closure_n_mm=sum(r['friction_work_n_mm'] for r in rows.values())-step['friction_work_n_mm'],
+            shared_vertex_rule='nose endpoints belong to nose for vertex contact; other shared vertices use first incident canonical segment')
+
+    def native_nose_candidates(self, problem, x):
+        """Retain repulsive EV/VV terms on the original top and circular nose."""
+        c = problem.collisions(x)
+        rows = []
+        for kind, stencils in (("EV", c.ev_collisions), ("VV", c.vv_collisions)):
+            for stencil in stencils:
+                ids = np.asarray(stencil.vertex_ids(problem.cmesh.edges, problem.cmesh.faces))
+                nodes = problem.surface[ids[ids >= 0]]
+                body, tool = nodes[nodes < self.body_nodes], nodes[nodes >= self.body_nodes]
+                if not len(body) or not len(tool) or not np.all(np.isin(tool, self.nose_nodes)):
+                    continue
+                if len(body) == 1 and int(body[0]) in self.top_node_edge:
+                    edge = self.top_node_edge[int(body[0])]
+                    u = float(body[0] == edge[1])
+                elif len(body) == 2 and tuple(sorted(body)) in self.top_edge_map:
+                    edge = self.top_edge_map[tuple(sorted(body))]
+                    u = self._projection(x[tool[0]], *x[edge])
+                else:
+                    continue
+                material = (1-u)*x[edge[0]] + u*x[edge[1]]
+                arc = self.nose_length[tool-self.nose_nodes[0]]
+                t = self._projection(material, *x[tool]) if len(tool)==2 else 0.
+                blade = (1-t)*x[tool[0]] + t*x[tool[-1]]
+                delta = blade-material
+                gap = float(np.linalg.norm(delta))
+                if not 0 < gap < self.dhat:
+                    continue
+                grad = problem.barrier.gradient(stencil, x[nodes].ravel()).reshape(-1, 2)
+                load = float(-grad[nodes >= self.body_nodes].sum(axis=0) @ delta / gap)
+                if load > 0:
+                    rows.append(dict(kind=kind, edge_nodes=edge.tolist(), edge_alpha=u,
+                        nose_arc_mm=float((1-t)*arc[0]+t*arc[-1]), gap_mm=gap, repulsive_term_n=load,
+                        tip_contact_point_mm=material.tolist(), blade_point_mm=blade.tolist()))
+        return rows
+
+    def sliding_amount(self, x, contact, native=None):
+        """Select by fixed-anchor arc distance. Keep disconnected material support explicit."""
+        intervals = contact["nose_reference_intervals_mm"]
+        out = dict(method="native_nose_arc_reference_s/2", S_landing_mm=self.origin,
+                   status="no_nose_support", S_tip_mm=None, SA_signed_mm=None, SA_abs_mm=None,
+                   S_tip_intervals_mm=intervals, SA_intervals_mm=contact["nose_offset_intervals_mm"],
+                   selected=None, native_supported=bool(native), branch_id=None, proximity_estimate=None)
+        if not intervals:
+            return out
+        if len(intervals) > 1 and not native:
+            out["status"] = "ambiguous_material_branches"
+            return out
+        pool = list(native or [])
+        if not pool:
+            # Closest supported arc coordinate to the anchor on each facet.
+            # A capsule endpoint is a one-sided limit, not pressure evidence.
+            a, b = x[self.edges[:, 0]], x[self.edges[:, 1]]
+            for i, (j,k) in enumerate(zip(self.nose_nodes[:-1], self.nose_nodes[1:])):
+                c, d = x[[j,k]]
+                near = np.all((np.maximum(a,b) >= np.minimum(c,d)-self.dhat) &
+                              (np.minimum(a,b) <= np.maximum(c,d)+self.dhat),axis=1)
+                for idx in np.flatnonzero(near):
+                    for lo,hi in _capsule_intervals(c,d,a[idx],b[idx],self.dhat):
+                        t = hi if j < self.tip_node else lo
+                        pt = c+t*(d-c)
+                        u = self._projection(pt,a[idx],b[idx])
+                        mat = a[idx]+u*(b[idx]-a[idx])
+                        pool.append(dict(edge_nodes=self.edges[idx].tolist(),edge_alpha=u,
+                            nose_arc_mm=float(self.nose_length[i]+t*(self.nose_length[i+1]-self.nose_length[i])),
+                            gap_mm=float(np.linalg.norm(pt-mat)),tip_contact_point_mm=mat.tolist(),
+                            blade_point_mm=pt.tolist()))
+        if not pool:
+            out["status"] = "unresolved_geometry"
+            return out
+        distance = lambda r: abs(r["nose_arc_mm"]-self.anchor_arc)
+        pool.sort(key=distance)
+        best = pool[0]
+        def address(row):
+            a,b = self.s[row["edge_nodes"]]
+            return float(a+row["edge_alpha"]*(b-a))
+        s = address(best)
+        tied = [r for r in pool if distance(r)<=distance(best)+self.arc_resolution*.5]
+        def branch(sm):
+            return next((i for i,(lo,hi) in enumerate(intervals)
+                         if lo-self.tolerance<=sm<=hi+self.tolerance),None)
+        out["branch_candidates"]=[]
+        for idx,(lo,hi) in enumerate(intervals):
+            members=[r for r in pool if lo-self.tolerance<=address(r)<=hi+self.tolerance]
+            if members:
+                row=min(members,key=distance)
+                out["branch_candidates"].append(dict(branch_id=idx,S_tip_mm=address(row),
+                    SA_signed_mm=address(row)-self.origin,arc_distance_mm=distance(row),
+                    candidate_count=len(members),representative=row))
+        out["resolution_tied_addresses_mm"]=sorted({address(r) for r in tied})
+        out["multiple_material_branches"]=len(intervals)>1
+        close=any(abs(address(r)-s)>self.tolerance for r in tied)
+        exact=any(abs(address(r)-s)>self.tolerance and distance(r)<=distance(best)+self.tolerance for r in tied)
+        if exact or (not native and close):
+            out["status"]="ambiguous_within_facet_resolution"
+        elif native:
+            status="conditional_nearest_nose" if close or len(intervals)>1 else "native_nose_contact"
+            out.update(status=status,selected=best,branch_id=branch(s),
+                       S_tip_mm=s,SA_signed_mm=s-self.origin,SA_abs_mm=abs(s-self.origin))
+        else:
+            out.update(status="proximity_only",proximity_estimate=dict(best,S_tip_mm=s,SA_signed_mm=s-self.origin))
+        return out
+
     def pole_diagnostics(self, observation):
         """Expose the closest projection even when strict pole M is undefined.
 
@@ -275,6 +439,91 @@ class TipContactTracker:
             nearest_projections=nearest,
             nearest_is_migration=observation['status'] == 'unique',
         )
+
+    def nose_support_evidence(self, sa, native, x, previous, dt, prior_intervals=(), prior_evidence=None):
+        """Keep geometric bands and sampled repulsive addresses distinct in replay."""
+        bands = sa['S_tip_intervals_mm']
+        branches = []
+        for i, (lo, hi) in enumerate(bands):
+            parents = [j for j, (a, b) in enumerate(prior_intervals)
+                       if max(a, lo) <= min(b, hi) + self.tolerance]
+            branches.append(dict(branch_id=i, parent_indices=parents,
+                                 geometric_S_mm=[lo, hi], native_S_mm=[]))
+        for row in native:
+            a, b = row['edge_nodes']
+            s = float(self.s[a] + row['edge_alpha'] * (self.s[b] - self.s[a]))
+            for branch in branches:
+                lo, hi = branch['geometric_S_mm']
+                if lo-self.tolerance <= s <= hi+self.tolerance:
+                    branch['native_S_mm'].append(s)
+                    break
+            else:
+                raise ValueError('Native nose address outside every geometric band')
+        for branch in branches:
+            branch['native_S_mm'] = sorted(set(branch['native_S_mm']))
+        selected = sa['selected']
+        sample = None
+        before = (prior_evidence or {}).get('selected_material')
+        transition = 'lost' if before else 'unselected'
+        if selected is not None:
+            a, b = selected['edge_nodes']
+            w = selected['edge_alpha']
+            weights = np.array([1-w, w])
+            ref = weights @ self.reference[[a, b]]
+            current = weights @ x[[a, b]]
+            if (abs(ref @ self.es - sa['S_tip_mm']) > self.tolerance or
+                    not np.allclose(current, selected['tip_contact_point_mm'], atol=self.tolerance, rtol=0)):
+                raise ValueError('Saved representative differs from its material edge interpolation')
+            if not np.isfinite(dt) or dt <= 0:
+                raise ValueError('Positive physical dt required for nose kinematics')
+            vm = weights @ (x[[a,b]]-previous[[a,b]]) / dt
+            branch_id = sa['branch_id']
+            parents = branches[branch_id]['parent_indices']
+            transition = 'acquired'
+            if before:
+                parent_id = before['branch_id']
+                if parent_id not in parents:
+                    transition = 'switched'
+                elif len(parents) != 1 or sum(parent_id in g['parent_indices'] for g in branches) != 1:
+                    transition = 'split_or_merge'
+                else:
+                    transition = 'continued'
+            sample = dict(reference_xy_mm=ref.tolist(), material_velocity_mm_s=vm.tolist(),
+                          branch_id=branch_id)
+            if 'blade_point_mm' in selected:
+                # Pull back the same point on the rigid nose facet, including for
+                # a rotating tool. The selected body weights are also held fixed.
+                arc = selected['nose_arc_mm']
+                j = np.clip(self.nose_length.searchsorted(arc)-1, 0, len(self.nose_nodes)-2)
+                u = (arc-self.nose_length[j])/(self.nose_length[j+1]-self.nose_length[j])
+                nodes = self.nose_nodes[j:j+2]
+                blade = (1-u)*x[nodes[0]] + u*x[nodes[1]]
+                if not np.allclose(blade, selected['blade_point_mm'], atol=self.tolerance, rtol=0):
+                    raise ValueError('Selected blade point differs from reference facet interpolation')
+                vb = np.array([1-u,u]) @ (x[nodes]-previous[nodes]) / dt
+                relative = vm-vb
+                gap = blade-current
+                normal = gap/np.linalg.norm(gap)
+                pair = np.array([normal[1],-normal[0]])
+                # The current material edge keeps its original increasing-S order,
+                # even after rotating through 90 degrees in laboratory coordinates.
+                left,right = self.top_edge_map[tuple(sorted((a,b)))]
+                edge = x[right]-x[left]
+                edge = edge/np.linalg.norm(edge)
+                direction = edge
+                if transition == 'continued' and before.get('pair_tangent') is not None:
+                    # Transport the prior oriented pair in the local material frame.
+                    old_edge = np.asarray(before['material_tangent'])
+                    old_pair = np.asarray(before['pair_tangent'])
+                    direction = ((old_pair @ old_edge)*edge +
+                                 (old_pair @ [-old_edge[1],old_edge[0]])*np.array([-edge[1],edge[0]]))
+                alignment = float(pair @ direction)
+                signed_pair = None if abs(alignment)<=1e-10 else pair*np.sign(alignment)
+                sample.update(blade_velocity_mm_s=vb.tolist(), relative_body_minus_tool_mm_s=relative.tolist(),
+                              material_tangent=edge.tolist(), relative_material_tangential_mm_s=float(relative @ edge),
+                              pair_tangent=None if signed_pair is None else signed_pair.tolist(),
+                              relative_tangential_mm_s=None if signed_pair is None else float(relative @ signed_pair))
+        return dict(branches=branches, selected_material=sample, selected_branch_transition=transition, dhat_mm=self.dhat)
 
     def observe_footprint(self, positions, depth_mm):
         """Measure original top-surface support across the entire rigid blade.
@@ -426,8 +675,23 @@ class TipContactTracker:
             nodes = [int(ordered[np.argmin(abs(offsets[ordered]-v))]) for v in limits]
             if nodes[0] != nodes[1]:
                 gauges[name] = nodes
+        # Integrate the linear shape functions on each clipped reference edge.
+        # The legacy node mean remains available for replay of older reports.
+        weights = {}
+        ss = self.s[self.edges] - self.origin
+        for name, (lo, hi) in ranges.items():
+            left = np.maximum(ss[:, 0], lo)
+            right = np.minimum(ss[:, 1], hi)
+            length = np.maximum(0., right - left)
+            midpoint_alpha = ((left + right) / 2 - ss[:, 0]) / (ss[:, 1] - ss[:, 0])
+            nodal = np.zeros(self.body_nodes)
+            np.add.at(nodal, self.edges[:, 0], length * (1 - midpoint_alpha))
+            np.add.at(nodal, self.edges[:, 1], length * midpoint_alpha)
+            ids = np.flatnonzero(nodal > 0)
+            weights[name] = dict(nodes=ids.tolist(), length_weights_mm=nodal[ids].tolist(),
+                                 covered_reference_mm=float(length.sum()))
         markers={}
-        for offset in (-2.,-1.,-.5,.5,1.,2.):
+        for offset in (-2.,-1.,-.5,-.25,-.1,-.05,0.,.05,.1,.25,.5,1.,2.):
             target=self.origin+offset
             if self.s[ordered[0]]<=target<=self.s[ordered[-1]]:
                 index=int(np.clip(np.searchsorted(self.s[ordered],target),1,len(ordered)-1))
@@ -435,6 +699,7 @@ class TipContactTracker:
                 markers[str(offset)]=dict(nodes=[int(i),int(j)],weight=float((target-self.s[i])/(self.s[j]-self.s[i])))
         return dict(fixed_offset_markers=markers,reference='undeformed material top', axes=dict(s=self.es.tolist(), n=self.en.tolist()),
                     roi_offset_ranges_mm=ranges, roi_nodes=rois, gauge_nodes=gauges,
+                    roi_reference_integrals=weights,
                     gauge_measure='Euclidean distance between fixed material endpoints divided by initial distance; not surface arclength',
                     roi_statistic='unweighted mean over fixed reference node IDs; mesh dependent')
 
@@ -455,11 +720,21 @@ class TipContactTracker:
             i,j=marker['nodes'];w=marker['weight']
             u=(1-w)*displacement[i]+w*displacement[j]
             positions[key]=(1-w)*x[i]+w*x[j]
-            points[key]=dict(u_s_mm=float(u@self.es),u_n_mm=float(u@self.en))
+            points[key]=dict(u_s_mm=float(u@self.es),u_n_mm=float(u@self.en),
+                lambda_s=float(np.linalg.norm(x[j]-x[i])/(self.s[j]-self.s[i])))
         stretches={name:float(np.linalg.norm(positions[str(b)]-positions[str(a)])/(b-a))
             for name,a,b in [('near',-.5,.5),('left',-2.,-1.),('right',1.,2.)]
             if str(a) in positions and str(b) in positions}
-        return dict(rois=rois,gauge_stretch=gauges,fixed_offset_points=points,fixed_offset_stretch=stretches)
+        integrals = {}
+        for name, rule in definition.get('roi_reference_integrals', {}).items():
+            lo, hi = definition['roi_offset_ranges_mm'][name]
+            if abs(rule['covered_reference_mm'] - (hi - lo)) > self.tolerance:
+                integrals[name] = None
+                continue
+            mean = np.asarray(rule['length_weights_mm']) @ displacement[rule['nodes']] / (hi - lo)
+            integrals[name] = dict(u_s_mm=float(mean @ self.es), u_n_mm=float(mean @ self.en))
+        return dict(rois=rois,gauge_stretch=gauges,fixed_offset_points=points,fixed_offset_stretch=stretches,
+                    reference_arclength_mean=integrals)
 
     def projection_continuity(self, previous, positions, prior_contact, contact):
         """Resolve fast crossings of adjacent reference edges on a geometric chord.

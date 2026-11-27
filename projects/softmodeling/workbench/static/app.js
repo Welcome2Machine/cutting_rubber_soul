@@ -78,7 +78,19 @@ document.querySelector(".diagnostic-card").addEventListener("toggle",drawDiagnos
 // Saved fields: no extrapolation, no nodal smoothing of element quantities.
 function selectedDataset(){return state.datasets.find(d=>d.id===state.fieldId);}
 function setupFields(){stopPlayback();const d=selectedDataset();$("field-quantity").replaceChildren();if(d?.frames.length){Object.entries(d.raw.field_info||{}).forEach(([key,info])=>option($("field-quantity"),key,`${info.label||key}${info.unit?` / ${info.unit}`:""}`));if(!$("field-quantity").options.length)Object.keys(d.frames[0].fields||{}).forEach(key=>option($("field-quantity"),key,key));$("frame-slider").max=d.frames.length-1;$("frame-slider").value=0;$("field-empty").hidden=true;$("field-content").hidden=false;requestAnimationFrame(drawField);}else{$("field-empty").hidden=false;$("field-content").hidden=true;}}
-$("field-dataset").addEventListener("change",()=>{state.fieldId=$("field-dataset").value;setupFields();});["field-quantity","field-view","show-mesh","range-min","range-max"].forEach(id=>$(id).addEventListener("change",drawField));$("frame-slider").addEventListener("input",drawField);
+$("field-dataset").addEventListener("change",()=>{
+  const depth=selectedDataset()?.frames[Number($("frame-slider").value)]?.depth_mm;
+  const quantity=$("field-quantity").value;
+  state.fieldId=$("field-dataset").value;
+  setupFields();
+  const frames=selectedDataset()?.frames;
+  if(frames?.length && finite(depth)){
+    $("frame-slider").value=frames.reduce((best,f,i)=>Math.abs(f.depth_mm-depth)<Math.abs(frames[best].depth_mm-depth)?i:best,0);
+  }
+  if(selectedDataset()?.raw.field_info?.[quantity])$("field-quantity").value=quantity;
+  drawField();
+});
+["field-quantity","field-view","show-mesh","range-min","range-max"].forEach(id=>$(id).addEventListener("change",drawField));$("frame-slider").addEventListener("input",drawField);
 const palette=[[68,1,84],[59,82,139],[33,145,140],[94,201,98],[253,231,37]];
 function color(value,min,max){if(!finite(value))return"#d2d5cd";const u=Math.min(1,Math.max(0,(value-min)/(max-min||1)))*(palette.length-1),i=Math.min(palette.length-2,Math.floor(u)),t=u-i;return`rgb(${palette[i].map((v,j)=>Math.round(v+(palette[i+1][j]-v)*t)).join(",")})`;}
 function scalarRange(d,key){const info=d.raw.field_info?.[key];if(Array.isArray(info?.range)&&info.range.length===2&&info.range.every(finite))return info.range;let lo=Infinity,hi=-Infinity;d.frames.forEach(f=>(f.fields?.[key]||[]).forEach(v=>{if(finite(v)){lo=Math.min(lo,v);hi=Math.max(hi,v);}}));return finite(lo)&&finite(hi)?[lo,hi]:[0,1];}
@@ -107,13 +119,21 @@ function drawField() {
   const info=d.raw.field_info?.[key]||{}, {ctx,width:w,height:h}=canvasSize($("field-canvas"));
   ctx.fillStyle="#f7f9f5"; ctx.fillRect(0,0,w,h);
   if (!positions.length || !triangles.length) return;
-  const [xmin,xmax,zmin,zmax]=fieldBounds(d)[$("field-view").value];
+  const pole=frame.tip_contact?.knife_tip_mm || (blade.length?blade.reduce((a,b)=>a[1]<b[1]?a:b):null);
+  const view=$("field-view").value;
+  const limits=view==="follow" && pole ? [pole[0]-.35,pole[0]+.35,pole[1]-.32,pole[1]+.24] : fieldBounds(d)[view==="follow"?"tip":view];
+  const [xmin,xmax,zmin,zmax]=limits;
   const scale=Math.min((w-60)/(xmax-xmin||1),(h-90)/(zmax-zmin||1));
   const left=(w-scale*(xmax-xmin))/2, top=22+(h-90-scale*(zmax-zmin))/2;
   const px=x=>left+(x-xmin)*scale, py=z=>top+(zmax-z)*scale;
   const [actualLo,actualHi]=scalarRange(d,key);
   let lo=$("range-min").value===""?actualLo:Number($("range-min").value);
   let hi=$("range-max").value===""?actualHi:Number($("range-max").value);
+  if(d.raw.metadata.reference_roi){
+    const ranges=state.datasets.filter(other=>other.raw.metadata?.reference_roi && other.raw.field_info?.[key]).map(other=>other.raw.field_info[key].range);
+    if($("range-min").value==="")lo=Math.min(...ranges.map(r=>r[0]));
+    if($("range-max").value==="")hi=Math.max(...ranges.map(r=>r[1]));
+  }
   if(!finite(lo)||!finite(hi)||lo>hi){lo=actualLo;hi=actualHi;}
   const customRange=lo!==actualLo||hi!==actualHi;
   ctx.save(); ctx.beginPath();
@@ -135,6 +155,19 @@ function drawField() {
     ctx.beginPath();blade.forEach((p,i)=>i?ctx.lineTo(px(p[0]),py(p[1])):ctx.moveTo(px(p[0]),py(p[1])));
     ctx.closePath();ctx.fillStyle="#9ba7a2";ctx.fill();ctx.strokeStyle="#3d5146";ctx.lineWidth=1.2;ctx.stroke();
   }
+  const row=d.series[frame.index], sa=row?.sliding_amount;
+  if(sa){
+    for(const candidate of sa.branch_candidates||[]){
+      const point=candidate.representative.tip_contact_point_mm;
+      ctx.beginPath();ctx.arc(px(point[0]),py(point[1]),4,0,2*Math.PI);
+      ctx.strokeStyle="#e68900";ctx.lineWidth=2;ctx.stroke();
+    }
+    if(sa.selected){
+      const point=sa.selected.tip_contact_point_mm;
+      ctx.beginPath();ctx.arc(px(point[0]),py(point[1]),2.5,0,2*Math.PI);
+      ctx.fillStyle="#a00074";ctx.fill();
+    }
+  }
   ctx.restore();
   // Annotations are part of the canvas, so PNG and WebM retain scientific context.
   ctx.fillStyle="#fffffff0";ctx.fillRect(12,12,Math.min(360,w-24),67);
@@ -152,6 +185,19 @@ function drawField() {
   ctx.textAlign="center";ctx.fillText(`${fmt(ruler,2)} mm`,rx+ruler*scale/2,ry-6);
   $("field-overlay").hidden=true;
   $("frame-label").textContent=`${fmt(frame.depth_mm,4)} mm | ${index+1}/${d.frames.length}`;
+  const readout=$("state-readout");
+  readout.hidden=!sa;
+  if(sa){
+    const bands=sa.SA_intervals_mm.map(([a,b])=>`[${fmt(1000*a,3)}, ${fmt(1000*b,3)}]`).join(" ∪ ");
+    const value=sa.SA_signed_mm==null?"无合格单值":`${fmt(1000*sa.SA_signed_mm,4)} µm`;
+    readout.textContent=`Fz ${fmt(row.fz_N,5)} N · Fx ${fmt(row.fy_N,5)} N · t ${fmt(row.time_s,4)} s · Δt ${fmt(row.dt_s,5)} s\nSA ${value} · ${sa.status} · S₀ ${fmt(sa.S_landing_mm,4)} mm\n几何候选区间 (µm) ${bands || "无"} · 橙圈为各分支代表，紫点为选中地址\n残差 ${row.residual_N.toExponential(3)} N · ${row.state_file} · SHA256 ${row.state_sha256}`;
+    if(row.tip_contact_status) readout.textContent+=`\n严格极点 ${row.tip_contact_status}`;
+    const support=row.nose_support, sample=support?.selected_material;
+    if(support?.selected_branch_transition){
+      readout.textContent+=` · 分支 ${support.selected_branch_transition}`;
+      if(sample?.relative_tangential_mm_s!=null) readout.textContent+=` · 材料相对刀具切向速度 ${fmt(1000*sample.relative_tangential_mm_s,4)} µm/s`;
+    }
+  }
   $("field-min").textContent=fmt(lo,4);$("field-max").textContent=fmt(hi,4);$("field-unit").textContent=info.unit||"";
   const association=info.association==="node"?"节点量以三角形三节点均值着色":"单元常值，未做节点平滑";
   $("field-description").textContent=`${association}。全部导出帧实际范围：[${fmt(actualLo,4)}, ${fmt(actualHi,4)}] ${info.unit||""}。${customRange?"超出显示范围的值使用端点颜色，实际数值保持。":""}固定观察范围和色标，不放大位移；播放时间不等于物理时间。`;
@@ -163,4 +209,14 @@ $("record-animation").addEventListener("click",async()=>{if(state.recording)retu
 function drawAll(){drawPlots();drawField();}
 let resizeTimer;window.addEventListener("resize",()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(drawAll,100);});
 async function init(){try{const catalog=await api("/api/catalog");state.catalog=catalog;populateCatalog("materials");populateCatalog("blades");$("mesh-preset").replaceChildren();Object.entries(catalog.mesh_presets||{}).forEach(([key,p])=>option($("mesh-preset"),key,p.label||({standard:"标准 / 当前参考离散",coarse:"较粗 / 快速探索，需精度对照",fine:"细化 / 局部加密，成本更高"}[key]||key)));option($("mesh-preset"),"custom","自定义离散");applyConfig(catalog.defaults);$("server-state").textContent="本地服务已连接";$("server-dot").classList.add("online");await Promise.allSettled([refreshRuns(),refreshSaved()]);}catch(e){$("server-state").textContent="离线结果查看";notice("未连接本地计算服务。可继续导入结果 JSON；启动计算需运行本仓库的工作台服务。",true);$("validate-config").disabled=true;refreshSaved();}}
-init();
+const offline=document.querySelectorAll("script.softcut-replay");
+if(offline.length){
+  $("server-state").textContent="离线有限元回放";
+  document.querySelector(".page-heading h1").textContent="无断裂压入 · 已审查状态回放";
+  document.querySelector(".page-heading .lede").textContent="固定原始材料区：落点前后各 0.5 mm、表面以下 0.5 mm。几何比例 1×。";
+  document.querySelectorAll(".tabs, .page-heading a, .local-export, footer a").forEach(n=>n.hidden=true);
+  $("result-import").closest("section").hidden=true;
+  $("result-workspace").prepend(document.querySelector(".field-card"));
+  $("field-view").value="follow";
+  for(const tag of offline){addDataset(JSON.parse(tag.textContent),"已审查 FE");tag.remove();}
+}else init();

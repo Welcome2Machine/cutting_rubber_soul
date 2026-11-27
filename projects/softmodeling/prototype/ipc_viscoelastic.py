@@ -67,8 +67,10 @@ class ViscoelasticProblem(IPCProblem):
         if not isinstance(size,int) or size<0:
             raise ValueError('Material batch size must be a nonnegative integer')
         if not size or size>=len(F):
-            return response(F,self.previous_material_metric,self.material_dt,self.material,
-                            tangent=tangent,kinematics='plane_strain')
+            def compute():
+                return response(F,self.previous_material_metric,self.material_dt,self.material,
+                                tangent=tangent,kinematics='plane_strain')
+            return self._audit_response(F,tangent=tangent,kinematics='plane_strain',compute=compute)
         batches=[response(F[i:i+size],self.previous_material_metric[i:i+size],
                     self.material_dt,self.material,tangent=tangent,kinematics='plane_strain')
                  for i in range(0,len(F),size)]
@@ -219,10 +221,12 @@ class ViscoelasticProblem(IPCProblem):
                     blade_absolute_reconstruction_difference_mm=float(
                         np.max(np.abs(positions[self.n:]-expected_blade))))
             if self.enforce_physical_chord:
-                fraction = float(self.safe_step(self.previous, positions-self.previous))
+                proof = self.physical_chord_certificate(self.previous, positions)
+                fraction = proof['safe_fraction']
                 safe = bool(np.isfinite(fraction) and fraction >= 1.)
                 result.update(passed=safe, endpoint_passed=True, trajectory_passed=safe,
-                              physical_chord_safe_fraction=fraction)
+                              physical_chord_safe_fraction=fraction,
+                              physical_chord_segments_checked=proof['checked_segments'])
             return result
         finally:
             self.friction,self.friction_smoothing_mm=before_friction

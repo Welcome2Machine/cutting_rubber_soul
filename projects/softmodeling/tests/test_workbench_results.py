@@ -54,6 +54,23 @@ def manufactured_case(path):
     return path
 
 
+def test_shape_quality_separates_shear_from_uniform_compression():
+    reference = np.array([[[0., 0.], [1., 0.], [.5, np.sqrt(3)/2]]])
+    shear = np.array([[1., 2.], [0., 1.]])
+    for scale in (1., .2):
+        shape = postprocess.triangle_shape(reference*scale)
+        np.testing.assert_allclose(shape['q'], [1.])
+        np.testing.assert_allclose(shape['min_angle_deg'], [60.])
+    assert np.linalg.det(shear) == 1
+    assert postprocess.triangle_shape(reference @ shear.T)['q'][0] < .6
+
+
+def test_dense_export_requires_a_source_bound_independent_audit(tmp_path):
+    source = manufactured_case(tmp_path/'case')
+    with pytest.raises(ValueError, match='authenticated audit prefix'):
+        export_case(source, tmp_path/'view', dense_roi=True)
+
+
 def test_affine_isochoric_fields_have_known_stress_and_strain():
     x = X @ np.diag([2., .5])
     fields, energy, areas = saved_state_fields(X, x, TRI, np.eye(3)[None], MATERIAL)

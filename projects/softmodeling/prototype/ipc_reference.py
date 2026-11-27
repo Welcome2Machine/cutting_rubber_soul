@@ -111,6 +111,39 @@ def determinant_step(F, D):
     return min(1.0, BASELINE["determinant_step_safety"] * minimum)
 
 
+def weighted_collisions(ipc, collision_mesh, surface_positions, dhat):
+    """The same area-weighted collision set for production and independent contact fixtures."""
+    contacts = ipc.NormalCollisions()
+    contacts.use_area_weighting = True
+    contacts.collision_set_type = ipc.NormalCollisions.IMPROVED_MAX_APPROX
+    contacts.build(collision_mesh, surface_positions, dhat)
+    return contacts
+
+
+def boundary_balance(positions, gradient, body_nodes, free_dofs, origin, friction_couple=0.0):
+    """External actuator/support loads at their current constrained nodal positions, in N and N mm."""
+    x = np.asarray(positions) - origin
+    force = np.asarray(gradient).reshape(-1, 2)
+    body = force[:body_nodes].copy()
+    body.ravel()[free_dofs] = 0.
+    tool = force[body_nodes:]
+
+    def moment(points, forces):
+        return float(np.sum(points[:, 0]*forces[:, 1] - points[:, 1]*forces[:, 0]))
+
+    support_moment = moment(x[:body_nodes], body)
+    actuator_moment = moment(x[body_nodes:], tool)
+    free_force = force[:body_nodes] - body
+    worst = int(np.argmax(np.linalg.norm(free_force, axis=1)))
+    return dict(support_on_body_N=body.sum(axis=0).tolist(), actuator_on_tool_N=tool.sum(axis=0).tolist(),
+                support_moment_Nmm=support_moment, actuator_moment_Nmm=actuator_moment,
+                net_external_force_N=(body.sum(axis=0)+tool.sum(axis=0)).tolist(),
+                net_external_moment_Nmm=support_moment+actuator_moment,
+                friction_couple_at_current_nodes_Nmm=float(friction_couple),
+                free_L2_N=float(np.linalg.norm(free_force)), max_free_node_N=float(np.linalg.norm(free_force[worst])),
+                max_free_node=worst, moment_origin_xy_mm=np.asarray(origin).tolist())
+
+
 class IPCProblem:
     def __init__(
         self,
@@ -137,7 +170,7 @@ class IPCProblem:
         blade_spacing=None,
         blade_thickness=None,
         blade_angle=None, blade_shape=None,
-        coarse_spacing=None,
+        coarse_spacing=None, contact_layer_depth=0., reference_layout=None, size_gradient=.4,
         drop_s=None, preparation_clearance_mm=None,
         friction_smoothing_mm=BASELINE["friction_smoothing_mm"],
         enforce_physical_chord=False,
@@ -205,6 +238,8 @@ class IPCProblem:
                                if k in GeometryOptions.__dataclass_fields__}),
             refinement_mm=local_spacing,
             surface_spacing_mm=surface_spacing,
+            contact_layer_depth_mm=contact_layer_depth,
+            reference_layout=reference_layout, size_gradient=size_gradient,
             tip_radius_mm=tip_radius,
         )
         self.element = "p1"
@@ -310,11 +345,7 @@ class IPCProblem:
                     force_limit_n=BASELINE['force_tolerance_n'])
 
     def collisions(self, x):
-        c = self.ipc.NormalCollisions()
-        c.use_area_weighting = True
-        c.collision_set_type = self.ipc.NormalCollisions.IMPROVED_MAX_APPROX
-        c.build(self.cmesh, x[self.surface], self.dhat)
-        return c
+        return weighted_collisions(self.ipc, self.cmesh, x[self.surface], self.dhat)
 
     def lag(self, x):
         if self.config.friction_coefficient == 0:
@@ -465,6 +496,7 @@ class IPCProblem:
             from .linear_solve import ReusedLUSolver
             linear = ReusedLUSolver()
         for iteration in range(self.max_iterations+1):
+            if getattr(self,'queue_checkpoint',None):self.queue_checkpoint()
             if time.monotonic() > deadline:
                 raise TimeoutError("IPC friction pseudo-transient wall budget")
             self.trial = x.copy()
@@ -691,6 +723,10 @@ class IPCProblem:
             self.step_increment(x)[self.surface]).reshape(-1, 2) if lag is not None
             else np.zeros((len(self.surface), 2)))
         friction_fz = float(-friction_gradient[self.surface >= self.n, 1].sum())
+        origin = local_to_lab(np.array([[self.config.drop_s_mm, self.config.height_mm]]), self.config)[0]
+        arm = x[self.surface] - origin
+        friction_couple = np.sum(arm[:,0]*friction_gradient[:,1] - arm[:,1]*friction_gradient[:,0])
+        balance = boundary_balance(x, g, self.n, self.free, origin, friction_couple)
         adjacent = []
         for stencil in c.vv_collisions:
             pair = tuple(sorted((stencil.vertex0_id, stencil.vertex1_id)))
@@ -700,11 +736,14 @@ class IPCProblem:
                               for s in adjacent)
         return dict(depth_mm=depth, reaction_fz_n=float(-g.reshape(-1, 2)[self.n:, 1].sum()),
                     reaction_x_n=float(-g.reshape(-1, 2)[self.n:, 0].sum()),
-                    residual_n=norm, min_j=minj,
+                    residual_n=norm, min_j=minj, boundary_balance=balance,
                     minimum_distance_mm=distance if np.isfinite(distance) else None,
                     iterations=iterations, friction_outer_iterations=outer_iterations,
                     friction_globalization=self.friction_globalization if lag is not None else None,
                     friction_work_n_mm=dissipation, energy_n_mm=E,
+                    barrier_energy_n_mm=float(self.barrier(c,self.cmesh,x[self.surface])),
+                    reaction_normal_fx_n=float(-normal_gradient[self.surface >= self.n,0].sum()),
+                    reaction_friction_fx_n=float(-friction_gradient[self.surface >= self.n,0].sum()),
                     reaction_normal_fz_n=normal_fz, reaction_friction_fz_n=total_fz-normal_fz,
                     reaction_friction_assembled_fz_n=friction_fz,
                     reaction_component_closure_n=total_fz-normal_fz-friction_fz,
@@ -857,12 +896,42 @@ class IPCProblem:
               fresh_residual_N=best_norm, accepted_history_states=len(history)), sort_keys=True), flush=True)
         return best
 
+    def physical_chord_certificate(self, start, end):
+        """Certify the same linear physical path using bounded geometric subdivision."""
+        whole = float(self.safe_step(start, end-start))
+        certificate = dict(safe_fraction=whole, initial_safe_fraction=whole, checked_segments=1)
+        if not np.isfinite(whole) or whole <= 0. or whole >= 1.:
+            return certificate
+
+        # A conservative CCD bound can stop short of a separated endpoint. Every
+        # interval must independently earn a full CCD and determinant certificate.
+        # Intermediate positions introduce no material steps or contact history.
+        delta = end-start
+        pending = [(.5, 1., 1), (0., .5, 1)]
+        while pending:
+            lo, hi, level = pending.pop()
+            left = start if lo == 0. else start+lo*delta
+            right = end if hi == 1. else start+hi*delta
+            fraction = float(self.safe_step(left, right-left))
+            certificate['checked_segments'] += 1
+            if fraction >= 1. and np.isfinite(fraction):
+                continue
+            if not np.isfinite(fraction) or fraction <= 0. or level >= 6:
+                certificate.update(safe_fraction=lo, unresolved_interval=[lo, hi],
+                                   unresolved_segment_fraction=fraction)
+                return certificate
+            mid = (lo+hi)/2
+            pending.extend(((mid, hi, level+1), (lo, mid, level+1)))
+        certificate['safe_fraction'] = 1.
+        return certificate
+
     def _check_accepted_physical_chord(self, x, accepted):
         """Opt-in gate before predictor/material/damage commits, not an audit hook."""
         if not self.enforce_physical_chord:
             return
-        fraction = float(self.safe_step(self.previous, x-self.previous))
-        accepted['physical_chord'] = dict(enforced=True, safe_fraction=fraction)
+        proof = self.physical_chord_certificate(self.previous, x)
+        accepted['physical_chord'] = dict(enforced=True, **proof)
+        fraction = proof['safe_fraction']
         if not np.isfinite(fraction) or fraction < 1.:
             raise LoadStepFailure(f'Physical loading chord unsafe: fraction={fraction:.17g}')
 
@@ -881,6 +950,7 @@ class IPCProblem:
         iterations = 0
         lag = None
         for inner in range(self.max_iterations):
+            if getattr(self,'queue_checkpoint',None):self.queue_checkpoint()
             self.trial = x.copy()
             if time.monotonic() > deadline:
                 raise TimeoutError("IPC reference wall budget")

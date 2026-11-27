@@ -34,7 +34,93 @@ def place_pole(tracker, reference, body_nodes, point):
     return x
 
 
+
+def prescribed_address_observations():
+    """Translate a circular nose across a stretched material surface, then rotate the entire scene."""
+    rows=[]
+    samples=[1.71,1.94,2.,2.07,2.34]
+    for h in (.25,.125,.0625):
+        tracker,ref,_,n,_=fixture(grid=tuple(np.arange(0.,4.+h/2,h)),dhat=.01)
+        stretch=1.25;gap=.003;radius=.2
+        true_half=np.sqrt((radius+.01)**2-(radius+gap)**2)/stretch
+        for theta in (0.,.58,.99):
+            Q=np.array([[np.cos(theta),-np.sin(theta)],[np.sin(theta),np.cos(theta)]])
+            for s in samples:
+                x=ref.copy();x[:n,0]=stretch*ref[:n,0]+.3
+                x=place_pole(tracker,x,n,[stretch*s+.3,1+gap])
+                x=x@Q.T + [1.4,-.7]
+                contact=tracker.observe(x,.1)
+                native=dict(edge_nodes=contact['edge_nodes'],edge_alpha=contact['edge_alpha'],
+                    nose_arc_mm=tracker.anchor_arc,tip_contact_point_mm=contact['current_point_mm'],
+                    blade_point_mm=x[tracker.tip_node].tolist(),gap_mm=gap)
+                sa=tracker.sliding_amount(x,contact,[native])
+                intervals=sa['SA_intervals_mm'];expected=s-2.
+                assert len(intervals)==1 and sa['status']=='native_nose_contact'
+                rows.append(dict(h_mm=h,rotation_rad=theta,reference_S_mm=s,expected_SA_mm=expected,
+                    observed_SA_mm=sa['SA_signed_mm'],observed_interval_mm=intervals[0],
+                    ideal_circle_interval_mm=[expected-true_half,expected+true_half],
+                    address_error_um=1000*abs(sa['SA_signed_mm']-expected),
+                    set_Hausdorff_um=1000*max(abs(np.array(intervals[0])-[expected-true_half,expected+true_half]))))
+    return rows
+
 class CapsuleIntervalTests(unittest.TestCase):
+    def test_manufactured_address_and_circle_interval_cross_element_boundaries(self):
+        rows=prescribed_address_observations()
+        self.assertLess(max(r['address_error_um'] for r in rows),1.e-8)
+        self.assertLess(max(r['set_Hausdorff_um'] for r in rows),2.)
+
+
+    def test_reference_integrals_and_landing_marker_survive_redistribution(self):
+        for grid in ((0., 1., 2., 3., 4.), (0., .2, 1.1, 1.8, 1.85, 2.7, 3.4, 4.)):
+            tracker, ref, _, n, _ = fixture(grid=grid)
+            x = ref.copy()
+            x[:n, 0] += .3*tracker.s+.2
+            values = tracker.fixed_material_motion(x, tracker.fixed_material_definition())
+            self.assertAlmostEqual(values['reference_arclength_mean']['left_near']['u_s_mm'], .65)
+            self.assertAlmostEqual(values['fixed_offset_points']['0.0']['u_s_mm'], .8)
+
+    def test_support_evidence_preserves_disconnected_branches_and_same_material_velocity(self):
+        tracker, ref, _, n, _ = fixture()
+        x = place_pole(tracker, ref, n, [2.3, 1.005])
+        contact = tracker.observe(x, .1)
+        row = dict(edge_nodes=contact['edge_nodes'], edge_alpha=contact['edge_alpha'],
+                   tip_contact_point_mm=contact['current_point_mm'], nose_arc_mm=tracker.anchor_arc, gap_mm=.005)
+        sa = tracker.sliding_amount(x, contact, [row])
+        sa['S_tip_intervals_mm'] = [[1., 1.2], [2.2, 2.4]]
+        sa['branch_id'] = 1
+        previous = x.copy()
+        previous[:n, 0] -= .05
+        evidence = tracker.nose_support_evidence(sa, [row], x, previous, .5, [[.9, 2.5]])
+        self.assertEqual([b['parent_indices'] for b in evidence['branches']], [[0], [0]])
+        self.assertEqual(evidence['branches'][0]['native_S_mm'], [])
+        np.testing.assert_allclose(evidence['branches'][1]['native_S_mm'], [2.3])
+        np.testing.assert_allclose(evidence['selected_material']['material_velocity_mm_s'], [.1, 0])
+
+    def test_pair_tangent_follows_original_edge_through_vertical(self):
+        tracker, ref, _, n, _ = fixture()
+        prior = None
+        for degrees in (89.,91.):
+            phi = np.deg2rad(degrees)
+            edge = np.array([np.cos(phi), np.sin(phi)])
+            center = np.array([2.,1.])
+            nodes = tracker.top_node_edge[5]
+            x = ref.copy()
+            x[nodes] = center + np.array([[-.5],[.5]])*edge
+            x = place_pole(tracker, x, n, center + .005*np.array([-edge[1], edge[0]]))
+            old = x.copy()
+            old[:n] -= [.01,.03]
+            row = dict(edge_nodes=nodes.tolist(), edge_alpha=.5, nose_arc_mm=tracker.anchor_arc,
+                       tip_contact_point_mm=center.tolist(), blade_point_mm=x[tracker.tip_node].tolist())
+            sa = dict(S_tip_intervals_mm=[[2.,3.]], selected=row, S_tip_mm=2.5, branch_id=0)
+            evidence = tracker.nose_support_evidence(sa, [row], x, old, .5, [[2.,3.]], prior)
+            sample = evidence['selected_material']
+            np.testing.assert_allclose(sample['pair_tangent'], edge, atol=1e-12)
+            np.testing.assert_allclose(sample['relative_body_minus_tool_mm_s'], [.02,.06], atol=1e-12)
+            self.assertEqual(evidence['selected_branch_transition'], 'continued' if prior else 'acquired')
+            prior = evidence
+        switched = tracker.nose_support_evidence(sa, [row], x, old, .5, [[1.,1.5]], prior)
+        self.assertEqual(switched['selected_branch_transition'], 'switched')
+
     def test_idealized_blades_use_the_full_outline_and_fixed_pole(self):
         from dataclasses import replace
         from prototype.model_config import FEMConfig, _rotation_vectors
@@ -81,6 +167,31 @@ class CapsuleIntervalTests(unittest.TestCase):
         invalid=refined.copy();invalid[-1]+=[.1,.2]
         with self.assertRaisesRegex(ValueError,'Extra blade nodes'):
             TipContactTracker(invalid,triangles,n,config,.01,64)
+
+    def test_nose_address_uses_reference_length_and_fixed_landing(self):
+        tr,ref,_,n,_ = fixture()
+        x = place_pole(tr,ref,n,[2.3,1.005])
+        pole = tr.observe(x,.1)
+        row = dict(edge_nodes=pole['edge_nodes'],edge_alpha=pole['edge_alpha'],
+                   nose_arc_mm=tr.anchor_arc,gap_mm=.005)
+        sa = tr.sliding_amount(x,pole,[row])
+        self.assertAlmostEqual(sa['S_tip_mm'],2.3)
+        self.assertAlmostEqual(sa['SA_signed_mm'],.3)
+        stretched=x.copy()
+        stretched[:,0]*=1.25
+        other=tr.sliding_amount(stretched,tr.observe(stretched,.1),[row])
+        self.assertAlmostEqual(other['SA_signed_mm'],.3)
+        self.assertIsNone(tr.sliding_amount(x,pole)['SA_signed_mm'])
+        self.assertIsNotNone(tr.sliding_amount(x,pole)['proximity_estimate'])
+
+    def test_disjoint_support_has_no_scalar_and_preserves_signed_ranges(self):
+        tr,x,_,_,_=fixture()
+        contact=dict(nose_reference_intervals_mm=[[1.8,1.9],[2.1,2.2]],
+                     nose_offset_intervals_mm=[[-.2,-.1],[.1,.2]])
+        sa=tr.sliding_amount(x,contact)
+        self.assertIsNone(sa['S_tip_mm'])
+        self.assertEqual(sa['status'],'ambiguous_material_branches')
+        self.assertEqual(sa['SA_intervals_mm'],contact['nose_offset_intervals_mm'])
 
     def test_small_contact_in_middle_of_long_edge(self):
         a, b = np.array([-10., .05]), np.array([10., .05])

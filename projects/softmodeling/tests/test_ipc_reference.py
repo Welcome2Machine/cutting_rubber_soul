@@ -32,6 +32,25 @@ class DeterminantPathTests(unittest.TestCase):
         self.assertGreater(np.linalg.det(F + D)[0], 0)
         self.assertAlmostEqual(determinant_step(F, D), 0.9 / 4)
 
+    def test_physical_chord_covers_every_subinterval_and_rejects_crossings(self):
+        p = object.__new__(IPCProblem)
+        start, end = np.array([0.]), np.array([1.])
+        def limited(x, delta):
+            return 1. if delta[0] <= .125 else .9
+        p.safe_step = limited
+        proof = p.physical_chord_certificate(start, end)
+        self.assertEqual(proof['safe_fraction'], 1.)
+        self.assertEqual(proof['checked_segments'], 15)
+        for crossing in (.031, .911):
+            def unsafe(x, delta):
+                if x[0] <= crossing <= x[0]+delta[0]:
+                    return .9*(crossing-x[0])/delta[0]
+                return limited(x, delta)
+            p.safe_step = unsafe
+            self.assertLessEqual(p.physical_chord_certificate(start, end)['safe_fraction'], crossing)
+        p.safe_step = lambda x,d: float('nan')
+        self.assertTrue(np.isnan(p.physical_chord_certificate(start, end)['safe_fraction']))
+
     def test_linear_double_root_and_no_root(self):
         F = np.eye(2)[None]
         for D, expected in ((np.diag([-2.0, 0.0]), 0.45), (-2 * np.eye(2), 0.45), (np.eye(2), 1.0)):
@@ -39,6 +58,39 @@ class DeterminantPathTests(unittest.TestCase):
 
 
 class BaselineCommandTests(unittest.TestCase):
+    def test_subsurface_layer_keeps_original_contact_and_support_boundaries(self):
+        from dataclasses import replace
+        from prototype.geometry import GeometryOptions, intact_mesh
+        from prototype.model_config import FEMConfig
+        cfg = replace(FEMConfig(),length_mm=4.,height_mm=1.,drop_s_mm=2.,mesh_size_mm=.4,max_indentation_mm=.5)
+        options = GeometryOptions(refinement_mm=.1,surface_spacing_mm=.02,mesh_grading='graded')
+        old,_ = intact_mesh(cfg,options,fine_halfwidth_mm=.8)
+        fine,_ = intact_mesh(cfg,replace(options,contact_layer_depth_mm=.08),fine_halfwidth_mm=.8)
+        def boundary(mesh):
+            sn = mesh.local_sn
+            return sn[(sn[:,0]==0)|(sn[:,0]==4)|(sn[:,1]==0)|(sn[:,1]==1)]
+        np.testing.assert_array_equal(boundary(old),boundary(fine))
+        self.assertGreater(len(fine.triangles), len(old.triangles))
+
+    def test_reference_layout_balances_mapped_shapes_without_moving_the_boundary(self):
+        from prototype.geometry import optimize_reference_layout, relocate_reference_nodes
+        from workbench.results import triangle_shape
+        sn = np.array([[0., 0.], [1., 0.], [1., 1.], [0., 1.], [.25, .46]])
+        tri = np.array([[0, 1, 4], [1, 2, 4], [2, 3, 4], [3, 0, 4]])
+        shear = np.array([[1., 0.], [.3, 1.]])
+        layout = optimize_reference_layout(sn, tri, [sn @ shear], [4], .15)
+        fitted = relocate_reference_nodes(sn, tri, layout)
+        np.testing.assert_array_equal(fitted[:4], sn[:4])
+        def worst(coords):
+            return min(triangle_shape(x[tri])['q'].min() for x in (coords, coords @ shear))
+        self.assertGreater(worst(fitted), worst(sn))
+        with self.assertRaisesRegex(ValueError, 'parent mesh'):
+            relocate_reference_nodes(sn, tri[::-1], layout)
+        with self.assertRaisesRegex(ValueError, 'boundary'):
+            relocate_reference_nodes(sn, tri, dict(layout, node_ids=[0]))
+        with self.assertRaisesRegex(ValueError, 'invert or collapse'):
+            relocate_reference_nodes(sn, tri, dict(layout, local_sn_mm=[[1., 1.]]))
+
     def test_unlimited_wall_budget_is_explicit_and_negative_is_rejected(self):
         with tempfile.TemporaryDirectory() as folder:
             self.assertEqual(parse_args(['--output',folder,'--seconds','0']).seconds, 0)
@@ -140,6 +192,25 @@ class NativeIPCTests(unittest.TestCase):
         unchanged, _, shift = regularize_curvature(metric, metric)
         self.assertEqual(shift, 0.)
         np.testing.assert_allclose(unchanged.toarray(), metric.toarray(), atol=1e-12)
+
+
+    def test_external_balance_uses_constrained_components_and_actual_lever_arms(self):
+        from prototype.ipc_reference import boundary_balance
+        x=np.array([[0.,0.],[1.,0.],[1.,2.]])
+        g=np.array([[0.,-3.],[.00003,.00004],[0.,3.]])
+        b=boundary_balance(x,g,2,np.array([2,3]),np.array([0.,0.]))
+        np.testing.assert_allclose(b['net_external_force_N'],[0.,0.])
+        self.assertAlmostEqual(b['net_external_moment_Nmm'],3.)
+        self.assertAlmostEqual(b['free_L2_N'],.00005)
+        self.assertEqual(b['max_free_node'],1)
+
+    def test_weighted_native_line_contact_against_plane_strain_halfspace(self):
+        from tools.verify_intact_numerics import hertz_case, friction_reference
+        q=hertz_case(.0125,1.,dhat=.000125,tool_h=.0125)
+        self.assertLess(q['force_relative'],.02)
+        self.assertLess(q['halfwidth_relative']+q['support_resolution_half_interval_mm'],.02)
+        self.assertLess(q['pressure_relative_L2'],.02)
+        self.assertLess(max(v['normalized_error'] for v in friction_reference()),1.e-9)
 
     def test_unprojected_hessian_matches_force_derivative(self):
         p = IPCProblem('patch', hessian_mode='hybrid')
@@ -322,6 +393,9 @@ class NativeIPCTests(unittest.TestCase):
         alpha = p.safe_step(x, v)
         self.assertGreater(alpha, 0)
         self.assertLess(alpha, 0.21)
+        proof = p.physical_chord_certificate(x, x+v)
+        self.assertLess(proof['safe_fraction'], .21)
+        self.assertLessEqual(proof['unresolved_interval'][0], .21)
         self.assertFalse(p.ipc.has_intersections(p.cmesh, (x + alpha * v)[p.surface]))
 
     def test_runner_records_acceptance_and_failure_without_false_success(self):

@@ -1,14 +1,7 @@
-# 本地基线 agent：本轮不接新任务
+# 本地 agent：暂停新增任务
 
-更新：2026-11-16（日本时间）。用户指定**基线修复和迁移／变形／滑移任务交服务器执行，不给本地做**。
-本地此前fine/coarse已在`a39ce7fcff79aa10a5f3b3b2d7353799b40c6e6e`交付；
-原始证据包实收与负责人独立核验仍分别记录，不能因文字推送就升级验收。
+2026-11-27，用户将当前无断裂数值完善任务转交服务器。现行分工以 [唯一任务书](research_prototype_task.md) 为准，服务器使用 `codex/deformation-sliding-baseline`。
 
-本轮不新增FE、刀具路径、拟合、代码修改或重复打包。保留原工作区、暂存/未提交项、
-两条完整状态链和现成`runs/baseline_handoff_20261031/cross_end_alignment/delivery.zip`，
-不为清洁删除用户工作。其他另有授权的活跃任务不受此入口擅自中断。
+保留本地源码、运行库、未提交修改、完整接受历史、失败现场及实验原始文件。本轮不要求本地新增计算、重新打包或提供额外交接；已公开的 Release 与源码补丁是服务器可独立取得的起点。不得为清洁删除唯一数据或中断其他获授权任务。
 
-服务器可以固定SHA读取既有两份交接，不等待本地在线传包。本地分支保持
-`codex/intact-baseline-upgrade-20261031`，不要合并服务器动态开发或另建共同任务书。
-后续恢复工作以用户新指令和[唯一现行任务](research_prototype_task.md)为准。
-第一篇实验＋仿真优先，第二篇学习/微分求解器/PINN仍只保留后续基础。
+本地最后公开交接见 [Issue #1](https://github.com/Welcome2Machine/cutting_rubber_soul/issues/1#issuecomment-7210089113)。此入口仅说明暂停状态；后续恢复以用户新指令为准。

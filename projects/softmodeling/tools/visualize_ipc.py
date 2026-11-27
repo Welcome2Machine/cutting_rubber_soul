@@ -264,6 +264,7 @@ def main():
         ax.set_facecolor("#f7f8fa")
         ax.spines[["top", "right"]].set_visible(False)
 
+    outline = report.get('blade_discretization', {}).get('outline_vertex_count', len(frames[0]['xy']) - count)
     def draw_body(ax, frame, stress):
         if stress:
             mesh = PolyCollection(frame["xy"][:count][triangles], cmap="viridis", norm=norm,
@@ -273,7 +274,6 @@ def main():
             mesh = PolyCollection(frame["xy"][:count][triangles], facecolors="#e0eef7",
                                   edgecolors="#37657d", linewidths=.27, rasterized=True)
         ax.add_collection(mesh)
-        outline=report.get('blade_discretization',{}).get('outline_vertex_count',len(frame['xy'])-count)
         knife = Polygon(frame["xy"][count:count+outline], facecolor="#8b9099", edgecolor="#333b43", linewidth=.9)
         ax.add_patch(knife)
         return mesh, knife
@@ -321,7 +321,7 @@ def main():
             for i, frame in enumerate(frames):
                 for mesh, knife in bodies:
                     mesh.set_verts(frame["xy"][:count][triangles])
-                    knife.set_xy(frame["xy"][count:])
+                    knife.set_xy(frame["xy"][count:count+outline])
                 bodies[2][0].set_array(frame["tensile"])
                 window = tip_window(frame)
                 right.set(xlim=window[:2], ylim=window[2:])

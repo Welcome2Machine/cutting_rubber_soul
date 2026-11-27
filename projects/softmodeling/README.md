@@ -1,5 +1,7 @@
 # 橡胶斜切仿真
 
+**2026-11-27当前入口：** [服务器无断裂任务](../../researchtopic/research_prototype_task.md) · [实算状态](docs/research_status.md) · [System B环境](../../docs/environment.md)。先读这三个入口；下文旧基线、材料默认和断裂能力保留历史身份，不是本轮自动运行设置。
+
 使用同一套材料模型，研究刀具楔角、圆鼻半径、摩擦/润滑与入侵角度对橡胶压入反力、变形及接触材料位置的影响。0°、33°、57°保留为已有实验对照；完整体基线保留，行程上限 **2 mm**，速度固定0.2 mm/s。实验起裂后的曲线不作为完整体拟合依据。
 
 2026-10-28 增加[起裂诊断与裂后研究入口](../../docs/fracture_implementation.md)：读取完整体合格历史的非局部张拉指标，以及 0° 预设有限间隙内聚界面的实际分离算例。它们可从合并工作台显式启动；示例参数未标定，径向界面的剪切传力、有限间隙及粗网格限制必须保留。
@@ -25,7 +27,7 @@ python -m tools.workbench --background --open
 - [文献原文与统一导读](references/README.md) · [有效研究历史](docs/research_history.md)。
 - [光流数据接口](docs/optical_flow_handoff.md) · [视频—FE共同观测规范](docs/video_fe_comparison.md) · [2023 论文复现](reproductions/dammass2023/README.md)。
 
-当前基线为 P1 平面应变、有限应变等容 Maxwell 与原生 IPC 接触：G∞=0.14 MPa、Gv=1.24 MPa、τ=1.7 s、μ=0.35。已有三角度各 201 态的完整 2 mm 路径，603 态独立重组审查通过；它是可计算基线，尚未完成共同材料实验标定。
+历史基线为 P1 平面应变、有限应变等容 Maxwell 与原生 IPC 接触：G∞=0.14 MPa、Gv=1.24 MPa、τ=1.7 s、μ=0.35。已有三角度各 201 态的完整 2 mm 路径，603 态独立重组审查通过；它是可计算基线，尚未完成共同材料实验标定。
 
 可复用结果包括 `outputs/baseline/angle0`、`angle33`、`angle57` 与当前研究候选，论文复现结果保留在 `outputs/paper2023`。实际运行状态见工作台及[研究状态](docs/research_status.md)，不从静态说明推断进程存活。记录参数、接受态、源码指纹和审查，不复制冻结源码树。
 
@@ -33,7 +35,7 @@ python -m tools.workbench --background --open
 
 ## 环境与验证
 
-使用 Python 3.10，在仓库根目录执行：
+历史Windows环境使用Python 3.10；服务器先复用并验证已有Linux解释器。以下依赖命令在FE子目录、确认确有缺失时按需执行：
 
 ```powershell
 python -m pip install -r requirements.txt

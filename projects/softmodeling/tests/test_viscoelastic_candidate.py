@@ -18,6 +18,52 @@ def material(tau=.4):
                     viscous_flow='isochoric_maxwell')
 
 
+class QueueContinuationTests(unittest.TestCase):
+    def test_ptc_pause_does_not_trigger_retry_or_commit(self):
+        from tools.material_queue_control import QueuePaused,checkpoint
+        from prototype.ipc_reference import adaptive_load_steps
+        from unittest.mock import Mock
+        import os,time
+        p=ViscoelasticProblem(maxwell_shear=.94,relaxation_s=.4,loading_rate=.2,case='patch',mu=.35,
+            local_spacing=.2,surface_spacing=.1)
+        x=p.rest.copy()
+        before=p.material_metric.copy()
+        reject=Mock()
+        with tempfile.TemporaryDirectory() as directory:
+            flag=Path(directory)/'pause_requested.json';flag.touch()
+            with patch.dict(os.environ,SOFTMODELING_QUEUE_PAUSE=str(flag)):
+                p.queue_checkpoint=checkpoint
+                with self.assertRaises(QueuePaused):
+                    list(adaptive_load_steps(p,x,p.start,p.start+.001,time.monotonic()+20,.00025,reject))
+        reject.assert_not_called()
+        np.testing.assert_array_equal(p.material_metric,before)
+
+    def test_resume_uses_case_identity_in_same_angle_batch(self):
+        from tools import material_queue_control as control
+        from unittest.mock import Mock
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            jobs=[]
+            for name in ('A33','E33'):
+                folder=root/name;folder.mkdir()
+                jobs.append(dict(name=name,case_id=name,angle=33,output=str(folder),target_mm=2.,solve_seconds=20))
+            (root/'manifest.json').write_text(json.dumps(dict(jobs=jobs,audit_allowance_s=10)))
+            (root/'queue_status.json').write_text(json.dumps(dict(status='paused',jobs=[
+                dict(jobs[0],status='completed',mechanics_completed=True),
+                dict(jobs[1],status='paused',active_wall_s=5.,active_solve_s=3.)])))
+            (root/'E33/result.json').write_text(json.dumps(dict(steps=[dict(depth_mm=.005)])))
+            launch=Mock()
+            control.restart(root,launch)
+            attempt,manifest=launch.call_args.args
+            self.assertTrue(manifest['jobs'][0]['reused'])
+            self.assertEqual(manifest['jobs'][1]['resume_source'],str(root/'E33'))
+            self.assertEqual(manifest['jobs'][1]['solve_seconds'],17.)
+            self.assertEqual(manifest['jobs'][1]['remaining_wall_s'],25.)
+            self.assertEqual(attempt,control.active(root))
+            with self.assertRaises(RuntimeError):control.restart(root,launch)
+            self.assertEqual(launch.call_count,1)
+
+
 class MaxwellCandidateTests(unittest.TestCase):
     def test_repartition_preserves_bulk_geometry_and_positive_relaxation(self):
         kw=dict(maxwell_shear=.94,relaxation_s=.4,loading_rate=.2,
@@ -94,6 +140,17 @@ class MaxwellCandidateTests(unittest.TestCase):
         np.testing.assert_allclose(rotated['metric'],q['metric'],atol=1e-10)
         np.testing.assert_allclose(np.linalg.det(q['metric']),1.,atol=1e-11)
         self.assertTrue(np.all(q['viscous_rate']>=-1e-12))
+
+
+    def test_independent_elastic_patch_and_nonuniform_nearly_incompressible_solution(self):
+        from tools.verify_intact_numerics import affine_patch, manufactured_case, GE
+        checks=affine_patch()
+        self.assertLess(max(x['force_relative'] for x in checks),1e-8)
+        self.assertLess(max(x['max_F_error'] for x in checks),1e-8)
+        coarse,fine=(manufactured_case(n,GE) for n in (16,32))
+        self.assertLess(fine['displacement_L2_relative'],.02)
+        self.assertLess(fine['reaction_relative'],.02)
+        self.assertLess(fine['pressure_face_jump_rms_MPa'],coarse['pressure_face_jump_rms_MPa'])
 
     def test_actual_small_shear_time_constant(self):
         m=material();dt=.02;F=np.array([[[1.,1e-5],[0.,1.]]]);A=np.eye(3)[None]
@@ -204,6 +261,99 @@ class MaxwellCandidateTests(unittest.TestCase):
 
 
 class MaterialRunControlTests(unittest.TestCase):
+    def _prepared_queue_worker(self,directory,*,completed=True,exit_code=0):
+        """A real, bounded subprocess exercises launch/wait without an FE solve."""
+        import sys,textwrap
+        root=Path(directory);out=root/'queue';out.mkdir()
+        source=root/'source';(source/'tools').mkdir(parents=True)
+        (source/'tools/__init__.py').write_text('')
+        (source/'tools/run_material_queue.py').write_text(textwrap.dedent('''\
+            import json,os,sys,time
+            from pathlib import Path
+            out=Path(sys.argv[sys.argv.index('--output')+1])
+            manifest=json.loads((out/'manifest.json').read_text())
+            def state(status,completed=False):
+                temporary=out/'state.tmp'
+                temporary.write_text(json.dumps(dict(status=status,jobs=[],all_cases_completed=completed)))
+                temporary.replace(out/'queue_status.json')
+            state('running')
+            (out/'worker_ready.json').write_text(json.dumps(dict(session=os.getsid(0) if hasattr(os,'getsid') else None)))
+            deadline=time.monotonic()+15
+            while not (out/'release_worker').exists():
+                if (out/'pause_requested.json').exists():
+                    state('paused');sys.exit(0)
+                if time.monotonic()>deadline:sys.exit(9)
+                time.sleep(.01)
+            if manifest['test_exit']:sys.exit(manifest['test_exit'])
+            state('finished',manifest['test_completed'])
+        '''))
+        manifest=dict(python=sys.executable,source=str(source),source_sha256={},
+            runtime_path=str(source),pardiso_runtime=str(source),target_mm=.25,jobs=[],
+            test_completed=completed,test_exit=exit_code)
+        (out/'manifest.json').write_text(json.dumps(manifest))
+        return out
+
+    def test_foreground_launch_waits_and_propagates_outcomes(self):
+        import os,time
+        from concurrent.futures import ThreadPoolExecutor
+        from tools import run_material_queue as queue
+        for completed,exit_code,expected in ((True,0,0),(False,0,1),(False,7,7)):
+            with self.subTest(completed=completed,exit_code=exit_code),tempfile.TemporaryDirectory() as directory:
+                out=self._prepared_queue_worker(directory,completed=completed,exit_code=exit_code)
+                argv=['queue','--output',str(out),'--launch-prepared','--foreground']
+                with patch('sys.argv',argv),contextlib.redirect_stdout(io.StringIO()),ThreadPoolExecutor(1) as pool:
+                    future=pool.submit(queue.main)
+                    try:
+                        deadline=time.monotonic()+5
+                        while not (out/'worker_ready.json').exists() and time.monotonic()<deadline:
+                            time.sleep(.01)
+                        self.assertTrue((out/'worker_ready.json').exists())
+                        self.assertFalse(future.done())
+                        if hasattr(os,'getsid'):
+                            self.assertEqual(json.loads((out/'worker_ready.json').read_text())['session'],os.getsid(0))
+                    finally:(out/'release_worker').touch()
+                    self.assertEqual(future.result(timeout=5),expected)
+                self.assertTrue(json.loads((out/'launch.json').read_text())['foreground'])
+
+    def test_foreground_resume_releases_control_lock_and_can_pause(self):
+        import time
+        from concurrent.futures import ThreadPoolExecutor
+        from tools import run_material_queue as queue
+        with tempfile.TemporaryDirectory() as directory:
+            out=self._prepared_queue_worker(directory)
+            (out/'queue_status.json').write_text(json.dumps(dict(status='paused',jobs=[])))
+            argv=['queue','--output',str(out),'--resume-queue','--foreground']
+            with patch('sys.argv',argv),contextlib.redirect_stdout(io.StringIO()),ThreadPoolExecutor(1) as pool:
+                future=pool.submit(queue.main)
+                active=None
+                try:
+                    deadline=time.monotonic()+5
+                    while time.monotonic()<deadline:
+                        active=queue.control.active(out)
+                        if (active/'worker_ready.json').exists():break
+                        time.sleep(.01)
+                    self.assertNotEqual(active,out)
+                    self.assertTrue((active/'worker_ready.json').exists())
+                    self.assertFalse(future.done())
+                    with queue.control.control_lock(out):pass
+                    self.assertEqual(queue.control.pause(out)['status'],'paused')
+                    self.assertEqual(future.result(timeout=5),2)
+                finally:
+                    if active is not None:(active/'release_worker').touch()
+
+    def test_foreground_preserves_launch_gates_and_slurm_rejects_detach(self):
+        import os
+        from tools import run_material_queue as queue
+        with tempfile.TemporaryDirectory() as directory:
+            out=Path(directory)
+            with patch.object(queue.subprocess,'Popen') as popen:
+                with self.assertRaisesRegex(ValueError,'short evidence'):
+                    queue.launch(out,dict(case_config='cases.json',target_mm=2.),foreground=True)
+                with patch.dict(os.environ,SLURM_JOB_ID='123'):
+                    with self.assertRaisesRegex(RuntimeError,'--foreground'):
+                        queue.launch(out,{})
+                popen.assert_not_called()
+
     def test_actual_angle_experiments_do_not_leak_to_other_cases(self):
         from tools.run_material_queue import make_command
         m=dict(python='python',solve_seconds_per_case=21600,experiment='57.csv',experiment_angle=57,
@@ -298,6 +448,8 @@ class MaterialRunControlTests(unittest.TestCase):
             argv=['queue','--output',str(out),'--fresh','--angles','60','30',
                   '--mu','.30','--depth','.5','--seconds','7200']
             with patch('sys.argv',argv),patch.object(queue.subprocess,'Popen') as popen,\
+                 patch.dict(queue.os.environ,SLURM_JOB_ID=''),\
+                 patch.object(queue.control,'identity',return_value={'pid':123}),\
                  contextlib.redirect_stdout(io.StringIO()):
                 popen.return_value.pid=123
                 queue.main()

@@ -128,7 +128,7 @@ def joint_metrics(cases,series):
         angle_differences=differences,interpretation='Actual FE only; unavailable anchors are null; no force ordering imposed')
 
 
-def comparison(angle, folder, experiment, max_depth):
+def comparison(angle, folder, experiment, max_depth, *, min_depth=0.):
     """Read original units/zeros, compare on a uniform common grid only."""
     folder=Path(folder);experiment=Path(experiment)
     files=verify_case(folder)
@@ -142,7 +142,7 @@ def comparison(angle, folder, experiment, max_depth):
     sf=np.asarray([r['reaction_fz_n'] for r in report['steps']])
     if len(sd)<2 or not np.isfinite(sf).all() or not np.all(np.diff(sd)>0):
         raise ValueError('At least two increasing accepted states required')
-    start=max(float(sd[0]),float(ed[0]));end=min(max_depth,float(sd[-1]),float(ed[-1]))
+    start=max(min_depth,float(sd[0]),float(ed[0]));end=min(max_depth,float(sd[-1]),float(ed[-1]))
     if end<=start:raise ValueError('No common comparison interval')
     grid=np.unique(np.r_[start,np.arange(np.ceil(start/.01)*.01,end,.01),end])
     sim=np.interp(grid,sd,sf);exp=np.interp(grid,ed,ef)
@@ -156,6 +156,8 @@ def comparison(angle, folder, experiment, max_depth):
     summary=dict(angle_deg=angle,simulation=str(folder.resolve()),experiment=str(experiment.resolve()),
         simulation_completed=report['completed'],accepted_end_mm=float(sd[-1]),
         comparison_start_mm=start,comparison_end_mm=end,rmse_n=float(np.sqrt(np.mean((sim-exp)**2))),
+        relative_rms=float(np.linalg.norm(sim-exp)/np.linalg.norm(exp)) if np.linalg.norm(exp)>0 else None,
+        input_work_sim_n_mm=float(np.trapezoid(sim,grid)),input_work_exp_n_mm=float(np.trapezoid(exp,grid)),
         endpoint_simulation_n=float(sim[-1]),endpoint_experiment_n=float(exp[-1]),interval_slopes=intervals,
         experiment_is_independent_validation=False,
         fracture_limit='Experimental onset is not inferred from this curve comparison; late data may include fracture.',
@@ -169,31 +171,92 @@ def comparison(angle, folder, experiment, max_depth):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output',type=Path,required=True)
-    parser.add_argument('--case',nargs=3,action='append',required=True,metavar=('ANGLE','FE_DIRECTORY','EXPERIMENT_CSV'))
+    group=parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('--trial-map',type=Path,help='JSON array of trial_id, case_id, angle, FE directory, source CSV and experimental condition metadata')
+    group.add_argument('--case',nargs=3,action='append',metavar=('ANGLE','FE_DIRECTORY','EXPERIMENT_CSV'))
     parser.add_argument('--max-depth',type=float,default=2.)
     args=parser.parse_args()
     if not np.isfinite(args.max_depth) or args.max_depth<=0:parser.error('Positive finite depth required')
-    angles=[float(item[0]) for item in args.case]
-    if len(set(angles))!=len(angles):parser.error('Each angle must occur once')
+    trials=[]
+    if args.trial_map:
+        trials=json.loads(args.trial_map.read_bytes())
+        required={'trial_id','case_id','angle','folder','csv','tool','profile','radius_mm','shape',
+                  'lubrication','speed_mm_s','depth_reference','force_zero','role','window_mm'}
+        if not trials or any(not required.issubset(t) or t['lubrication']!='no_added_lubricant' for t in trials):
+            parser.error('Incomplete trial metadata or incompatible lubrication')
+        ids=[(t['trial_id'],t['case_id']) for t in trials]
+        if len(ids)!=len(set(ids)):parser.error('Duplicate trial and case binding')
+    else:
+        trials=[dict(trial_id=Path(csv_path).stem,case_id=Path(folder).name,angle=float(angle),
+                folder=folder,csv=csv_path,window_mm=[0.,args.max_depth]) for angle,folder,csv_path in args.case]
+        if len({t['angle'] for t in trials})!=len(trials):parser.error('Use --trial-map for repeated angles')
     out=args.output.resolve();out.mkdir(parents=True,exist_ok=False)
     cases=[];series=[]
-    for item,angle in zip(args.case,angles):
-        result,values=comparison(angle,Path(item[1]),Path(item[2]),args.max_depth)
+    for trial in trials:
+        lo,hi=map(float,trial['window_mm'])
+        if not 0<=lo<hi:parser.error('Invalid trial comparison window')
+        folder,source=Path(trial['folder']),Path(trial['csv'])
+        if args.trial_map:
+            folder=args.trial_map.parent/folder
+            source=args.trial_map.parent/source
+            measured=load_force_csv(source)[2]
+            if abs(measured-trial['speed_mm_s'])>1e-12:parser.error('Trial speed differs from CSV')
+            catalog=json.loads((Path(__file__).resolve().parents[3]/'configs/blade_profiles.measured.json').read_bytes())
+            profiles={p['identity']['id']:p['apparent_profile'] for p in catalog['profiles']}
+            profile=profiles.get(trial['profile'])
+            settings=json.loads((folder/'result.json').read_bytes())['settings']
+            if profile is None or not np.allclose([settings['blade_thickness'],settings['blade_angle']],
+                    [profile['thickness_mm'],profile['included_angle_deg']],atol=1e-10,rtol=0):
+                parser.error('Assigned macro profile differs from FE dimensions')
+            if settings['blade_shape']!=trial['shape'] or settings['tip_radius']!=trial['radius_mm']:
+                parser.error('Trial and FE blade shape or radius differ')
+        result,values=comparison(float(trial['angle']),folder,source,min(hi,args.max_depth),min_depth=lo)
+        result.update(trial_id=trial['trial_id'],case_id=trial['case_id'],trial=trial,source_sha256=sha(source))
+        if args.trial_map:
+            grid,sim,exp=values[-3:]
+            result['registered_secants']=[]
+            for left,right in zip((.1,.25,.4,.5),(.25,.4,.5,.6)):
+                if left<grid[0]-1e-12 or right>grid[-1]+1e-12:continue
+                se=float(np.diff(np.interp([left,right],grid,sim))[0]/(right-left))
+                ex=float(np.diff(np.interp([left,right],grid,exp))[0]/(right-left))
+                result['registered_secants'].append(dict(window_mm=[left,right],simulation_n_mm=se,
+                    experiment_n_mm=ex,relative_error=(se-ex)/abs(ex) if ex else None))
+            result['requested_window_covered']=bool(grid[0]<=lo+1e-10 and grid[-1]>=hi-1e-10)
         cases.append(result);series.append(values)
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
     fig,ax=plt.subplots(figsize=(8,5),layout='constrained')
     with (out/'comparison.csv').open('w',encoding='utf-8',newline='') as stream:
-        writer=csv.writer(stream);writer.writerow(['angle_deg','depth_mm','experimental_fz_n','simulation_fz_n','error_n'])
+        writer=csv.writer(stream);writer.writerow(['trial_id','case_id','angle_deg','depth_mm','experimental_fz_n','simulation_fz_n','error_n'])
         for result,values in zip(cases,series):
             ed,ef,sd,sf,grid,sim,exp=values
             keep=ed<=args.max_depth;line,=ax.plot(ed[keep],ef[keep],label=f'{result["angle_deg"]:g} deg experiment')
             keep=sd<=args.max_depth;ax.plot(sd[keep],sf[keep],ls='--',color=line.get_color(),label=f'{result["angle_deg"]:g} deg FE')
-            writer.writerows((result['angle_deg'],d,e,s,s-e) for d,s,e in zip(grid,sim,exp))
+            writer.writerows((result['trial_id'],result['case_id'],result['angle_deg'],d,e,s,s-e) for d,s,e in zip(grid,sim,exp))
     ax.set(xlabel='Vertical blade travel (mm)',ylabel='Fz (N)',xlim=(0,args.max_depth))
     ax.grid(alpha=.2);ax.legend();fig.savefig(out/'comparison.png',dpi=180);plt.close(fig)
-    joint=joint_metrics(cases,series)
+    if args.trial_map:
+        joint=dict(same_material=all(c['signature']['material']==cases[0]['signature']['material'] for c in cases),
+            all_three_angles={0.,33.,57.}.issubset({c['angle_deg'] for c in cases}),
+            pairs=[],trial_equal_weight_relative_rms=None)
+        relative=[c['relative_rms'] for c in cases]
+        if all(v is not None for v in relative):
+            joint['trial_equal_weight_relative_rms']=float(np.sqrt(np.mean(np.square(relative))))
+        for i,a in enumerate(cases):
+            for j,b in enumerate(cases[:i]):
+                if a['trial']['tool']!=b['trial']['tool'] or a['angle_deg']==b['angle_deg']:continue
+                lo=max(a['comparison_start_mm'],b['comparison_start_mm'])
+                hi=min(a['comparison_end_mm'],b['comparison_end_mm'])
+                if hi<=lo:continue
+                for depth in (.1,.25,.4,.5,.6):
+                    if lo<=depth<=hi:
+                        x,y=series[i],series[j]
+                        joint['pairs'].append(dict(trials=[a['trial_id'],b['trial_id']],depth_mm=depth,
+                            delta_exp_n=float(np.interp(depth,x[0],x[1])-np.interp(depth,y[0],y[1])),
+                            delta_fe_n=float(np.interp(depth,x[2],x[3])-np.interp(depth,y[2],y[3]))))
+    else:
+        joint=joint_metrics(cases,series)
     write_json(out/'comparison.json',dict(cases=cases,joint=joint,
         scope='Saved accepted curves; no parameter fitting or fracture inference'))
     rows=''.join('<tr>'+''.join('<td>'+escape(str(r[k]))+'</td>' for k in
@@ -212,7 +275,7 @@ def main():
     body+='</table><p>共同材料：'+str(joint['same_material'])+'；三角度齐全：'+str(joint['all_three_angles'])+'</p>'
     body+='<details><summary>同窗口总误差、最差角度与有符号角度差</summary><pre>'+escape(json.dumps(joint,indent=2))+'</pre></details>'
     body+='<details><summary>实际求解尝试与分阶段计时</summary><pre>'+escape(json.dumps(
-        {str(c['angle_deg']):c['solver'] for c in cases},indent=2))+'</pre></details>'
+        {str((c['trial_id'],c['case_id'])):c['solver'] for c in cases},indent=2))+'</pre></details>'
     atomic_write(out/'index.html',shell('实验与仿真对照',body))
 
 

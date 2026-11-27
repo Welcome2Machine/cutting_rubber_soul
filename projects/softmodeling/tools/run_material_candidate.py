@@ -21,6 +21,7 @@ from prototype.ipc_reference import BASELINE,adaptive_load_steps,record_tip_cont
 from prototype.material_case import (make_problem, signature, audit, resume,
                                      resume_compatibility, load_force_csv, failure_checkpoint, resolved_model, bind_final_audit_result)
 from numerical_runtime import numerical_runtime
+from tools.material_queue_control import QueuePaused,checkpoint
 from prototype.tip_contact import TipContactTracker
 from prototype.material_performance import (performance_policy, require_same_performance,
     enable_performance, performance_summary, close_performance, native_audit)
@@ -166,6 +167,9 @@ def main():
     parser.add_argument('--seconds',type=float,default=21600.)
     parser.add_argument('--resume',type=Path)
     parser.add_argument('--threads',type=int,default=2)
+    parser.add_argument('--friction-globalization',choices=('model-error','residual-merit'),default='model-error')
+    parser.add_argument('--predictor',choices=('secant','affine'),default='secant')
+    parser.add_argument('--max-iterations',type=int,default=500)
     parser.add_argument('--diagnostics',action='store_true',
         help='Log actual PTC directions, step limits and phase timings; save last paired direction on failure')
     parser.add_argument('--material-batch-size',type=int,default=0,
@@ -187,6 +191,10 @@ def main():
     parser.add_argument('--blade-angle',type=float,help='Full included symmetric wedge angle (degrees)')
     parser.add_argument('--tip-radius',type=float,default=.02,help='Circular nose radius (mm), not a flat chamfer')
     parser.add_argument('--local-spacing',type=float,default=.05)
+    parser.add_argument('--contact-layer-depth',type=float,default=0.,
+                        help='Graded subsurface patch depth (mm), zero retains the original mesh')
+    parser.add_argument('--size-gradient',type=float,default=.4,help='Spatial slope of the graded target element size')
+    parser.add_argument('--reference-layout', help='Interior material-node layout bound to the generated parent mesh')
     parser.add_argument('--surface-spacing',type=float,default=.005)
     parser.add_argument('--coarse-spacing',type=float)
     parser.add_argument('--fine-halfwidth',type=float,default=3.)
@@ -239,6 +247,8 @@ def main():
     sources=source_hashes(packages=('prototype','mechanics'))
     tool=Path(__file__).resolve()
     sources['tools/'+tool.name]=hashlib.sha256(tool.read_bytes()).hexdigest()
+    for relative in ('tools/material_queue_control.py','numerical_runtime.py'):
+        sources[relative]=hashlib.sha256((tool.parents[1]/relative).read_bytes()).hexdigest()
     baseline=Path(__file__).resolve().parents[1]/'prototype/ipc_baseline.json'
     sources['prototype/ipc_baseline.json']=hashlib.sha256(baseline.read_bytes()).hexdigest()
     report=dict(status='initializing',completed=False,source_sha256=sources,steps=[],
@@ -249,6 +259,9 @@ def main():
         tip_contact_tracking=dict(errors=[]),settings=vars(args).copy(),performance_policy=performance,
         load_control=dict(mode='adaptive_bisection',minimum_increment_mm=args.minimum_increment_mm,
                           maximum_increment_mm=args.increment,output_grid_increment_mm=args.increment))
+    if (args.friction_globalization,args.predictor,args.max_iterations)!=('model-error','secant',500):
+        report['solver_policy'].update(friction_globalization=args.friction_globalization,
+            predictor=args.predictor,max_iterations=args.max_iterations)
     report['settings']={k:str(v) if isinstance(v,Path) else v for k,v in report['settings'].items()}
     write_json(out/'result.json',report)
     if args.experiment:
@@ -270,9 +283,14 @@ def main():
         try:
             construction={k:getattr(args,k) for k in ('angle','equilibrium_shear','maxwell_shear',
                 'relaxation_s','loading_rate','bulk_modulus','mu','equilibrium_alpha','maxwell_alpha','blade_spacing',
-                'blade_thickness','blade_angle','tip_radius','local_spacing','surface_spacing','coarse_spacing',
-                'fine_halfwidth','nose_facets','drop_s','dhat','preparation_clearance_mm','friction_smoothing_mm','enforce_physical_chord','blade_shape','friction_velocity_mm_s')}
-            p=make_problem(**construction)
+                'blade_thickness','blade_angle','tip_radius','local_spacing','surface_spacing','coarse_spacing','contact_layer_depth','reference_layout','size_gradient',
+                'fine_halfwidth','nose_facets','drop_s','dhat','preparation_clearance_mm','friction_smoothing_mm','enforce_physical_chord','blade_shape','friction_velocity_mm_s',
+                'friction_globalization','predictor','max_iterations')}
+            def build_problem():
+                result=make_problem(**construction)
+                result.queue_checkpoint=checkpoint
+                return result
+            p=build_problem()
             p.solver_diagnostics=args.diagnostics
             report['resolved_model']=resolved_model(p)
             # JSON round trip makes signatures stable across tuples in Material.
@@ -302,12 +320,21 @@ def main():
                         depth_mm=old,body_nodes=p.n,**p.checkpoint_data())
                     report['steps'].append(record);report['last_depth_mm']=old
                     record_tip_contact(tracker,x,record,report)
+                    record['contact_accounting']=tracker.native_accounting(p,x,record)
+                    record['nose_native_candidates']=tracker.native_nose_candidates(p,x)
+                    record['sliding_amount']=tracker.sliding_amount(x,record['tip_contact'],record['nose_native_candidates'])
                     write_json(out/'result.json',report)
+                    checkpoint()
                     print(f'ACCEPT depth_mm={old:.6f} Fz_N={record["reaction_fz_n"]:.9g} '
                           f'residual_N={record["residual_n"]:.4g} target_mm={args.depth:.6f} '
                           f'utc={datetime.now(timezone.utc).isoformat()} '
                           f'loading_elapsed_s={time.monotonic()-solve_start:.3f}',flush=True)
             report.update(status='completed',completed=True)
+        except QueuePaused:
+            report.update(status='paused',phase='paused',audit_pending=True,active_solve_s=time.monotonic()-solve_start if 'solve_start' in locals() else 0.)
+            write_json(out/'result.json',report)
+            if p is not None:close_performance(p)
+            return
         except Exception as exc:
             report.update(status='budget_exhausted' if isinstance(exc,TimeoutError) else 'failed',
                           error=f'{type(exc).__name__}: {exc}')
@@ -331,8 +358,12 @@ def main():
         try:
             if p is not None and report['steps']:
                 if args.material_batch_size or args.linear_backend!='native':
-                    native_audit(lambda:make_problem(**construction),out,report)
+                    native_audit(build_problem,out,report)
                 else:audit(p,out,report)
+        except QueuePaused:
+            report.update(status='paused',phase='paused',audit_pending=True,active_solve_s=report['elapsed_s'])
+            write_json(out/'result.json',report)
+            return
         except Exception as exc:
             report.update(status='audit_failed',completed=False,audit_error=f'{type(exc).__name__}: {exc}')
             traceback.print_exc(file=log)

@@ -77,6 +77,28 @@ class MaterialPerformanceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'unbatched native'):
             native_audit(make,Path('unused'),report)
 
+    def test_p1_audit_cache_is_scoped_to_identical_history_and_deformation(self):
+        p = ViscoelasticProblem.__new__(ViscoelasticProblem)
+        p.material = Material((.14,), (2.,), (1.24,), (2.,), .49, 1.7, viscous_flow='isochoric_maxwell')
+        p.previous_material_metric = np.eye(3)[None].copy()
+        p.material_dt = .05
+        F = np.array([[[1.12, .1], [0., .97]]])
+        with patch('prototype.ipc_viscoelastic.response', wraps=response) as compute:
+            p._fresh_material_cache = None
+            a = p.constitutive_response(F, tangent=False)
+            self.assertIs(a, p.constitutive_response(F.copy(), tangent=False))
+            F[0,0,1] += .1
+            p.constitutive_response(F, tangent=False)
+            p.previous_material_metric[:] = np.diag([.8, 1.25, 1.])
+            p.constitutive_response(F, tangent=False)
+            p.material_dt *= .5
+            p.constitutive_response(F, tangent=False)
+            p.constitutive_response(F, tangent=True)
+            del p._fresh_material_cache
+            p.constitutive_response(F, tangent=False)
+            p.constitutive_response(F, tangent=False)
+            self.assertEqual(compute.call_count, 7)
+
     def test_batched_updated_response_preserves_each_points_history_and_tangent(self):
         p = ViscoelasticProblem.__new__(ViscoelasticProblem)
         p.material = Material((.14,),(2.,),(1.24,),(2.,),.49,1.7,

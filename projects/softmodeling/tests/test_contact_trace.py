@@ -152,6 +152,33 @@ class ContactTraceLookupTests(unittest.TestCase):
 
 
 class ContactTraceIntegrationTests(unittest.TestCase):
+    def test_fixed_gap_observation_is_independent_of_solver_band(self):
+        from prototype.contact_trace import record_digest
+        from tools.verify_intact_numerics import observe_sa
+
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)/'case'
+            report = write_history(folder)
+            rows = [dict(passed=True,trajectory_passed=True,accepted_record_sha256=record_digest(step),
+                         checkpoint_sha256=hashlib.sha256((folder/'states'/f'{i:04d}.npz').read_bytes()).hexdigest())
+                    for i,step in enumerate(report['steps'])]
+            protocol = dict(primary_geometric_gap_mm=.008,sensitivity_geometric_gaps_mm=[.001,.015],S0_mm=2.)
+            observed = []
+            for solver_gap in (.01,.02):
+                report['dhat_mm'] = solver_gap
+                path = folder/'result.json'
+                path.write_text(json.dumps(report),encoding='utf-8')
+                audit = dict(rows=rows,passed=True,trajectory_checked=True,source_result_sha256=hashlib.sha256(path.read_bytes()).hexdigest())
+                (folder/'audit.json').write_text(json.dumps(audit),encoding='utf-8')
+                observed.append(observe_sa(folder,protocol,.1))
+            self.assertEqual(observed[0]['rows'],observed[1]['rows'])
+            frame = observed[0]['rows'][0]
+            self.assertIsNone(frame['observations']['narrow']['pole_offset_mm'])
+            self.assertEqual(frame['observations']['narrow']['nose_offset_intervals_mm'],[])
+            self.assertAlmostEqual(frame['observations']['primary']['pole_offset_mm'],0.)
+            self.assertTrue(frame['nearest_projections'])
+            self.assertEqual(frame['observations']['primary']['nose_status'],'connected')
+
     def test_adaptive_export_and_stress_frames_keep_every_accepted_substep(self):
         from tools.visualize_ipc import ROOT, load_frames
         with tempfile.TemporaryDirectory() as folder:

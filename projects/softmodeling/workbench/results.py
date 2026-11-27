@@ -166,7 +166,43 @@ def _case_label(report):
     return f"{angle}° · G∞/Gv={ge}/{gv} MPa · μ={mu} · r={radius} mm"
 
 
-def export_case(source, output, *, max_frames=11, movie=False, audit_path=None, fps=8, trace_path=None):
+def triangle_shape(points):
+    """P1 triangle shape and conditioning, independent of volume change."""
+    edges = np.roll(points, -1, axis=1) - points
+    lengths = np.linalg.norm(edges, axis=2)
+    matrix = np.stack((edges[:, 0], -edges[:, 2]), axis=2)
+    twice_area = np.linalg.det(matrix)
+    if np.any(twice_area <= 0):
+        raise ValueError("Degenerate or inverted triangle in saved frame")
+    cosine = -np.sum(edges * np.roll(edges, 1, axis=1), axis=2) / (lengths * np.roll(lengths, 1, axis=1))
+    return dict(q=2*np.sqrt(3)*twice_area/(lengths**2).sum(axis=1),
+                min_angle_deg=np.degrees(np.arccos(np.clip(cosine.max(axis=1), -1, 1))),
+                edge_ratio=lengths.max(axis=1)/lengths.min(axis=1), cond_D=np.linalg.cond(matrix))
+
+
+def _region_quality(ids, fields, shape, centroids, areas, energy):
+    J = fields['J'][ids]
+    weights = areas[ids]
+    order = np.argsort(J)
+    cdf = np.cumsum(weights[order]) / weights.sum()
+    stats = dict(elements=len(ids), J_min=float(J.min()), J_reference_area_mean=float(np.average(J, weights=weights)),
+                 J_volume_p01_p05_p50=J[order[np.searchsorted(cdf, [.01, .05, .5])]].tolist())
+    stored = weights @ energy[ids]
+    stats['below_J'] = {}
+    for threshold in (.9, .5, .2):
+        low = J < threshold
+        stats['below_J'][str(threshold)] = dict(reference_volume_fraction=float(weights[low].sum()/weights.sum()),
+            stored_energy_fraction=float(weights[low] @ energy[ids][low]/stored) if stored > 0 else None)
+    for name, values, extreme in [('J', fields['J'], np.argmin), ('q', shape['q'], np.argmin),
+            ('min_angle_deg', shape['min_angle_deg'], np.argmin), ('edge_ratio', shape['edge_ratio'], np.argmax),
+            ('cond_D_current', shape['cond_D'], np.argmax), ('cond_F_inplane', shape['cond_F'], np.argmax)]:
+        j = int(ids[extreme(values[ids])])
+        stats[name + '_extreme'] = dict(element=j, value=float(values[j]), reference_xy_mm=centroids[j].tolist())
+    return stats
+
+
+def export_case(source, output, *, max_frames=11, movie=False, audit_path=None, fps=8, trace_path=None,
+                dense_roi=False):
     """Write curves.csv and a portable result.bundle.json, returning that bundle.
 
     Select actual saved frames, always including both qualified endpoints. All
@@ -199,6 +235,13 @@ def export_case(source, output, *, max_frames=11, movie=False, audit_path=None, 
     audit_bytes = audit_path.read_bytes() if audit_path.is_file() else None
     audit = json.loads(audit_bytes) if audit_bytes is not None else None
     prefix, reason = _qualified_prefix(report, audit)
+    if dense_roi:
+        from prototype.contact_trace import audit_coverage, geometry_metadata
+        from prototype.tip_contact import TipContactTracker
+        authenticated, proof = audit_coverage(source, report, audit_path)
+        if not authenticated or authenticated != prefix:
+            raise ValueError('Dense replay requires an authenticated audit prefix: ' + str(proof.get('reason')))
+        config, dhat, facets, _ = geometry_metadata(report)
     observations = steps
     tracking = report.get('tip_contact_tracking')
     if trace_path is not None:
@@ -257,7 +300,10 @@ def export_case(source, output, *, max_frames=11, movie=False, audit_path=None, 
         anchors=(.5,1.,1.5,2.)
         selected=np.unique(np.r_[selected,[i for i,d in enumerate(depths[:prefix])
             if any(abs(d-a)<1e-10 for a in anchors)]]).astype(int)
+    if dense_roi:
+        selected = range(prefix)
     frames, hashes, mesh = [], {}, None
+    field_info = FIELD_INFO
     checks = []
     for index in selected:
         index = int(index)
@@ -268,14 +314,30 @@ def export_case(source, output, *, max_frames=11, movie=False, audit_path=None, 
         hashes[path.relative_to(source).as_posix()] = sha
         with np.load(path, allow_pickle=False) as state:
             count = int(state["body_nodes"])
-            X, x, tri = state["reference_xy"][:count], state["positions"][:count], state["triangles"]
+            reference, positions, tri = state["reference_xy"], state["positions"], state["triangles"]
+            X, x = reference[:count], positions[:count]
             if not np.isclose(float(state["depth_mm"]), depths[index], rtol=0, atol=1e-12):
                 raise ValueError("Saved state depth differs from accepted record")
             fields, energy, areas = saved_state_fields(X, x, tri, state["material_metric"], material)
-            current_mesh = dict(reference_positions=X.tolist(), triangles=tri.tolist())
             if mesh is None:
-                mesh = current_mesh
-            elif current_mesh != mesh:
+                base_X, base_tri = X, tri
+                if dense_roi:
+                    tracker = TipContactTracker(reference, tri, count, config, dhat, facets, signature.get('blade_landmarks'))
+                    definition = tracker.fixed_material_definition()
+                    centers = X[tri].mean(axis=1)
+                    in_roi = ((np.abs(centers @ tracker.es - tracker.origin) <= .5) &
+                              (centers @ tracker.en >= config['height_mm'] - .5))
+                    elements = np.flatnonzero(in_roi)
+                    if not elements.size:
+                        raise ValueError('No triangles in the fixed reference surface region')
+                    nodes, local_tri = np.unique(tri[elements].ravel(), return_inverse=True)
+                    ref_shape = triangle_shape(X[tri])
+                    mesh = dict(reference_positions=X[nodes].tolist(), triangles=local_tri.reshape(-1,3).tolist(),
+                                node_ids=nodes.tolist(), element_ids=elements.tolist(),
+                                reference_shape={k:v[elements].tolist() for k,v in ref_shape.items()})
+                else:
+                    mesh = dict(reference_positions=X.tolist(), triangles=tri.tolist())
+            elif not np.array_equal(base_X, X) or not np.array_equal(base_tri, tri):
                 raise ValueError("Selected states do not share an identical reference mesh")
             outline = report.get("blade_discretization", {}).get("outline_vertex_count")
             blade_count = len(state["positions"]) - count
@@ -287,7 +349,33 @@ def export_case(source, output, *, max_frames=11, movie=False, audit_path=None, 
             outline = int(outline)
             if outline < 3 or outline > blade_count:
                 raise ValueError("Invalid blade outline count")
-            blade = state["positions"][count:count+outline].tolist()
+            blade = positions[count:count+outline].tolist()
+            if dense_roi:
+                sa = steps[index]['sliding_amount']
+                dt = steps[index]['material']['dt_s']
+                if not np.isclose(dt, float(state['material_dt_s']), atol=1e-13, rtol=0):
+                    raise ValueError('Material dt differs from checkpoint')
+                previous = state['previous_positions']
+                fixed = tracker.fixed_material_motion(positions, definition)
+                prior = steps[index-1]['sliding_amount']['S_tip_intervals_mm'] if index else []
+                evidence = tracker.nose_support_evidence(sa, steps[index].get('nose_native_candidates', []),
+                                                         positions, previous, dt, prior,
+                                                         series[index-1]['nose_support'] if index else None)
+                shape = triangle_shape(x[tri])
+                # Plane strain adds a third unit stretch. In-plane singular values
+                # are computed separately for the in-plane condition number.
+                D = np.stack((x[tri[:,1]]-x[tri[:,0]], x[tri[:,2]]-x[tri[:,0]]), axis=2)
+                if index == 0:
+                    inv_ref = np.linalg.inv(np.stack((X[tri[:,1]]-X[tri[:,0]], X[tri[:,2]]-X[tri[:,0]]), axis=2))
+                shape['cond_F'] = np.linalg.cond(D @ inv_ref)
+                series[index].update(state_id=index, state_file=f'states/{index:04d}.npz', state_sha256=sha,
+                    fx_N=series[index]['fy_N'], SA_signed_mm=sa['SA_signed_mm'], sliding_amount=sa,
+                    nose_support=evidence, fixed_material=fixed,
+                    reference_surface_roi=_region_quality(elements, fields, shape, centers, areas, energy),
+                    whole_body=_region_quality(np.arange(len(tri)), fields, shape, centers, areas, energy),
+                    iterations=steps[index]['iterations'], load_step=steps[index]['load_step'],
+                    contact_accounting=steps[index]['contact_accounting'], barrier_energy_Nmm=steps[index]['barrier_energy_n_mm'],
+                    work=observations[index].get('work'), epsilon_u_mm=steps[index]['epsilon_u_mm'])
         if not np.isclose(fields["J"].min(), steps[index]["min_j"], atol=1e-10, rtol=1e-9):
             raise ValueError("Reconstructed minimum J differs from accepted state")
         width = float(signature["config"]["width_mm"])
@@ -296,6 +384,13 @@ def export_case(source, output, *, max_frames=11, movie=False, audit_path=None, 
         if not np.isclose(stored, expected, rtol=1e-8, atol=1e-9):
             raise ValueError("Committed-state stored energy does not reproduce accepted record")
         checks.append(dict(index=index, energy_difference_Nmm=stored-expected))
+        if dense_roi:
+            field_info = dict(J=FIELD_INFO['J'], max_stretch=dict(label='Maximum principal stretch (plane strain)',
+                              unit='1', association='element'), displacement_mm=FIELD_INFO['displacement_mm'])
+            fields = dict(J=fields['J'][elements], max_stretch=np.sqrt(1+2*fields['green_max'][elements]),
+                          displacement_mm=fields['displacement_mm'][nodes])
+            x = x[nodes].round(7)
+            fields = {key: value.round(7) for key, value in fields.items()}
         frames.append(dict(index=index, depth_mm=float(depths[index]), positions=x.tolist(), blade=blade,
                            fields={key: value.tolist() for key, value in fields.items()},
                            tip_contact=observations[index].get("tip_contact"),
@@ -303,7 +398,7 @@ def export_case(source, output, *, max_frames=11, movie=False, audit_path=None, 
                            relative_motion=observations[index].get('relative_motion')))
     info = {key: dict(value, range=[min(min(f["fields"][key]) for f in frames),
                                   max(max(f["fields"][key]) for f in frames)])
-            for key, value in FIELD_INFO.items()} if frames else {}
+            for key, value in field_info.items()} if frames else {}
     bundle = dict(schema_version=SCHEMA_VERSION, metadata=dict(
         name=_case_label(report), source=str(source), exported_utc=datetime.now(timezone.utc).isoformat(),
         result_sha256=hashlib.sha256(result_bytes).hexdigest(),
@@ -330,6 +425,14 @@ def export_case(source, output, *, max_frames=11, movie=False, audit_path=None, 
                      "Contact reference-material offset is not accumulated slip", "Extrema depend on mesh and tip discretization"],
         movie=dict(status="not_requested")), series=series, mesh=mesh, frames=frames, field_info=info)
     output.mkdir(parents=True, exist_ok=True)
+    if dense_roi:
+        bundle['metadata'].update(source=source.name, resolved_model=report['resolved_model'],
+            reference_roi='Reference element centroids within ±0.5 mm of landing and 0.5 mm below top',
+            display_precision='Coordinates (mm) and display scalars rounded to 7 decimal places. SA, quality and work use float64.',
+            reference_extrema={k:dict(min=float(v.min()),max=float(v.max())) for k,v in ref_shape.items()},
+            branch_rule='Indices are per frame. parent_indices are all overlapping previous reference bands. native_S_mm lists distinct repulsive stencil addresses inside each geometric band.',
+            postprocess_sha256={p.name:_digest(p) for p in (Path(__file__), Path(__file__).parents[1]/'prototype/tip_contact.py')})
+        bundle['metadata']['qualification']['audit_path'] = audit_path.name
     with (output / "curves.csv").open("w", newline="", encoding="utf-8-sig") as stream:
         writer = csv.DictWriter(stream, fieldnames=list(series[0]))
         writer.writeheader()
@@ -343,7 +446,7 @@ def export_case(source, output, *, max_frames=11, movie=False, audit_path=None, 
         except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as error:
             partial_movie.unlink(missing_ok=True)
             bundle["metadata"]["movie"] = dict(status="failed", reason=str(error))
-    if signature.get('blade_landmarks'):
+    if signature.get('blade_landmarks') and not dense_roi:
         from matplotlib.figure import Figure
         for frame in frames:
             depth=frame['depth_mm']

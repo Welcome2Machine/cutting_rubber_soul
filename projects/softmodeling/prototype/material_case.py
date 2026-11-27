@@ -42,6 +42,8 @@ def resolved_model(p):
     left = blade[1]-arc[0]; right = blade[p.nose_facets+3]-arc[-1]
     angle = np.rad2deg(np.arccos(np.clip(left@right/np.linalg.norm(left)/np.linalg.norm(right),-1,1)))
     return dict(config=p.config.to_dict(), material=p.material.to_dict(),
+        solver_policy=dict(predictor=p.predictor,max_iterations=p.max_iterations,
+            friction_globalization=p.friction_globalization),
         loading_rate_mm_s=p.loading_rate, initial_depth_mm=p.start,
         physical_time='dt=(depth-previous_depth)/loading_rate; elapsed=(depth-initial_depth)/loading_rate',
         integrator=('full-domain backward Euler momentum, implicit Maxwell and CZM' if getattr(p,'event_mode',False)
@@ -188,20 +190,25 @@ def make_problem(*,angle,equilibrium_shear,maxwell_shear,relaxation_s,loading_ra
                  equilibrium_alpha=2.,maxwell_alpha=2.,
                  volumetric='quadratic_j',blade_spacing=None,blade_thickness=None,blade_angle=None,
                  tip_radius=.02,local_spacing=.05,surface_spacing=.005,nose_facets=64,
-                 fine_halfwidth=3.,coarse_spacing=None,drop_s=None,dhat=.0025,
+                 fine_halfwidth=3.,coarse_spacing=None,contact_layer_depth=0.,reference_layout=None,size_gradient=.4,drop_s=None,dhat=.0025,
                  preparation_clearance_mm=None,friction_smoothing_mm=1e-5,enforce_physical_chord=False,
-                 blade_shape=None,friction_velocity_mm_s=None):
+                 blade_shape=None,friction_velocity_mm_s=None,friction_globalization='model-error',
+                 predictor='secant',max_iterations=500):
     """Shared construction for actual-angle runs and completed-reference audits."""
     if not all(np.isfinite(a) and 1 <= a <= 4 for a in (equilibrium_alpha,maxwell_alpha)):
         raise ValueError('Explicit candidate exponents must be in [1, 4]')
+    if type(max_iterations) is not int or max_iterations < 1:
+        raise ValueError('max_iterations must be a positive integer')
     p=ViscoelasticProblem(maxwell_shear=maxwell_shear,relaxation_s=relaxation_s,
         loading_rate=loading_rate,bulk_modulus=bulk_modulus,volumetric=volumetric,case='oblique',mu=mu,
         shear_modulus=equilibrium_shear,ogden_alpha=equilibrium_alpha,dhat=dhat,local_spacing=local_spacing,
         surface_spacing=surface_spacing,nose_facets=nose_facets,inclination=angle,tip_radius=tip_radius,
-        fine_halfwidth=fine_halfwidth,max_iterations=500,predictor='secant',hessian_mode='regularized',element='p1',
+        fine_halfwidth=fine_halfwidth,max_iterations=max_iterations,predictor=predictor,
+        friction_globalization=friction_globalization,hessian_mode='regularized',element='p1',
         blade_spacing=blade_spacing,blade_thickness=blade_thickness,blade_angle=blade_angle,
         blade_shape=blade_shape,friction_velocity_mm_s=friction_velocity_mm_s,
-        coarse_spacing=coarse_spacing,drop_s=drop_s,preparation_clearance_mm=preparation_clearance_mm,
+        coarse_spacing=coarse_spacing,contact_layer_depth=contact_layer_depth,reference_layout=reference_layout,size_gradient=size_gradient,
+        drop_s=drop_s,preparation_clearance_mm=preparation_clearance_mm,
         friction_smoothing_mm=friction_smoothing_mm,enforce_physical_chord=enforce_physical_chord)
     p.stagnation_window=40
     if maxwell_alpha != 2.:
@@ -224,6 +231,7 @@ def audit(p,out,report,*,destination=None,progress=None,deadline=None,initial_st
         prior_velocity=initial_state['velocity'].copy();prior_time=float(initial_state['event_time_s'])
         prior_cohesive=initial_state['cohesive_maximum'].copy()
     for i,record in enumerate(report['steps']):
+        if getattr(p,'queue_checkpoint',None):p.queue_checkpoint()
         if deadline is not None and time.monotonic()>deadline:raise TimeoutError('Independent audit wall budget')
         path=out/'states'/f'{i:04d}.npz'
         with np.load(path,allow_pickle=False) as archive:

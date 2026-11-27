@@ -1,6 +1,7 @@
 """Reject data, credentials, runtime artifacts and oversized blobs from Git publication."""
 import argparse
 from pathlib import Path, PurePosixPath
+import re
 import subprocess
 import sys
 
@@ -24,12 +25,78 @@ def reason(path, size):
     return None
 
 
+def tree_records(ref):
+    """Yield path, size and object identity from one complete Git tree."""
+    entries = subprocess.check_output(["git", "ls-tree", "-rlz", ref], cwd=ROOT).split(b"\0")
+    for entry in entries:
+        if not entry:
+            continue
+        info, name_raw = entry.split(b"\t", 1)
+        fields = info.split()
+        if fields[1] == b"blob":
+            yield name_raw.decode("utf-8"), int(fields[3]), fields[2].decode("ascii")
+
+
+def history_records(ref, exclude=None):
+    """Visit all historical trees, including files added and later deleted."""
+    command = ["git", "rev-list", ref]
+    if exclude is not None:
+        command.extend(["--not", exclude])
+    commits = subprocess.check_output(command, cwd=ROOT).decode().splitlines()
+    seen = set()
+    for commit in commits:
+        for name, size, blob in tree_records(commit):
+            if (name, blob) not in seen:
+                seen.add((name, blob))
+                yield name, size, blob
+
+
+def pre_push_records(lines):
+    """Check clean tips and new history against each actual destination head.
+
+    A published ancestor can contain historical debt. It is not new publication,
+    but it must be removed from the current tree. Only an exact path/blob pair
+    already reachable from the remote head is excluded from the new-history
+    check. A new destination has no trusted baseline and receives a full audit.
+    """
+    for line in lines:
+        fields = line.split()
+        if len(fields) != 4:
+            raise ValueError("Invalid Git pre-push input")
+        _, local_sha, _, remote_sha = fields
+        if any(re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", sha) is None
+               for sha in (local_sha, remote_sha)):
+            raise ValueError("Invalid object identity in Git pre-push input")
+        if set(local_sha) == {"0"}:
+            continue  # Deleting a destination publishes no new objects.
+        subprocess.check_output(["git", "rev-parse", "--verify", local_sha + "^{commit}"],
+                                cwd=ROOT, stderr=subprocess.STDOUT)
+        if set(remote_sha) == {"0"}:
+            yield from history_records(local_sha)
+            continue
+        try:
+            subprocess.check_output(["git", "rev-parse", "--verify", remote_sha + "^{commit}"],
+                                    cwd=ROOT, stderr=subprocess.STDOUT)
+        except subprocess.CalledProcessError as exc:
+            raise ValueError("Remote head is unavailable locally; fetch and review it before pushing") from exc
+        ancestry = subprocess.run(["git", "merge-base", "--is-ancestor", remote_sha, local_sha],
+                                  cwd=ROOT, capture_output=True, check=False)
+        if ancestry.returncode:
+            raise ValueError("Remote head is not a verified ancestor; fetch and review, do not force push")
+        yield from tree_records(local_sha)
+        published = {(name, blob) for name, _, blob in history_records(remote_sha)}
+        for name, size, blob in history_records(local_sha, exclude=remote_sha):
+            if (name, blob) not in published:
+                yield name, size, blob
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     mode = p.add_mutually_exclusive_group(required=True)
     mode.add_argument("--staged", action="store_true")
     mode.add_argument("--ref", help="Inspect every blob reachable from a commit (e.g. HEAD)")
-    mode.add_argument("--pre-push", action="store_true", help="Read the actual pushed local refs from Git hook stdin")
+    mode.add_argument("--pre-push", action="store_true",
+                      help="Check clean tips and unpublished history using the actual remote heads from Git hook stdin")
     args = p.parse_args(argv)
     violations, count = [], 0
     if args.staged:
@@ -39,40 +106,24 @@ def main(argv=None):
             if item:
                 name = item.decode("utf-8")
                 size = int(subprocess.check_output(["git", "cat-file", "-s", ":" + name], cwd=ROOT))
-                records.append((name, size))
+                records.append((name, size, "index"))
+    elif args.ref is not None:
+        records = history_records(args.ref)
     else:
-        # Walk historical trees as well as HEAD so deleted data cannot hide in history.
-        records, seen = [], set()
-        refs = [args.ref]
-        if args.pre_push:
-            refs = []
-            for line in sys.stdin:
-                fields = line.split()
-                if len(fields) != 4:
-                    raise ValueError("Invalid Git pre-push input")
-                if set(fields[1]) != {"0"}:
-                    refs.append(fields[1])
-        commits = sorted({commit for ref in refs for commit in subprocess.check_output(
-            ["git", "rev-list", ref], cwd=ROOT).decode().splitlines()})
-        for commit in commits:
-            entries = subprocess.check_output(["git", "ls-tree", "-rlz", commit], cwd=ROOT).split(b"\0")
-            for entry in entries:
-                if not entry:
-                    continue
-                info, name_raw = entry.split(b"\t", 1)
-                fields = info.split()
-                if fields[1] != b"blob":
-                    continue
-                name = name_raw.decode("utf-8")
-                key = (fields[2], name)
-                if key not in seen:
-                    records.append((name, int(fields[3])))
-                    seen.add(key)
-    for name, size in records:
-        count += 1
-        problem = reason(name, size)
-        if problem:
-            violations.append(f"{name}: {problem} ({size} bytes)")
+        records = pre_push_records(sys.stdin)
+    seen = set()
+    try:
+        for name, size, blob in records:
+            if (name, blob) in seen:
+                continue
+            seen.add((name, blob))
+            count += 1
+            problem = reason(name, size)
+            if problem:
+                violations.append(f"{name}: {problem} ({size} bytes)")
+    except (subprocess.CalledProcessError, ValueError) as exc:
+        print(f"Publication check could not verify history: {exc}")
+        return 1
     print("\n".join(violations) if violations else f"Publication check passed: {count} blobs")
     return 1 if violations else 0
 

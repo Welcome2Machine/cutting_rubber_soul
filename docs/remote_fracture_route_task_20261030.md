@@ -1,6 +1,6 @@
 # 远程切割研究下一轮任务指令：释放定义、接触刚度与实际裂口推进
 
-> **历史任务说明（2026-10-31更新）**：本文对应第六轮，结果已记录在方法第28节。下一轮执行顺序见 [远程断裂任务书](../researchtopic/fracture_agent_tasks_20261031.md) 及 [服务器启动提示词](../researchtopic/server_agent_prompt_20261031.md)。已完成的面级核、失败分类和端点事件检查不重复开发；未被新任务替代的数值、数据、资源与发布约束继续适用。
+> **历史任务说明（2026-10-31更新）**：本文对应第六轮，结果已记录在方法第28节。下一轮执行顺序见 [远程断裂任务书](../researchtopic/fracture_agent_tasks_20261031.md) 及 [服务器启动提示词](https://github.com/Welcome2Machine/cutting_rubber_soul/blob/ec1f32745af51ba45658cce9c17c97a30ae06ae8/researchtopic/server_agent_prompt_20261031.md)。已完成的面级核、失败分类和端点事件检查不重复开发；未被新任务替代的数值、数据、资源与发布约束继续适用。
 
 日期：2026-10-30。性质：待执行的研究任务说明，不是结果报告，也不授予任何数值或物理资格。
 评估基点：Welcome2Machine/cutting_rubber_soul，codex/server-fracture-20261029，

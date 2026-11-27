@@ -1,5 +1,6 @@
 """Local HTML workbench and portable result export; no web build dependencies."""
 import argparse
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -17,12 +18,39 @@ def main():
     parser.add_argument('--export',type=Path,help='Export an existing case directory instead of serving the UI')
     parser.add_argument('--output',type=Path)
     parser.add_argument('--frames',type=int,default=11)
+    parser.add_argument('--dense-roi',action='store_true',help='Export every authenticated P1 state in the fixed reference surface ROI')
+    parser.add_argument('--trace',type=Path,help='Use existing same-state contact/work observations')
+    parser.add_argument('--replay',type=Path,nargs='+',help='Package dense result.bundle.json files in one offline workbench HTML')
     parser.add_argument('--movie',action='store_true')
     args=parser.parse_args()
+    if args.replay:
+        if args.export or not args.output:parser.error('--replay requires its own output directory')
+        static = ROOT/'workbench/static'
+        page = (static/'index.html').read_text(encoding='utf8')
+        page = page.replace('<link rel="stylesheet" href="/app.css">',
+                            '<style>'+(static/'app.css').read_text(encoding='utf8')+'</style>')
+        head, body = page.replace('<script defer src="/app.js"></script>', '').split('</body>')
+        args.output.mkdir(parents=True, exist_ok=True)
+        target = args.output/'index.html'
+        temporary = target.with_suffix('.partial')
+        with temporary.open('w',encoding='utf8') as stream:
+            stream.write(head)
+            for path in args.replay:
+                data = path.read_text(encoding='utf8')
+                if not json.loads(data)['metadata'].get('reference_roi'):
+                    raise ValueError('Offline replay requires a dense reference ROI export')
+                stream.write('<script type="application/json" class="softcut-replay">')
+                stream.write(data.replace('<', r'\u003c'))
+                stream.write('</script>')
+            stream.write('<script>'+(static/'app.js').read_text(encoding='utf8')+'</script></body>'+body)
+        temporary.replace(target)
+        print(target)
+        return
     if args.export:
         if not args.output:parser.error('--export requires --output')
         from workbench.results import export_case
-        export_case(args.export,args.output,max_frames=args.frames,movie=args.movie)
+        export_case(args.export,args.output,max_frames=args.frames,movie=args.movie,
+                    dense_roi=args.dense_roi,trace_path=args.trace)
         print(args.output/'result.bundle.json');return
     if not 1024<=args.port<=65535:parser.error('Use a local port in [1024,65535]')
     url=f'http://127.0.0.1:{args.port}/'

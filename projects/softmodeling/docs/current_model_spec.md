@@ -1,4 +1,6 @@
-# 当前模型规格与适用范围
+# 模型规格与历史适用范围
+
+> **历史方法/配置资料。** 本文保留其成文时的模型与参数，不是2026-11-27生产输入。当前无断裂A/R20任务、共同物性、固定速度摩擦正则及服务器范围以[唯一任务书](../../../researchtopic/research_prototype_task.md)为准；结果见[当前状态](research_status.md)。旧fixed εu与旧.14/1.24材料不得自动带入新任务。
 
 更新：2026-11-10。执行入口为[科研原型任务](../../../researchtopic/research_prototype_task.md)，结果见[研究状态](research_status.md)。
 

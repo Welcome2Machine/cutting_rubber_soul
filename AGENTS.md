@@ -1,5 +1,11 @@
 # Integration workspace
 
+Current task (2026-11-27): server-only intact A/R20 numerical refinement on Kyoto System B.
+Active branch: codex/deformation-sliding-baseline. Work root: <USER_WORK_ROOT>.
+The local agent is paused. Read the single task and docs/environment.md; historical fracture/server
+rounds are references, not active instructions. Numerical repairs are authorized; physics changes need evidence.
+
+
 Read README.md, docs/interface_contract.md and docs/git_workflow.md before changing interfaces.
 The current research scope and ownership are defined only in researchtopic/research_prototype_task.md
 and docs/git_workflow.md; historical round priorities do not override them.

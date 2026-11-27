@@ -1,765 +1,82 @@
-# 运行环境与迁移
+# 京都大学 System B：当前运行与环境
 
-## 当前端点采样对照（2026-11-10）
+2026-11-27 核对官方文档。本页只维护机器和运行方法；研究输入、数值预算与任务顺序见 [唯一任务书](../researchtopic/research_prototype_task.md)。旧服务器环境、作业账本和路径保留在 [整理前环境记录](https://github.com/Welcome2Machine/cutting_rubber_soul/blob/ec1f32745af51ba45658cce9c17c97a30ae06ae8/docs/environment.md)，不是本轮资源限额。
 
-固定任务52300dfca1954ba11636efe414e1f5524d95e208，数值producer
-1e67631630821dcfee80bb335686e08885a029ab；公开等树版本047dfe54f7c13880b64d33283055e9d1c35e5495。
-整树21f307752a07b827c2f532ccabad4e2bf664b731。F0沿用18e4e3c原生产身份，不重跑、不覆盖旧包。
-本次没有安装或更换数值依赖，活动加载期间数值文件冻结；仅现有split_mesh的显式端点策略及其输入/身份接通有变化。
-新版回放须使用各自保存配置中的coordinated_endpoints；缺省legacy仍用于重放旧参考失败，不能跨策略恢复。
+## 1. 工作目录与环境复用
 
-新F1/F2、原生接触重组、实际时间步、完整接受/拒绝记录和解释器/依赖清单位于
-`runs/fine_interface_20261110/endpoint_sampling/`；实际结果见[研究状态](../projects/softmodeling/docs/research_status.md)。
-README_REPLAY.md、preregistration.json、jobs.json、sacct.psv及accounting.json提供命令、环境与最终核账，
-包括本日已用额度；运行结果和基础设施明细留既有证据库，不进入Git。
-本地a39ce7fc文字交接已读，原始包未实收；没有要求本地新增计算、拟合或代码修改。
+用户工作根由用户启动提示词指定，以 `<USER_WORK_ROOT>` 表示。若尚未有仓库，推荐其下 `cutting_rubber_soul/`；已有正确仓库直接复用，不强制复制。运行、证据、调度脚本位于仓库忽略的 `runs/server_intact/`，不覆盖旧 `SoftCutting/1029`。
 
-下述条件惯性事件及更早记录保留原来源和失败资格，本次没有恢复其动态路径。
+已有Linux FE解释器的具体路径从旧服务器环境记录与现场核对；公开模板以 `<EXISTING_FE_ENV>/bin/python` 表示。历史记录Python3.11.13，需现场验证。
 
-## 当前条件惯性事件交付（2026-11-09）
+旧现场曾使用 SysB/2022、slurm/2022、intel/2023.2、intelmpi/2023.2 和 Python FE 环境；这些是寻找已有环境的线索，必须现场检查 `module list/avail/show`、解释器和实际导入，不能照搬 Windows DLL、盘符或 PYTHONPATH 分号。
 
-任务固定b30aa743。开工时74416154、分支codex/server-fracture-20261029正确，完整index与工作区干净、本人无活动作业。
-核对origin、fetch后审查纯任务差异并正常快进；保留全部旧结果/其他worktree，未reset/clean/stash他人文件。
-固定df2372ed本地两份文字交接已读取，未整分支合并；本地完整体计算仍消费74416154，不自动跟随动态核心。
-现场modules为SysB/2022、slurm/2022、intel/2023.2；spartition/qgroup确认gr10578b，
-Rmin/Rstd/Rmax=56/112/112、最长14日、开工组占用0。没有新增付费资源或复活旧队列。
+先确认既有 Python 能导入 numpy/scipy/ipctk/threadpoolctl/psutil 和所需 PARDISO。复用兼容解释器与已装库；只有确实不兼容时才建一套服务器 FE 环境，并记录原因。保留虚拟环境解释器的调用路径，不解析符号链接后误调用系统 Python。FE `requirements.txt` 为已用版本清单，IPC 需通过 API 检查；不自动重装全部库或修改全局 shell 初始化。
 
-运行根`/LARGE1/gr10578/Zhao_Guorui/SoftCutting/1029/runs/seam_inertia_20261109/`。
-登记全轮运行并集4h，加载/探索最多3h，保留1h审查；最多2并发、每项≤4物理核/4线程/16GiB。
-恰好三条FE：h=.001先导和h=10/5 μs同种子窗口，没有追加步长级别、控制器或续算。
-每条内部3500s含120s独立审查预留、进程3540s、Slurm3600s；实际都提前因求解门失败保存退出。
-加载p1:t2:c2:m8G、IPC1/BLAS1、物理核亲和性；直接回归p1:t4:c4:m16G、IPC2/BLAS1。
-所有数值装配、回归、审查、绘图、打包/重放走sbatch --rsc→srun，--no-requeue；没有登录节点FE。
-数值源码在活动作业期间冻结，必要文档修改不进入数值哈希。
+记录 `sys.executable`、依赖版本、模块列表、BLAS/MKL 动态库、pypardiso 实际库、`ipctk.__file__`、源码/输入 SHA 和 CPU 亲和性。Linux PARDISO 使用可用的 `libmkl_rt.so` 与现有环境；`module load intel` 不等于 Python 已链接到 MKL。缺 PARDISO 时先验证 native 后端；后端改变形成新的性能/恢复身份，不能改旧 manifest 冒充同一续算。
 
-最终全部16作业终态（包括首次缺allocations目录、尚未启动FE的失败作业26670434）。
-加载作业26673780/26673855/26673856；实际程序保存并审查后进程正常结束不等于研究窗口通过。
-保守运行并集**567s（9分27秒）**，sacct并集555s、原子标记547.103s；新增FE加载并集335s。
-申请物理核时保守**.390556h**，sacct口径.38h；排队累计33s单列，不计运行。
-job层TotalCPU总592.923s，不叠加step；占申请物理核秒43.34%。各加载约49.68–52.28%，
-符合IPC1/BLAS1和8GiB资源申请的两物理核分配；没有做线程扩展测试。
-Elapsed和/运行并集1.13694仅表示独立任务重叠，不是单求解器加速。
-最高并发8物理核/8计算线程申请/32GiB（两项4核回归），各单项上限满足。
-已回读ReqTRES/AllocTRES并用HT2拓扑核实；AllocCPUS逻辑数没有直接当物理核时。
-1s采样进程树RSS峰236687360 B（225.72 MiB），sacct单步骤MaxRSS峰121806848 B（116.16 MiB）；
-两者范围不同，均非严格内存上界。原始sacct、每项worker/亲和性/线程池与accounting.json完整保留。
+## 2. System B 官方规则与本项目策略
 
-相关FE首组94通过/40 subtests，最后针对性18通过/2 subtests（含新BE实际单步独立重装）；
-不是将有交叠测试数相加。根118通过、11无显示GUI跳过。恢复false/短前缀拒绝、完整质量、BE恒等式、
-实际摩擦尺度及真实不安全弦的准确回滚均覆盖。数值提交发布检查5 blobs通过；最终文档另核可达内容。
+System B（Laurel 3）为每节点双路 Xeon Platinum 8480+，112 物理核、512 GiB。[硬件说明](https://www.iimc.kyoto-u.ac.jp/en/services/comp/supercomputer/system/specification)
 
-数值本地producer3506854、公开00db3922整树b3249435相同。HTTPS push无凭据，使用已连接GitHub
-create-tree/commit后以expected_sha、force=false正常快进；仅提交元数据变化，不伪改源文件hash。
-旧5db9bbe/74416154、原.8mm失败审查及所有原始状态保留。停止由三条限定路径的原方程求解失败触发，非预算到期。
+当前调度是 Slurm。`--rsc p=进程数:t=每进程线程数:c=每进程物理核:m=每进程内存`；`t=64` 不是 64 小时，时限另用 `-t HH:MM:SS`。B 的每进程核上限 112、可申请内存上限 500G；省略 m 时按 4571M×c 分配，过大的显式内存可能提高实际分配核数。[资源规则](https://web.kudpc.kyoto-u.ac.jp/manual/en/run/resource)
 
-精简包：`runs/deliverables/seam_inertia_20261109_review.tar.gz`，13401733 bytes、228成员，
-19动态接受关键态＋5旧QS态＋三份拒绝，SHA256
-`d64dcde81b8df31a883f6bfb21c0fec9e4c767af8556da3431ebda5617ea47a4`。
-解包逐文件核验通过；19态重新装配通过，三份拒绝残差仍大于1e-4 N。完整链在服务器库，包内清单明确未收入的状态。
-最终账/重放/发布映射放`runs/deliverables/seam_inertia_20261109_final_metadata/`，不循环改写包。
+`tssrun` 也通过调度器，忙时可能等待。用户过去的 `tssrun --x11 --rsc t=64:c=64:m=128G mentat` 是 GUI 会话经验，不保证 Python 并行效果或免排队；无界面 FE 不需要 `--x11`。[交互执行](https://web.kudpc.kyoto-u.ac.jp/manual/en/run/interactive)
 
-连续完整体0–.2mm已有41态复用打包，无新桥接加载：
-`runs/deliverables/intact_s7_server_reference_20261109.tar.gz`，9926891 bytes，SHA256
-`2be72606342b9a717d98d4adc962eefddca8b38b2ceadb18d88393c1a04b9e9e`。
-服务器已备齐原配置/命令/result/audit/41态及逐文件清单；**本地未确认实收**。
-本地35MB原始结果包也未收到；不能把Git交接文字可读当原始包已到。
+现场先查 `spartition`、`qgroup` 和自己的 `squeue`，确认候选队列 `<VERIFIED_B_PARTITION>`、DefTime/MaxTime、Rstd 与剩余额度。Rstd 是单作业上限，Rmax 是组队列并发总限；不能把整组额度视为个人可独占。不要套用 `pjsub` 或普通 Slurm 的 `#SBATCH --cpus-per-task/--mem/--nodes/--ntasks/--exclusive`，本站要求资源通过 `--rsc`。程序执行位置使用 `srun`。[批处理](https://web.kudpc.kyoto-u.ac.jp/manual/en/run/batch) · [站点限制](https://web.kudpc.kyoto-u.ac.jp/manual/en/run/tips)
 
-上一轮共同输入、三条桥接与QS敏感性全文见
-[74416154环境记录](https://github.com/Welcome2Machine/cutting_rubber_soul/blob/74416154e2b250dd528a730a72e3c9d6e9f4653c/docs/environment.md)。
-以下旧环境/迁移记录保留其当时范围。
+本项目不是 MPI：先 `p=1`。首轮建议 4 物理核/16G、IPC1、BLAS1、PARDISO最多4（若可用），再对同一输入有限比较4/8/16核；仅在明显受益后试32/64。主程序 material batching 是分块，不是多个并行worker。记录装配、材料更新、线性求解、有效接受步耗时和峰值内存，再选配置。最多同时两项独立作业，初期总申请不超过用户已用过的64核/128G且不超过当前组余额；这是项目启动策略，不是系统硬件最大值。
 
-## 科研原型服务器交付（2026-11-02）
+线程池按实际嵌套关系核验，避免 IPC/BLAS/PARDISO/后处理worker 超订阅。站点 `SLURM_CPUS_PER_TASK` 是逻辑核数，不能直接拿它作物理核预算；核对 `SLURM_DPC_CPUS`、cpuset、lscpu及NUMA。比较墙钟耗时和物理核时，不把申请核数称为利用率。[环境变量](https://web.kudpc.kyoto-u.ac.jp/manual/en/run/tips)
 
-执行分支codex/server-fracture-20261029，从b7fd246接续，无初始dirty文件或本人活跃作业。
-现场module为SysB/2022、slurm/2022及既有Intel环境，分区gr10578b实际Rmin/Rstd/Rmax
-56/112/112、最长14日，初始组占用0；没有猜测队列、申请新增资源或重启旧队列。
-复用sbatch --rsc→srun、--no-requeue；新加载IPC1/BLAS1、物理核亲和性，
-p=1:t=2:c=2:m=8G。必要回归p=1:t=4:c=4:m=16G覆盖既有默认嵌套池。
+## 3. 有限作业入口
 
-结果根 `/LARGE1/gr10578/Zhao_Guorui/SoftCutting/1029/runs/server_1102_prototype/`。
-加载内部1100s、外层1150s、调度1200s；实际均因严格数值目标停止，未耗尽预算。
-现有增长audit内部500s、外层525s；作业包含回归、绘图、审查和打包，无登录节点FE。
-最终10项作业全部COMPLETED（程序正常保存的数值失败仍在result中，不能把Slurm退出0
-当科学通过）。作业ID/命令、ReqTRES/AllocTRES、CPU拓扑、亲和性和线程池逐项留档。
+先按任务书从可验证的 H_cases 输入生成本轮选定子集，在计算节点完成环境/短验证及 `--prepare-only`。显式传共同材料 CLI，不能依赖历史 `.14/1.24` 默认。准备 manifest 后才提交下例。脚本与日志保存到 ignored `runs/server_intact/`；提交前创建日志目录。
 
-最终保守运行并集**996s（16分36秒）**；sacct秒级并集989s、原子标记并集980.834s。
-新增加载并集660s；把全部回归也保守计为FE加载时上界717s，低于40min。
-申请物理核时保守**0.649444h**，调度口径0.642778h；实际job-level TotalCPU合计
-1012.803s，未把步骤CPU重复相加。最高并发2项、6物理核/6计算线程申请/24GiB。
-SysB AllocCPUS按每核两个硬件线程解释，并已回读TRES与拓扑；不直接当物理核数。
-两加载job-level CPU/申请物理核秒约51.67%/51.51%，符合IPC1/BLAS1主要使用一个核，
-第二核来自安全内存申请；没有单任务加速试验。sum-job-Elapsed/并集=1.114，
-只说明独立审查/报告与加载有重叠，不能称求解器加速1.114倍。
-采样进程树峰值293826560字节（约280.2MiB），sacct最大步骤RSS179204096字节
-（约170.9MiB）；两者采样范围不同，均非严格内存峰值上界。排队总14s不计运行并集。
-审查/交付预留30min未挪用；更早因路线停止结束本轮，未自动续开或重置预算。
+```bash
+#!/bin/bash
+#SBATCH -p <VERIFIED_B_PARTITION>
+#SBATCH -t 02:00:00
+#SBATCH --rsc p=1:t=4:c=4:m=16G
+#SBATCH --no-requeue
+#SBATCH -J rubber_intact
+#SBATCH -o runs/server_intact/logs/%x.%j.out
+#SBATCH -e runs/server_intact/logs/%x.%j.err
+set -euo pipefail
+: "${SOFTCUT_REPO:?set verified repository path}"
+: "${SOFTCUT_PYTHON:?set existing FE interpreter}"
+: "${SOFTCUT_BATCH:?set prepared manifest directory}"
+# 这里加载现场已确认的模块和库路径；不写死旧Windows运行库。
+export OMP_NUM_THREADS=4
+export MKL_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+cd "$SOFTCUT_REPO/projects/softmodeling"
+srun "$SOFTCUT_PYTHON" -m tools.run_material_queue \
+  --output "$SOFTCUT_BATCH" --launch-prepared --foreground
+```
 
-根测试118 passed/11 skipped（无显示Tk等原跳过原因保留），相关FE回归27 passed。
-精确命令、解释器启动路径与pip冻结、各输入/源码SHA见运行根；不resolve虚拟环境
-Python符号链接而丢失sys.prefix。原材料包和0/33/57完整体保存态仍缺，准确路径/哈希
-见existing/handoff_gaps.csv；旧不同模型不作替代。数值源码本地dd8d9ab对应发布272a5589，
-同树d4eab02221fcc5cbbc50e4c655579002d6c76ff8；其余最终文档发布映射在finalization附件。
+提交前将 `<VERIFIED_B_PARTITION>` 替换成 spartition 已确认的真实B队列；它不是可直接提交的字面值。从仓库根提交，三个 SOFTCUT 变量及库路径均用现场绝对路径设置；Slurm 时限须覆盖各case预算、审查额度与结束写盘。上例2小时是示例，不足时按已批准有限任务的实际总预算调整，且不超过spartition限制。
 
-精简包 `/LARGE1/gr10578/Zhao_Guorui/SoftCutting/1029/runs/deliverables/server_1102_prototype_review_20261102.tar.gz`
-为45567265字节，414个已逐成员复核文件（另有清单自身）、168份选择性NPZ，SHA256：
-`cd94c05a24f4701812f7d54f509e21f60524f9b72f1c5ecbaa68c9ad286042d4`。
-包含关键接受态、全部实际激活/拒绝见证与父态、P2条件窗父态/原源bundle、配置/表/图。
-完整822/1302新态及3708旧态留服务器，清单明确未入包的状态；小包不能冒充全路径库。
-最终核账、最终文档与发布映射在包外finalization侧件，避免自引用，归档不原地重写。
+`--foreground` 保留原启动校验、唯一claim、状态和日志，等待worker终止并传播失败；不能用隐藏 `--worker` 跳过launch校验，也不能在Slurm中启动默认detached模式后退出。`--resume-queue --foreground` 同样须在新的有效allocation中运行。`--prepare-only` 不应自动启动求解。单个短诊断可在tssrun内前台执行现有单算例入口。
 
+## 4. 查询、暂停与恢复
 
+启动后只短时核实JobID、日志和一个新接受态（或有时限的诊断实际推进），然后汇报，不持续监控。
 
-## 2026-11-01 第十二轮：精度证书、闭合C1局部事件与预算停止
+```bash
+squeue -j JOBID
+sacct -j JOBID --format=JobID,State,Elapsed,TotalCPU,AllocCPUS,MaxRSS,ExitCode
+# 以下两条仅在与worker同一计算节点且已核验身份时使用；
+# 跨节点适配完成前，登录节点只用Slurm与共享日志/manifest：
+"$SOFTCUT_PYTHON" -m tools.run_material_queue --output "$SOFTCUT_BATCH" --status
+"$SOFTCUT_PYTHON" -m tools.run_material_queue --output "$SOFTCUT_BATCH" --pause
+```
 
-从4caaa67、干净工作区/空本人队列接续，已核查module/spartition/qgroup/CPU与官方资源
-规则；沿用SysB gr10578b。完整命令、解释器、依赖/原生IPC二进制SHA、Req/AllocTRES、
-核亲和性在runs/server_1101_round12。所有FE/回归/作图审查通过sbatch/srun，--no-requeue。
-通常p1:t2:c2:m8G，完整回归4物理核8G。内存驱动分配核数已回读，AllocCPUS按HT2核实，
-没有申请64线程或付费资源。未编辑活跃求解源码。
+当前控制器主要通过本机psutil识别PID，尚缺Slurm节点身份；新agent须先在既有控制器补齐跨节点识别与合作暂停，不能把登录节点worker_missing当作计算结束。适配前优先在同节点执行现有安全暂停；跨节点进程身份不能确认时，通过明确JobID结束自己的作业，保留已完成检查点并在恢复前重审。必要时 `scancel JOBID` 仅取消指定本任务；不用按用户/队列批量取消，也不对其他节点PID盲目kill。恢复通过新Slurm作业内的 `--resume-queue --foreground` 和已有身份检查；失败不是授权无限重启。需自动依赖时，仅在真实验收成功且退出码为0后放行，不能只看“程序已经退出”。
 
-IPC2同一冻结状态出现约−1.7347e-18改进最大值权重的支路成员不稳定，IPC1重复8次及
-真实同dt一步独立审查稳定，因此后续IPC1/BLAS1并行独立任务；这不是删除接触项。
-稀疏后端维持既有SuperLU，未宣称本轮单任务扩展性加速。加载配置与亲和/线程池见原JSON。
+## 5. 存储与节点边界
 
-打包前保守运行并集4454 s（74.23 min）、物理核时3.52056，阶段并集加载2964 s、
-诊断293 s、审查1012 s、测试658 s；阶段有重叠不能相加。峰6物理核/6线程预算/16 GiB，
-最大单worker进程树RSS1秒采样424964096 B（405.28 MiB），sacct步骤采样峰307945472 B；
-这些不是精确同时峰或OOM安全保证。TotalCPU6677.902 s/申请物理核时间53.20%；Elapsed和/
-运行并集1.308仅表示实际作业重叠，不是单算例加速比。排队合计879 s另记。
-全部分配与TRES核对一致。最终含打包统计在accounting_final.json及核账附件。
+先查目标目录已有文件、写权限与 `quota -p`。/LARGE1 默认备份策略可被组管理员调整；不要假定已有异地备份，也不要自行改用户指定根。/FAST和作业私有/tmp可用于可再生临时数据，checkpoint、日志和最终证据写回指定LARGE工作区。[存储说明](https://web.kudpc.kyoto-u.ac.jp/manual/en/filesystem)
 
-监督器在总运行并集4320 s加载截止停止两条后段（保留20%审查交付）；未重启，
-并非把90分钟用尽。SIGTERM前已有NPZ/见证，最终生产JSON/在途试探不全，独立保存态审查
-明确降级。以后版本加入逐步fsync链式日志，强制退出回归通过，本轮未再启动加载。
-完整数值版本835 FE/543子测试/1环境skip，根118/11 GUI skip；日志增量10项回归通过。
-原始运行身份12e26a1/ce36529与文档发布提交通过source_changes.bundle和publication_map
-逐树对应；原失败producer b0b2609另给源码差异及身份。完整NPZ只留runs，不提交Git。
+登录节点每用户有4核/16GB等限制；用于编辑、检查和提交。FE求解、性能比较和较重审查放到计算节点，不能靠nohup在登录节点长期运行。[登录节点说明](https://web.kudpc.kyoto-u.ac.jp/manual/en/config)
 
-## 2026-11-01 第十一轮：统一时间口径、连续续算与闭合C1
-
-起点923005a，初始工作区干净、本人队列空，fetch无新增；module/spartition/qgroup/
-CPU拓扑与分区限制存于runs/server_1101_round11/cluster_initial.txt。沿用SysB
-合法gr10578b、IPC2/BLAS1、物理核亲和性与--rsc p=1:t=2:c=2:m=8G；完整回归
-4物理核8G。所有计算通过sbatch/srun，--no-requeue，未新增付费资源、复活旧队列
-或修改活动作业的数值源码。Slurm逻辑AllocCPUS按每物理核2线程和实际TRES核对。
-
-新预算90分钟运行并集、至少20%审查交付、最多两项，每项≤4核/4计算线程/16 GiB。
-控制研究单独≤1500 s。打包前29任务全部COMPLETED（审查程序完成不等于审查
-判定通过，初版C1后缀审查明确false保留）；保守运行并集2692 s，物理核时
-2.221111，探索1606 s、审查1236 s、测试424 s，阶段可重叠。控制研究1248 s。
-峰6核/6计算线程预算/16 GiB；全部Req/AllocTRES与亲和拓扑核对一致。进程树RSS
-1秒采样峰411840512 bytes，sacct步骤MaxRSS峰325750784 bytes；二者不是精确
-全任务同时峰或OOM安全界。TotalCPU4595.309 s/物理申请核时间57.92%，各加载
-63.9–67.7%；Elapsed和/运行并集1.375仅为实际重叠，没有新单任务扩展性实验。
-排队合计65 s、最长7 s，排队不计预算。以上为打包前统计；最终包含打包的统计另附。
-
-实际加载：闭合自身初态至.4 mm约831 s外层运行；续算至.479431376480 mm约300 s，
-内部分别1800/1200 s预算，没有到限；因1e-8数值目标未到停止，未复活作业。
-主路径的受控源码在各job *_sources.json、结果与manifest中；未来拒绝能量捕获修复
-不改变数值方程，但改变源码身份，未将旧状态拼接到修复后运行。
-原物理源码与显式旧账审查检查点b0b2609保留合法worktree：
-`/LARGE1/gr10578/Zhao_Guorui/SoftCutting/1101-round11-producer`。
-主工作分支继续维护最终捕获修复及报告代码，发布逐树等价映射保留本地提交身份。
-
-完整结果：`/LARGE1/gr10578/Zhao_Guorui/SoftCutting/1029/runs/server_1101_round11`。
-`closed_c1_040`完整独立审查；`closed_c1_055`目录名为请求目标，实际停止于.479431 mm，
-不是已到.55。后缀审查复用前缀逐态证明并重新核对每个NPZ哈希；初版.audit.json
-因旧基础能量账捕获失败，.audit_v2.json明确重放已知旧定义并另给最终BE账。
-所有16见证重装通过但两份原记录不是最终耦合账；旧错误字段未覆盖。
-
-交付包将保留完整可重放的受控父案例、关键C1事件窗口/代表拒绝、实际连续续算
-回归、命令/配置/依赖/线程/源码身份、原始Fz/分项能量及SHA256清单。完整原始库
-不加入Git；包内选态不能替代所有全路径NPZ。README_REPLAY.md标明所需原源码
-检查点和缺省不启动计算，最终核账及发布映射作为包旁附件以避免自引用。
-
-第十一轮最终30项作业全部结束，包含打包与1832成员逐SHA256复核；本人队列为空。
-调度运行并集2727 s，原子标记2717.251 s，保守并集**2743 s（45分43秒）**；
-保守申请物理核时**2.249444**（调度2.231667）。探索1606 s、审查/交付1287 s、
-回归424 s；阶段可重叠，保留了超过20%的审查交付预算。受控步长研究1248 s，
-不超25分钟；没有自动延长加载或继续未解C1后缀。峰6物理核/6计算线程预算/
-16 GiB申请内存；最大进程树RSS采样392.762 MiB，步骤MaxRSS310.660 MiB。
-TotalCPU4630.659 s，占物理申请核时间57.64%；Elapsed和/并集1.3678只表示并发
-重叠，不是同工作量提速倍数。所有请求/实际TRES匹配，无OOM或Slurm超时。
-
-审查包：
-`/LARGE1/gr10578/Zhao_Guorui/SoftCutting/1029/runs/deliverables/server_1101_round11_review_20261101.tar.gz`
-
-172045999 bytes，1306个NPZ，1832个固定成员逐项重哈希通过。SHA256：
-`4525450f6fbb370770f120809b82eb68b68a60886c117d6dfeb800732361418c`。
-源码bundle检查点90ffe7c、前置923005a；包括原生产/旧账重装检查点b0b2609。
-包内含完整旧细档父案例、完整闭合C1解锁至停止窗口及关键状态/全部代表见证父态；
-原库13912文件的完整清单留在包内，完整C1前缀仍从服务器获取，不能以选态重审全路径。
-最终核账accounting_final.json、sacct_final.psv与发布映射作为同名前缀finalization
-附件随包传输；不改写包内明确标注的打包前账本。旧能量拒绝worst按当时捕获指标
-选出，不能保证等于最终耦合能量缺陷的最坏试探；原47条试探记录与代表态均保留。
-
-
-## 2026-11-01 第十轮：连通全失效与新面进入
-
-起点e3a5c5b，工作区干净、本人队列为空；现场module、spartition、qgroup和CPU
-拓扑存于runs/server_1101_round10/cluster_initial.txt。沿用SysB gr10578b，
-p=1:t=2:c=2:m=8G、IPC2/BLAS1与物理核亲和性；完整回归4核8G。没有新增收费
-资源、修改活动数值源码或复活旧队列；全部sbatch --no-requeue及srun。数值代码
-检查点5d29dd6，后续源码对象发布映射见release_identity.json；物理源哈希、配置、
-解释器及线程池逐任务保存。每加载内部≤2340 s，主路径实算817.883 s。
-
-预算90分钟运行并集、至少20%审查交付、≤2并发、每项≤4核/4线程/16 GiB。
-打包前28任务保守运行并集2922 s（48.7分钟）、申请物理核时2.133889；探索
-1815 s。峰6物理核/6计算线程/16 GiB申请内存。进程树RSS采样峰435716096 bytes，
-sacct步骤MaxRSS峰325287936 bytes；二者范围不同，非全局同时精确峰或OOM安全界。
-SysB AllocCPUS按每物理核2个逻辑CPU解释，所有ReqTRES/AllocTRES与申请核对。
-TotalCPU4142.905 s、约申请物理核时间54.35%；加载59.7–66.9%。Elapsed之和/
-运行并集1.228表示独立作业重叠，不是同工作量串行加速证明。本轮无新线程加速实验。
-排队合计774 s、最大489 s，均不计运行并集。完整作业/步骤统计及最终含打包
-核账另存accounting_final.json与sacct_final.psv；包内为明确标注的打包前账本。
-
-完整结果根：`/LARGE1/gr10578/Zhao_Guorui/SoftCutting/1029/runs/server_1101_round10`。
-入口index.html、round_results.json、energy_windows.csv；原始主路径growth_065及
-三组窗口failure_window、failure_partition、entry_window原位保留。最小审查包只
-收关键父态/接受态/拒绝见证，不冒充完整NPZ库；独立全路径审计需完整清单数据或
-从自身初态复算。已登记的短窗口可用所含共同父态复算，README_REPLAY.md给出命令。
-正式范围、失败速度门及下一步见现有研究状态；未完成2 mm、闭合C1/C2或网格验证。
-
-
-第十轮最终29项作业：27 COMPLETED、2 FAILED（合成几何测试夹具缺字段及报告
-浮点时间键配对错误，修复后通过；两次失败原样保留），无OOM、Slurm硬超时或
-未结束作业。主路径终止为到达预定0.65 mm，19次实际拒绝均为能量分辨率回退；
-不是预算或原力残差门失败。最终本人队列为空。
-
-含打包/逐成员校验的最终调度运行并集2941 s、原子标记2931.095 s，保守并集
-**2954 s（49分14秒）**；调度申请物理核时2.134444，保守**2.151667核小时**。
-探索1815 s，审查/打包1245 s，回归277 s（各阶段可重叠）。峰6物理核/6线程/
-16 GiB申请内存；所有实际资源已核对。进程树RSS采样峰415.531 MiB，步骤MaxRSS
-310.219 MiB。TotalCPU4164.865 s，占申请物理核时间54.20%；Elapsed总和/并集
-1.22577仅表并发重叠。未超90分钟且保留了20%以上审查/交付预算，没有自动扩展。
-
-可传输审查包（约72 MB，232个选定NPZ，659个固定成员逐SHA256复核）：
-`/LARGE1/gr10578/Zhao_Guorui/SoftCutting/1029/runs/deliverables/server_1101_round10_review_20261101.tar.gz`
-
-SHA256：`5f01d5c6f48ecc7384fba6673b31ab60a0d8acfe45dffa073fb916680fefd29a`。
-精确大小72376243 bytes；源码bundle检查点293d0fb，前置祖先e3a5c5b。包内旧
-打包前说明写27项为计数笔误，正确为28项，jobs.json可独立计数；最终29含打包。
-包内保留主路径全部原始JSON/CSV及审计、全部代表见证与父态、关键接受态、三组
-窗口的共同父态和事件状态、源码bundle、审阅配置、原始图及SERVER_FULL_MANIFEST。
-完整9380文件库仍在服务器，不声称选取的232个NPZ可代替完整逐态重审所需库。
-包内replay_window.py可从所含父态复算短窗；replay_witnesses.py明确选择新耦合
-工厂，打包时8份见证再次重放通过。小包外最终核账、发布映射与SHA清单作为
-`runs/deliverables/server_1101_round10_finalization.json`等同名前缀附件，避免自引用。
-
-
-## 2026-10-31 第八轮非线性耦合窗口
-
-从49c00f6、干净工作区和空本人/组内队列接续；module、spartition、qgroup及CPU
-拓扑现场核对，沿用SysB环境与gr10578b。普通任务p=1:t=2:c=2:m=8G，IPC2/BLAS1
-与物理核亲和性；完整回归4核8G。未新增付费资源、未取消其他任务、未恢复旧队列。
-新预算为运行并集5400 s，探索上限4320 s，最多2并发，每项≤4核/4线程/16 GiB。
-所有sbatch --no-requeue并经srun；实际单加载内部≤950 s，审查内部≤540 s且
-进程监督≤570 s。现场Slurm按整分钟取整，例如请求585 s显示600 s；进程硬限
-仍在585 s以内，后续审查采用525 s进程限、500 s内部限。该调度差异不隐瞒。
-
-代码检查点00df144（首组三档）、f1f5f35（唯一求根精度复核）、d00bc59（拒绝/C1
-探针）均保留独立合法worktree，旧生产源码49c00f6在1031-round7-producer。
-不在运行期间修改其数值源码；后续仅证据保存/审查改进导致全文件哈希不同，重审
-必须使用对应检查点，不能跳过来源检查。所有数组、输入和配置身份在新运行根
-`/LARGE1/gr10578/Zhao_Guorui/SoftCutting/1029/runs/server_1031_round8`。
-
-打包前35项作业：保守运行并集983 s、物理核时.782778，探索并集375 s；峰6物理核、
-6计算线程、16 GiB申请内存，单worker进程树RSS采样峰411426816 bytes，sacct
-步骤MaxRSS峰326852608 bytes。两个RSS范围不同，均非精确全局同时峰值。
-TotalCPU1441.216 s，约申请物理核时间52.5%；加载约49–76%（单步小作业启动开销
-另计）。Elapsed总和/并集1.189仅表示作业重叠；本轮没有新单任务线程加速实验。
-最终核账另包含证据打包作业并提供独立附件。全部使用真实rsc和拓扑换算；SysB
-AllocCPUS为两倍物理核，在ReqTRES/AllocTRES中逐项核对。完整队列及作业/步骤
-记录见结果根，排队时间单列。
-
-
-## 2026-10-31 第七轮接触进入研究
-
-起点9519895工作区干净、本人队列为空，安全取得任务更新5ea68f6后继续同一服务器
-分支。先保存module、spartition、qgroup和本人队列；SysB模块及分区gr10578b与
-下述历史一致，Rstd/Rmax112、最长14天，eb最长1小时。原始初查分别位于
-`runs/server_1031_round7/{modules,partitions,group,queue}_initial.txt`。
-
-**本轮采用新的更小预算**：计算运行并集5400 s，探索上限4320 s，最多2项作业，
-每项≤4物理核/4计算线程/16 GiB申请内存；排队另记。不继承第六轮4小时额度。
-普通FE/审查使用p=1:t=2:c=2:m=8G、IPC2/BLAS1与物理核亲和性；完整回归4核8G。
-全部sbatch --no-requeue，作业内srun；外层监督、内部预算、Slurm硬限依次约束。
-本轮实际加载调用600 s或更小，审查内部540 s、外层570 s、Slurm585 s。
-
-独立worktree `1031-parent-audit`固定原数值提交547899e，`1031-entry-audit`固定
-本轮d961482，分别供旧C1和早期本轮生产结果按原源码重装；没有复制冻结源码树，
-没有跨版本移植生产历史。所有输入/源码/解释器、线程池、亲和性、Slurm分配与
-停止现场保留在本轮结果根。未更新环境，未申请新增付费资源，也未取消其他任务。
-
-沿用已有实测IPC2/BLAS1，不再把BLAS线程数当SuperLU稀疏求解加速。当前轮次
-无新的固定工作量线程加速实验；作业重叠与实际TotalCPU利用率单列，不能称为
-串行加速倍数。最终账本包含每个作业和步骤sacct统计，并使用实际rsc/物理拓扑
-解释AllocCPUS的双硬件线程；RSS采样不视为精确全局峰值或OOM安全界限。
-
-
-
-打包前35项作业核账：保守并集2606 s、申请物理核时1.828889，探索并集2006 s。
-峰6物理核/6计算线程/16 GiB申请内存，单worker进程树RSS采样峰411410432 bytes；
-MaxRSS步骤采样峰317018112 bytes，两者统计范围不同。实际TotalCPU4435.227 s，
-普通三条纯预裂加载利用率83.3–85.1%；作业Elapsed之和/运行并集1.107只表示重叠。
-后续仅打包/完整性核验；最终附件另纳入该作业统计，包内快照明确是打包前账本。
-
-## 2026-10-30 第五轮服务器时间积分研究
-
-从发布头e4037d4继续，初查工作区及本人队列为空。现场为SysB/2022，模块
-slurm/2022、intel/2023.2、intelmpi/2023.2；实际分区`gr10578b`，Rmin56、
-Rstd/Rmax112、最长14天；`eb`最长1小时。完整module/分区/qgroup快照在
-`runs/server_1030_round5/cluster_initial.txt`，该文件是在本轮作业已开始时保存，
-不伪称其队列内容是空的初始队列。默认时限1小时不替代每项更小的内部硬限。
-
-所有计算通过sbatch的`--rsc p=1:t=2:c=2:m=8G`及脚本内srun，IPC2/BLAS1，
-显式物理核亲和性。完整测试为兼容IPC2/BLAS2默认值申请4物理核8 GB。
-4小时运行并集/256物理核小时总账及80%探索界限继续生效，无requeue；
-加载内部预算最大3000 s（原生调用收尾实耗另记，均低于3600 s），独立审查540 s，外层进程界限早于Slurm硬限。
-
-实际SciPy `spsolve`标准CSC/向量分支已观测调用SuperLU.gssv，无scikits.umfpack；
-不能由OpenBLAS线程数推断稀疏分解加速。版本、解释器和有效线程池、Slurm分配、
-物理核映射均保留。初次环境探针误把SciPy线程局部对象当布尔值，原记录另存，
-修正记录核查实际`.u=False`与后端调用，不隐去该诊断失误。未安装/更新任何依赖。
-
-本轮没有新的同工作量单任务线程加速基准；沿用历史实测IPC2/BLAS1，将资源用于
-独立条件过程与审查重叠。最终核账分别给申请物理核时、实际TotalCPU及并行重叠，
-不把重叠比例叫串行加速，也不把AllocCPUS硬件线程数直接当物理核。
-
-完整FE回归721通过、1项缺历史基线跳过、541子检查；根118通过、11项无显示GUI
-跳过。初次回归资源包装仅申请2核，触发兼容默认嵌套线程预算检查；根首次入口
-sys.path不完整也曾收集失败。两项均修正执行入口后重测通过，失败日志保留。
-分段审查测试首次夹具遗漏冲量数组，补全与生产一致的快照后通过，未改接受门。
-出版扫描现在按monorepo中的FE子树检查历史，仍禁止原始数据、未知JSON和二进制。
-
-打包前最终123作业：119为COMPLETED、4为FAILED（资源包装、根测试入口、谱探针
-空子空间起始向量、审查夹具各一项，修正后均有明确重测；不是FE物理验收放宽）。
-调度运行并集7549 s、原子标记7537.083 s，保守核账7564 s；申请物理核时
-21.52333/21.46953/21.59944分别对应三个口径。峰32物理核/32计算线程预算/112 GB；
-最大进程树1秒采样RSS1108.109 MiB、最大sacct步骤RSS1044.234 MiB，均不是精确
-全局同时内存峰。作业级TotalCPU66422.962 s，除以调度申请物理核秒约85.72%，
-包含测试、监督与审查，不是求解器加速比。八项新方法研究作业累计运行14576.014 s、
-整体跨度3010.584 s，重叠比4.8416；没有本轮匹配串行基准，不报告新的单任务加速倍数。
-
-数值/审查阶段已保留远超20%的总窗口余量。证据打包另在计算节点受585秒进程硬限
-与账本控制；归档内为打包前核账，完成后的最终作业统计和SHA256侧附件另行交付，
-不伪造创建归档进程尚未结束时的Elapsed/CPU统计。源码映射在第五轮publication中，
-本地生产身份不会被连接器产生的新提交SHA替代。
-
-## 1029服务器第四轮（2026-10-30，已结束）
-
-起点e076806，远端同头，工作区干净；初查本人/组内无作业。module仍为SysB/2022、
-Slurm2022及Intel2023环境。现场分区eb最长1 h、Rstd56/Rmax112；gr10578b最长14 d、
-Rstd/Rmax112。本轮全部计算通过gr10578b的sbatch --rsc与脚本内srun启动，
---no-requeue及程序/监督器/Slurm硬限保留。常规FE和审查p=1:t=2:c=2:m=8G，
-IPC2/BLAS1并明确限制为每物理核一个硬件线程；完整回归为兼容默认嵌套池申请4核。
-加载调用最长约1496.06 s，独立分区审查最长约328.61 s，均在单次3600/600 s内。
-
-本轮51个作业全部终态，最终本人队列为空。sacct作业及步骤和原子分配标记保存在
-`runs/server_1030_round4/`。保守运行区间并集**3061 s（51分01秒）**，申请物理核时
-**4.408333 h**；调度器并集3043 s、原子标记3027.367 s。峰同时16物理核、16计算
-线程预算、48 GB；没有因线程空闲而申请无收益的64核。未耗尽4 h/256核时，停止
-扩展加载的原因是局部时间资格未过及新确认的中点摩擦刚性机制，未自动延长。
-
-作业级TotalCPU合计11916.166 s，相对申请物理核时间约75.68%；没有把AllocCPUS
-直接当物理核数，也没有重复累计步骤CPU。最大1秒进程树采样RSS391.477 MiB，
-最大sacct步骤RSS327.328 MiB；都不是精确全局同时峰值，也不据此撤销8 GB余量。
-独立审查与交付预留始终未受探索侵占。所有本人作业在统一账本中；新增未知作业
-按scontrol的ReqTRES/AllocTRES总内存核查，避免将SysB的每逻辑CPU内存误读为总内存。
-
-四个50微秒独立任务分配区间合计4191.747 s、跨度1508.408 s，实际重叠比2.7789。
-它们工作量不同，这不是匹配工作量的加速比。本轮未重测单任务扩展；此前最佳约
-1.0233倍及四独立任务约3.9457倍仍仅作为历史测量，不能套成当前完整切割加速。
-
-最终完整FE回归709通过、1项缺分发基线跳过、537子检查通过；根118通过、11项
-无显示GUI跳过。两次测试入口/夹具失败保留在账本。冻结真实接触诊断的第二个严格
-求根停滞、第三个未运行，科学状态仍为部分完成；Slurm正常退出不将它升级为通过。
-12个条件过程4794态和相应独立分区摩擦功均已审查，但时间/网格/生产2 mm资格未过。
-
-原数值提交6c05518对应发布4ba6858，dc33e8d对应发布aa28071；各对tree完全相同。
-生产状态继续保存原提交身份，不把GitHub连接器产生的元数据SHA写回状态。最终
-服务器开发分支非强制发布，原本地生产链另存round4-local引用；main未修改。
-证据包包含本轮完整状态和所需第三轮父现场、Git bundle与SHA256清单；环境、
-原始实验/视频/权重不加入Git或包内运行库。依赖版本和实际线程/亲和性见JSON。
-
-## 1029服务器第三轮（2026-10-30，已结束）
-
-从b21b3a9开始，初查工作区干净、本人及组内无作业，仍为SysB与gr10578b；
-具体module/spartition/qgroup输出在`runs/server_1030_round3/cluster_initial.txt`。
-新的独立预算为运行区间并集14400 s、256申请物理核小时，探索使用不超过80%，
-其余留作审查/交付。全部作业在该目录jobs.json统一登记，使用--rsc及sbatch/srun，
-保留--no-requeue、内部截止、外层监督和Slurm硬限。常规FE任务2核8 GB，
-兼容默认IPC2×BLAS2的完整回归申请4核8 GB。申请逻辑CPU数继续按每核两线程解释。
-
-主路径`main_control`冻结于9785139，IPC2/BLAS1，但提交时漏传
-`--physical-core-affinity`，实际允许CPU78/82/190/194，对应两个物理核。没有
-超过申请的物理核或计算线程数，但不能声称该路径全程启用了每核单硬件线程限制。
-保留初始manifest。尝试修正时，登录节点srun被本站拒绝；sbatch附加已有步骤的
-小作业26218609按30 s上限退出；指定已知节点的sbatch又被本站nodelist规则拒绝，
-未获新作业ID。未继续尝试绕过限制，未改变在运行的数值源码或丢弃已算前缀。
-这些失败记录在`affinity_correction_outcome.json`。后续诊断、审查和可允许的续算
-显式传递物理核亲和性选项，实际回读另核查。
-
-第三轮最终28个作业均终态，本人队列为空；保守运行区间并集**2363 s（39分23秒）**，
-申请物理核时**1.941944 h**，实际调度并集2351 s、原子标记2340.545 s。未用满4 h；
-因任务分支C的虚拟过程定义和能量缺口仍不合格，停止重复前缀，不伪称预算耗尽。
-峰同时9物理核/9计算线程预算/33 GB；作业级TotalCPU3943.707 s，占申请物理核时间
-约56.94%。最大进程树1秒采样RSS380.539 MiB，最大sacct步骤RSS262.551 MiB；
-两个口径均不证明精确全局同时峰值，不能替代8 GB申请的安全余量。
-
-本轮沿用第二轮IPC2/BLAS1实测配置，未重新声称单任务线程加速；第二轮最佳约1.0233倍、
-四独立任务匹配工作量吞吐约3.9457倍均是历史测量。第三轮8/16/32分区三个独立过程
-申请区间合计92.370 s、实际跨度50.739 s，重叠比1.820；任务工作量不同，
-此为实际并行重叠，不是同工作量串行加速基准。完整作业/步骤、失败入口和亲和性
-修正超时保留；未分配到作业ID的本站拒绝也另有记录。
-
-最终完整FE回归703通过、1项缺历史基线跳过及537子检查；根118通过、11项无显示
-GUI跳过。真实路径247态独立审查、8次插裂独立积分及842个刀具/试样接触模版
-均核对；接触对象全在原始顶面，不是进入新表面通道。资源文件为
-`runs/server_1030_round3/accounting.json`和`sacct.psv`，详细科学资格见研究状态/方法25节。
-
-第三轮GitHub发布仍逐个核对源码树，连接器产生的提交元数据与服务器生产提交不同，
-不改写算例中的原SHA。以下本地/发布提交的tree完全相同；完整映射随证据包保存。
-
-| 本地提交 | 同树发布提交 | tree SHA |
-|---|---|---|
-| 9785139 | e154922 | 188938a23d8a2cf516021952d63c07d81bc36c7e |
-| dd5db5f | 4586c57 | f0644bef454f70f799eca6065d910d0c46ee1d82 |
-| bd24b86 | 50cf109 | 2338dc03873e618d7a51c3330233c2dd9787cea4 |
-| 8a345c2 | 8dbe3c9 | 3f0f9a02e5d846926c1d7d2e4e6daebbe466c01b |
-
-本地生产历史保留在`codex/server-fracture-20261029-round3-local`；独立过程的研究源码
-另保留本地`codex/server-virtual-process-20261030`引用，不改变生产判据。最终更新
-服务器开发分支使用预期旧头b21b3a9与非强制更新，未修改main。原始状态、输出、
-运行库和机器配置不加入Git；可传输证据包包括必要父现场、Git bundle及SHA256清单。
-
-## 1029服务器第二轮资源与线程记录（2026-10-29）
-
-第二轮从`612cf7f`继续，沿用服务器开发分支。现场`module list`为slurm/2022、
-SysB/2022、intel/2023.2、intelmpi/2023.2、PrgEnvIntel/2023。
-`spartition`给出`eb` Rstd=56/Rmax=112、最长1 h，`gr10578b` Rstd/Rmax=112、最长14 d；
-初查`qgroup`组内占用0，`squeue`无本人作业。`eb`提交因QOSGrpCpuLimit排队，取消该
-未运行任务后改用`gr10578b`，没有取消其他研究任务。
-
-SysB节点为2×56物理核、每核2硬件线程。本站`--rsc p=1:t=16:c=16:m=4G`在Slurm显示
-AllocCPUS=32；这不是32个物理核。第二轮以用户限定的64物理核/64计算线程/128 GB
-为总上限，包含所有数组/独立作业与本人其他占用。全部使用sbatch及脚本内srun，
-不使用禁用的sbatch --cpus-per-task/--mem/--nodes，也不把p=64用作单Python并行。
-`--no-requeue`、程序截止、外层进程限时及Slurm硬限分层保留。
-
-`numerical_runtime.py`提供显式`--ipc-threads`、`--blas-threads`和
-`--physical-core-affinity`；兼容缺省2/2，研究作业采用IPC 1/2/4/8/16与BLAS 1。
-保守嵌套上限按两者乘积校验，进程亲和性只保留每个已分配物理核的一个硬件线程。
-记录IPC回读、threadpoolctl线程池、CPU拓扑/亲和性、Slurm环境、进程CPU与RSS。
-模块环境含Intel并不意味着SciPy采用MKL：实测NumPy/SciPy为OpenBLAS pthreads，
-`spsolve`实际193次分派到SuperLU.gssv；未安装scikit-umfpack。
-
-固定同一失败现场、相同工作量、3轮重复，IPC 1/2/4/8/16的总耗时分别约
-142.97/141.37/140.65/139.71/140.01 s。主要耗时为完整弦CCD，16次约44 s，稀疏
-627×627矩阵分解约.13 s/64次。未发现值得继续测32/64线程的扩展收益。
-四个独立IPC 2/BLAS 1进程各申请2物理核/4 GB，同样工作量约143.32 s完成，
-相对串行约3.95倍吞吐；总申请仅8物理核。不能把申请核数写成实际CPU利用率。
-
-第二轮预算按至少一个本任务计算作业运行的区间并集计时，排队不计，最多14400 s；
-申请物理核时最多256 h，至少20%留给审查/交付，探索上限为11520 s/204.8核时。
-作业ID、命令、资源、源哈希、原子起止时间和监督器均保存在
-`runs/server_1029_round2/`。最终以sacct作业/步骤的Start/End/Elapsed/AllocCPUS/
-TotalCPU/MaxRSS/退出状态复核；步骤MaxRSS是该范围的统计，不能相加冒充同时峰值。
-一次4 GB近零CCD诊断出现OOM；另一次监督器读取非原子结束时间失败，均保留记录。
-起止文件和作业账本现采用原子替换，四任务吞吐已重新完成。运行中不改动活动数值依赖。
-
-第二轮于2026-10-30完成最终核账，93个记录作业（含排队取消、诊断/测试失败和正常
-结束）全部终态，`squeue --me`为空，无续算队列。sacct运行区间并集10732 s；原子标记
-10720.30 s；结合调度秒分辨率向外取整，保守预算为**10752 s（179.20 min）/11.81222
-申请物理核小时**，均低于用户上限。未用满4 h；未为另一条不完整路径自动追加预算。
-最大同时申请32物理核、32计算线程预算、48 GB。已发生的单加载最长约3015.09 s，
-独立审查最长约14.32 s；加载/审查内部截止均早于各自Slurm硬限。
-
-sacct作业级TotalCPU合计18964.76 s，不与步骤TotalCPU重复相加；相对于调度器申请
-物理核时间的占比约44.85%，不是申请核数即利用率。最大进程树1秒采样RSS约3.371
-GiB，最大sacct步骤MaxRSS约3.180 GiB；它们是不同采样口径，不构成精确全局同时峰值。
-重叠作业各自样本峰值之和约3.676 GiB也不能冒充同时测得的总RSS。4 GB OOM现场
-说明采样峰值不包含所有cgroup计量/瞬态，失败及取消记录均保留。
-
-最终回归为根118通过/11跳过，FE683通过/1跳过及537子检查通过。一次测试入口漏参
-和一次给兼容默认IPC2/BLAS2测试仅分配2核均失败并保留；后者由线程上限检查正确
-拒绝，按4核重跑通过，没有放松预算或测试。全部最终统计见`accounting.json`和原始
-`sacct.psv`，科学算例的failed状态与Slurm正常退出COMPLETED须分别读取。
-
-第二轮数值提交的本地/发布树映射如下；GitHub连接器创建的提交元数据不同，但逐个
-核对tree SHA完全相同。数值算例中的原提交SHA保留，不能直接改写为发布SHA。
-
-| 本地数值提交 | 内容相同的发布提交 | 用途 |
-|---|---|---|
-| `2496be5` | `78b08ad` | 线程控制、固定现场诊断、分区功与不确定性；第一条初态路径 |
-| `988359a` | `9644b68` | 完整原生CCD的快速查询调度、独立面级核；第二条初态路径 |
-| `88e4569` | `9b7432f` | 表面竞争、根精度与辅助载荷跟踪诊断 |
-| `aee6d1b` | `4783a20` | 跟踪的原力PTC校正 |
-| `9203ccb` | `58cde40` | 弦约束Newton独立诊断 |
-| `3cc3a28` | `2dcdc31` | 生产弦约束恢复、全局求积误差控制；第三条初态路径 |
-| `e4abb60` | `1d05e47` | 接触功相对坐标精度修复；固定失败端点、完整候选扫描及683项FE回归，未新跑完整2 mm |
-
-`source_provenance_verified.json`逐个核对三条路径的数值依赖SHA256与各自原Git提交。
-第二/三条路径的Git dirty标志不能代替逐文件核查；运行期间只改文档或非依赖诊断工具。
-发布后保留本地生产历史分支`codex/server-fracture-20261029-round2-local`；实验失败源码
-树另在`codex/server-round2-experimental-20261029-v1`，不将其标为合格生产版本。
-可传输证据中的`server_1029_round2_source_history.bundle`包含上述原提交及第一轮本地
-生产历史。恢复旧现场诊断时需导入该bundle，使`git show <原生产SHA>:<路径>`可用；
-仅clone发布分支不足以取得这些元数据不同的本地原提交。实际文件哈希及完整映射另见
-`runs/server_1029_round2/publication/commit_map.json`。
-
-以下单加载串行规则及发布映射属于第一轮历史，不覆盖第二轮的新授权。
-
-## 1029 Linux 服务器（2026-10-29）
-
-服务器从整合分支 `15b705f` 开始，在独立 `codex/server-fracture-20261029`
-分支开发；仓库直接位于 `/LARGE1/gr10578/Zhao_Guorui/SoftCutting/1029`。
-FE/整合解释器为该目录 `.venv/bin/python`，基于系统 Python 3.11.13 创建，
-固定安装两份 requirements（IPC 1.6.0、NumPy 2.2.6、SciPy 1.15.3）。Tk 8.6
-可导入，但无显示服务，GUI 回归按既有规则跳过，不能写作已通过 GUI 检查。
-完整依赖冻结、数据清单及日志保存在本地 `runs/server_1029_round1/`。
-
-POSIX 虚拟环境的 Python 通常是指向系统解释器的符号链接。整合层保留所选启动
-路径，不对解释器执行 `Path.resolve()`；否则子进程会丢失虚拟环境的 `sys.prefix`
-和安装包。数据目录的边界检查仍解析符号链接。`doctor` 同时检查可导入的 `ipctk`，
-`local_ipc_runtime=false` 只表示不存在旧 Windows 本地运行库目录。
-
-本机 `settings.local.json` 已登记 FE 解释器；视频独立环境、权重、原视频、显微 PPT、
-实验 CSV、完整体及 Windows 断裂历史算例尚未传输。视频解释器保留未就绪状态，
-没有用 FE 环境替代视频环境，也没有启动 GPU 推理。基准 FE 可以从初态复算，
-这不属于重放 Windows 失败现场。
-
-服务器有 Slurm，采用本站 `--rsc=p=1:c=4:t=4` 语法申请资源，IPC/BLAS 各2线程。
-本轮作业使用`--no-requeue`，不会因调度器重排而自动从初态重跑。
-加载与审查串行执行，内部截止时间之外再设置子进程硬超时及调度器墙钟上限。
-用户本轮授权最多一个 FE 加载作业，单加载≤3600 s、单审查≤600 s、首轮累计计算
-墙钟≤4 h；到期保存证据，不自动续算或启动旧队列。每次作业的日志和预算账本留本地。
-
-服务器发布使用GitHub连接器上传文字Git对象，提交树逐个与本地Git tree SHA核对。
-连接器生成的提交元数据不同，因此远端提交SHA与数值运行记录中的本地SHA不同；
-数值源码/配置的SHA256及树内容保持一致。原本地生产提交保留在
-`codex/server-fracture-20261029-local`，发布完成后工作分支跟踪同名远端开发分支。
-完整映射留在本地`runs/server_1029_round1/publication/commit_map.json`；下表列出数值版本。
-
-| 本地生产提交 | 内容相同的发布提交 | 用途 |
-|---|---|---|
-| `f960fe7` | `59e8e984` | POSIX虚拟环境解释器修复 |
-| `fb3f68c` | `c9162173` | 虚拟失败归档、摩擦求解延续；continuation启动时HEAD为f960fe7且dirty，源码哈希对应此树 |
-| `56f2681` | `74db986a` | 固定摩擦预测与原耦合Newton校正 |
-| `4058354` | `107f7443` | 完整虚拟CCD计算精度 |
-| `60b58df` | `aefad3e3` | 原生CCD连续区间覆盖 |
-| `093e698` | `e6b67ece` | 共享扫描预算归因与60 s显式配置 |
-
-最后的budget60_time2启动时HEAD为`093e698`、Git dirty=true，未提交内容为报告、诊断
-输出字段、文档与时间对照配置；其全部生产源码SHA256与budget60逐项相同。
-运行中没有修改该生产源码。配置输入哈希及显式三项时间控制差异另存各结果JSON。
-
-## 原 Windows 整合环境（历史记录）
-
-整合层使用 Python 3.10 + NumPy + Matplotlib + Tkinter。当前机器的 Python 3.10 已满足版本，未新增安装。仿真固定依赖见 `projects/softmodeling/requirements.txt`，`.runtime/ipc-python` 已复制；不自动下载运行库。
-
-视频解释器沿用源库已登记的 `D:/Doctoral Research/AcademicForge/softcutting0731/.venv/Scripts/python.exe`（Python 3.11）。这是明确记录的本机共享运行环境例外；代码、输入及新输出均指向当前复制工程，解释器本身尚未复制。PyTorch/FFmpeg/权重依赖按视频工程 `environment/` 管理，不能用仿真依赖表替代。
-
-`settings.local.json` 保存本机两个解释器、仿真工作台端口和视频批处理预算，不提交 Git。新机器从 `configs/settings.example.json` 复制并修改，通过界面保存设置或直接编辑；执行 `python -m softcut_solution doctor` 检查。检查只说明包可找到，不代表数值或实验结果通过验收。
-
-新克隆只包含代码、文档和配置，不能凭 Git 恢复约 52 GB 数据。另行复制两个项目的数据/结果/模型/运行库，或按各子项目说明建立环境。导入清单在 `provenance/import_manifest.json`，记录原路径、commit、未提交状态、所有复制文件数量/字节数和源码指纹。
-
-任务使用参数数组调用 subprocess，工作目录固定为当前副本；历史报告及 plan 中原绝对路径作为来源证据保留，不批量替换。新视频 batch 清单会重建本地输出根目录，正常数据发现由副本 ROOT/data 执行。历史 HTML 的外部绝对链接可能仍指向原来源，不等于新任务从原目录读取。
-
-仿真工作台选用独立本机端口，并记录会话 token，避免误连原库的 8765 服务。关闭桌面工作台不关闭独立 FE 服务。FE 内部的运行/停止/预算继续由原工作台管理，旧队列不会自动恢复。
-
-启动工具写 UTC 机器时间戳以保持可排序；阅读本地报告时以 JST（UTC+9）换算。无需公网、上传或远程服务。
-
-## 2026-10-30 第六轮现场资源复核
-
-本轮初查HEAD为9a5c9ec、工作区干净、本人队列空；先fetch任务分支并只cherry-pick
-任务文档为037f300。原先所有结果和服务器研究分支保留。初始module、spartition、
-qgroup与本人队列快照在`runs/server_1030_round6/cluster_initial.txt`，此快照确实
-早于本轮计算。队列为gr10578b，Rstd/Rmax112；本任务仍服从更小的64物理核、
-64计算线程、128GB及4小时并集/256物理核时上限，不以组队列上限替代任务上限。
-
-本轮核读[本站官方资源说明](https://web.kudpc.kyoto-u.ac.jp/manual/en/run/resource)：
-SysB每核4571MiB，m可能抬高c；明确申请p=1:t=2:c=2:m=8G，完整兼容回归为4核8GB。
-实际计算节点112物理核/224逻辑CPU，2核作业NumCPUs=4，scontrol的TRES为cpu=4,mem=8G；
-最终结合sacct ReqTRES/AllocTRES、物理拓扑、亲和性核账，不能仅从AllocCPUS取物理核数。
-所有程序由sbatch→srun执行，IPC2/BLAS1，物理核亲和性；完整测试容纳旧默认嵌套池。
-运行环境未更换，实测spsolve走SuperLU.gssv，useUmfpack.u=False；BLAS线程不代表
-稀疏分解线程。版本、解释器与实际池记录在environment.json及各路径manifest中。
-
-统一jobs.json与原子allocation start/end包含诊断、加载、独立审查、回归和交付作业。
-加载内部最大3000s，外层3300s、Slurm3330s，无requeue；审查内部540s、外层580s。
-早期审查脚本的Slurm收尾限为610s，虽实际审查均远低于585s，仍不满足将外层
-解释为Slurm硬限的严格要求；发现后将所有后续审查Slurm硬限收紧到585s，保留
-原记录，不回写旧申请。全部实际持续时间按统一账本报告，不能据此增加预算。
-
-本轮未重做1/2/4/8/16线程同工作量加速基准；沿用之前已实测有效IPC2/BLAS1，
-没有新的单任务加速倍数。独立算例的墙钟重叠只作为吞吐并行度，不当作串行对照加速。
-峰值RSS取进程树1秒采样及sacct步骤采样，二者不保证捕获精确瞬时峰值；8GB申请
-保留必要余量，不用过去4GB的采样RSS为再次减配辩护。
-
-
-第六轮打包前最终回归：FE735通过、1项本地基准缺失跳过、541子检查通过；根118通过、
-11项无显示GUI跳过。早期完整FE有一项墙钟敏感测试失败，已只改测试为确定性时钟；
-一次根入口路径错误保留FAILED记录，正确入口通过。所有失败作业均进入账本。
-68项已结束作业的sacct与原子allocation记录交叉核对：保守运行并集5487 s（调度器
-5475 s），保守申请物理核时7.038889（调度器6.996111），探索并集4655 s、全部诊断
-并集122 s，低于80%与40%阶段上限；审查与交付预算仍充足，无自动续开加载。
-并发峰28物理核/28线程预算/96 GB；所有Req/AllocTRES与rsc、双硬件线程拓扑相符。
-TotalCPU为19969.087 s，仅取作业层求和不重复步骤；占申请物理核时79.3%。两条新
-端点路径各86.5%/87.2%，作业Elapsed分别2996 s（内部实际2990 s）。全部作业Elapsed
-和/运行并集2.194表示观察到的重叠，并非同工作量串行加速；未新增线程扩展结论。
-最大进程树1秒采样RSS401.746 MiB，最大sacct步骤采样228.530 MiB；这些统计范围
-不同，不当作精确瞬时进程/全任务内存上界。排队等待合计333 s，最长119 s，未计入
-运行并集。完整账本保留各任务ExitCode、Req/AllocTRES、TotalCPU、MaxRSS和原始日志。
-打包作业结束后再核账，包含其资源的最终accounting与finalization作为证据包旁附件；
-上述明确是打包前数字，不从总预算中漏掉交付作业。
-
-第八轮最终36项作业全部结束，包含打包与逐成员复核：调度运行并集980 s，原子
-标记965.206 s，保守合并口径1000 s（16分40秒）；保守物理核时.792222。
-总TotalCPU1452.33 s，调度申请物理核时间利用率52.3%；并发Elapsed/并集1.186。
-峰值仍为6物理核/6计算线程/16 GiB申请内存，RSS采样范围同上，无活动作业。
-最终明细在`runs/server_1031_round8/final_accounting.json`及`sacct_final.psv`。
-最小包`runs/deliverables/server_1031_round8_minimal_20261031.tar.gz`为78019926 bytes，
-1333个成员逐项核验；SHA256为
-`dd7c9c984564c2eac8e4969e533b7ff8a992cb4769a6553917a0fafe629dc915`。
-包内数值源码/文字快照为926ae0b；最终核账作为包外附件，避免伪造打包尚未结束的统计。
-
-## 2026-11-01 第九轮现场与复算边界
-
-初始HEAD为负责人审查6c6120c，工作区干净、本人队列空，fetch后无新增远端成果。
-保留旧结果及所有合法worktree；根和FE的AGENTS、任务书、模型/接口/方法第30节
-均先核读。现场module、spartition、qgroup与本人队列在
-`runs/server_1101_round9/*_initial.txt`。沿用gr10578b/SysB、Rstd/Rmax112及既有
-Python3.11.13环境，SciPy1.15.3、ipctk1.6；没有新增付费资源或重启旧队列。
-
-本轮更小授权为90分钟运行区间并集、最多两作业、每作业最多4物理核/4计算线程/
-16GiB，20%留给审查交付。所有加载/诊断/回归/审查/打包在sbatch内经srun，普通
-`--rsc p=1:t=2:c=2:m=8G`、IPC2/BLAS1/物理核亲和性；完整回归4核8G容纳兼容测试
-默认线程池。SysB AllocCPUS仍是物理核两倍，按rsc、ReqTRES/AllocTRES及拓扑核账。
-沿用[官方资源说明](https://web.kudpc.kyoto-u.ac.jp/manual/en/run/resource)的内存抬核规则。
-源码被计算使用时不编辑；16252c2、7079f85、90e5e05分别留合法worktree作旧方程重放。
-
-统一jobs.json、原子allocation时刻及supervisor维护预算。加载内部最高2350 s、
-外层2400 s、Slurm2460 s；单审查内部至多500 s、外层525 s、Slurm540 s，无requeue。
-探索在总并集4320 s前停止，所有任务总并集5400 s到限停止；同时检查申请物理核时。
-根/FE回归、失败启动、旧源码身份拒绝、短控制和打包均计入，不分批重置账本。
-一次报告提交前自动权限审查超时，未启动作业；依提示一次重试成功，不当成数值失败。
-
-本轮未重做同工作量线程加速试验，因此不报告新增单任务加速倍数。独立时间档及
-审查的Elapsed重叠只表示并发吞吐，不能充当串行对照。TotalCPU只累加作业层，
-步骤统计保留但不重复累加；sacct MaxRSS与进程树1秒RSS采样范围分别解释，均非
-精确全任务瞬时峰值。最终包含打包的核账和包外附件路径见本节后续记录。
-
-第九轮最终54项作业全部结束（46 COMPLETED、8 FAILED，无OOM或Slurm硬超时），
-含失败启动、报告错误、回归、打包和8971个包内成员
-的逐项SHA256复核。调度运行并集4077 s，原子标记4049.254 s，保守合并4111 s
-（68分31秒）；保守申请物理核时2.772222，调度口径2.74。探索并集2564 s，独立
-审查/交付并集1221 s，回归547 s（不同阶段可重叠），均满足90分钟/20%预留规则。
-峰值6物理核/6计算线程预算/16GiB申请内存；所有Req/AllocTRES与物理拓扑核对一致。
-作业层TotalCPU5643.383 s，占申请物理核时间57.21%；各加载约58.9–70.1%。全部
-Elapsed和/运行并集1.098仅表示实际重叠，未作为同工作量加速倍数。排队合计783 s、
-最长168 s，不计入运行并集。最大进程树1秒RSS采样378.773 MiB，sacct步骤采样
-289.398 MiB；不冒充全任务精确瞬时峰值。最终本人队列为空，没有自动延长加载。
-
-账本：`runs/server_1101_round9/final_accounting.json`和`sacct_final.psv`。
-可传输最小包：`runs/deliverables/server_1101_round9_minimal_20261101.tar.gz`，
-743813121 bytes，源/文字快照1c1f1fb，SHA256：
-`5126e91d53fbd82e24c0b379fe851293a249523ff42766f948a384061c6b2478`。
-包内包含完整共同窗口、新自身初态路径、必要旧父态/代表拒绝、配置、运行时与精确
-命令、原始Fz/能量表、独立审查、源码bundle及SHA256SUMS。原.499 mm失败前缀仅
-取重放所需父态和见证，完整原始库仍留服务器。源提交与GitHub发布提交逐树验证
-等同，映射在publication/commit_map.json；没有reset或覆盖main。
-打包后核账、最终发布映射和finalization作为包旁`server_1101_round9_*`附件，
-避免把打包尚未结束的资源统计写成包内最终值。
-
-
-第十二轮最终交付（含打包）：保守运行并集4535 s（75分35秒），调度Start/End并集4499 s，
-物理申请核时3.565556（调度3.531111）。全部任务已结束，全部Req/AllocTRES核对一致；
-峰6物理核/6计算线程预算/16 GiB申请，最大单worker采样405.28 MiB；无单任务扩展性
-新结论，累计作业Elapsed/运行并集1.3027为实测重叠，TotalCPU/物理申请核时间53.03%。
-72分钟加载截止后仅做审查/回归/打包，没有重开加载。最终accounting_final.json、sacct_final.psv
-保留每任务/步骤统计、排队879 s、退出状态及采样范围。
-
-最小可传输审查包（含全部三档局部窗口、代表失败、必要父态和源码bundle，3867份NPZ，
-完整初态前缀仍在服务器）路径：
-`/LARGE1/gr10578/Zhao_Guorui/SoftCutting/1029/runs/deliverables/server_1101_round12_review_20261101.tar.gz`
-428213471 bytes；4744成员逐一校验通过。
-SHA256：`e505c6c93d89fc27e66eeb08be31e2af73d07f7377a6a567416e6c5b708f8bc5`。
-包内README_REPLAY.md、jobs.json、source_changes.bundle、publication_map.json与SHA256SUMS
-给出精确源码/输入/命令；包外最终核账与发布身份在同目录review_final_metadata附件另校验。
-服务器完整结果：`/LARGE1/gr10578/Zhao_Guorui/SoftCutting/1029/runs/server_1101_round12`。
-
-
-第十三轮（2026-11-02）数值加载已结束。使用既有SysB/2022环境、gr10578b、sbatch
---rsc及srun、--no-requeue，普通2核8GiB，独立审查批次最多4核16GiB，最多两作业。
-加载IPC1/BLAS1；审查每核独立worker，CPU亲和性不重叠，不能把四核申请当单求解器提速。
-运行库runs/server_1102_round13保存jobs/allocations/workers、配置与源码SHA、真实日程、
-失败与全部原始NPZ；活动数值源码在独立worktree冻结，未重置旧分支/现场。
-完整新窗口状态约1.8GiB，精简审查包只取完整父态/预测器、关键事件/峰值/代表拒绝态，
-保留全部原始曲线、逐态审查和SHA清单；全态重审需要服务器库，包内可重新计算窗口。
-最终sacct作业/步骤核账、打包消耗及SHA在本节后续及包外附件记录；不把包制作前统计
-冒称本轮最终统计。新预算90分钟并集，加载已停止，后续仅审查、打包和核账。
-
-
-第十三轮最终含打包核账：29项作业全部结束，调度运行并集4743s，原子标记4734.965s，
-保守合并4756s（79分16秒）；保守物理申请核时5.107222，调度5.088333。
-探索并集3236s（53分56秒），独立审查/交付1490s，回归503s，阶段可相互重叠。
-加载早于72分钟截止结束，所有Req/AllocTRES与SysB双逻辑线程/物理核拓扑一致。
-峰值8物理核/8计算线程额度/32GiB申请，单项始终≤4核/16GiB；没有OOM、硬限超时或requeue。
-作业层TotalCPU10765.075s，占物理申请核时间58.77%；单FE加载约50.4–52.0%，
-不能将申请核数称为利用率。Elapsed和/运行并集1.6353是重叠比，不是同负载加速倍数。
-单场原根优先只在平缓探针3.29倍，其他两点无收益；四个独立单核审查约5分钟处理6000态，
-未做全矩阵严格串行同负载加速证明。排队/依赖等待合计183s、最长141s，未计运行并集。
-最大单作业进程树1秒RSS采样1647992832bytes（1.535GiB），sacct步骤峰1478963200bytes；
-均非全任务精确瞬时内存峰值。完整统计保留在accounting_final.json与sacct_final.psv。
-
-精简审查包：
-`/LARGE1/gr10578/Zhao_Guorui/SoftCutting/1029/runs/deliverables/server_1102_round13_review_20261102.tar.gz`
-198631468bytes，886成员逐一校验、371份NPZ；SHA256：
-`f2d63a2d1b70d50f04818c26ac42e99406130b8c9ad56a9b321b3e867858d17f`。
-包内是e63e3d5文字/源码快照，运行数值eb925ca、审查器86eee34，各对应发布树见映射。
-完整每步状态仍在`/LARGE1/gr10578/Zhao_Guorui/SoftCutting/1029/runs/server_1102_round13`；
-包内父态可复算新窗口，但选取状态不能代替服务器全态审查。最终核账、发布映射和
-本段文字在包外`server_1102_round13_final_metadata`附件另存SHA，避免伪造打包前最终统计。
-
-
-第十四轮（2026-11-02）接续40d23a8；本人初始队列为空，SysB/2022、slurm/2022、
-intel/2023.2、intelmpi/2023.2、PrgEnvIntel/2023。现场eb最长1h、gr10578b最长14天，
-仍使用已有gr10578b组额度，无新增付费资源。所有FE/回归/图与机械审查通过sbatch
---rsc、srun、--no-requeue；普通2核8GiB IPC1/BLAS1，回归4核16GiB，最多两项并发。
-
-三父态真实步加倍、唯一累计额度修正及固定8μs对照已完成。修正后8μs为125.329s，
-均匀配额124.398s，没有声称加速或用申请核数冒充利用率。一次修正后仍无联合收益，
-按方法停止条件结束加载，未启动400μs矩阵或后缀，未用尽预算。最终38项相关FE通过，
-根118通过/11无显示GUI跳过；初次报告字段冲突、两次线程预算保护、参数位置错误、
-核账自包含错误均保留为操作失败，计入本轮，不混作物理解失败。原物理接受门未放宽。
-
-目录runs/server_1102_round14保存全部局部状态/见证/审查/曲线。a956e6a与9286d94分别
-绑定真实分支和候选控制的运行源码，逐文件SHA无差异。包内包含必要旧父态和完整旧
-审查但不包含旧全路径8786NPZ；README_REPLAY明确重审范围与服务器完整库需求。
-最终含打包核账及SHA见后续记录，打包前统计不称最终统计。
-
-
-第十四轮最终含打包：18项作业全部结束，13 COMPLETED、5 FAILED；操作失败保留，
-无OOM、Slurm硬超时或requeue。保守运行并集590s（9分50秒），调度578s、原子标记
-567.738s；保守申请物理核时.466667，调度.455。探索并集507s，在优先15min内，
-按方法停止条件结束而非预算耗尽；审查/交付62s、回归46s，各阶段可能重叠。
-至少18min预留未被探索占用，不为了花完额度启动未通过前置门的矩阵。
-
-峰值6物理核/6计算线程额度/24GiB申请；每项≤4核/16GiB，全部Req/AllocTRES核对
-一致。作业层TotalCPU672.972s，占物理申请核时间41.085%，步骤统计另存不重复累计。
-Elapsed和/并集1.34256是实测重叠比，不是同工作量串行加速。排队总32s、最长5s。
-最大单作业进程树1秒RSS采样532025344bytes（约507.38MiB），sacct步骤采样
-436531200bytes；均不冒充精确瞬时全任务峰值。最终sacct_final.psv/accounting_final.json
-包含所有作业和步骤、失败状态及真实物理核换算。轻量最终核账在所有作业结束后读取
-元数据，不运行FE；此前误将核账作业包含自身导致的失败也保留并计入。
-
-精简包：
-`/LARGE1/gr10578/Zhao_Guorui/SoftCutting/1029/runs/deliverables/server_1102_round14_review_20261102.tar.gz`
-143563817bytes，1100成员逐项SHA核验、714份NPZ；SHA256：
-`27cb40d3543117096095facf5abb050dfd952a4928e08917a5c9ee32cfd2a5d8`。
-包内代码/文档快照8518df1；实际数值a956e6a/9286d94，逐文件SHA及GitHub等价树映射
-均保留。早期失败启动目录不授予接受路径资格。所有本轮完整局部状态均在包内；
-旧全路径在服务器，不能用所选六个旧父态文件声称独立重审8786态。
-最终核账、发布映射、本段文档及摘要放在包旁`server_1102_round14_final_metadata`，
-另有SHA256SUMS；包内打包前核账明确为非最终，不修改已生成包。
+最终核账给申请/实际分配、线程、Elapsed、CPU、RSS、失败/排队时间和实际接受范围。作业与step统计避免重复累计；不高频机械轮询sacct，不把旧机器性能当作本机结果。

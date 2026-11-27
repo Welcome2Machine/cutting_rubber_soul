@@ -22,6 +22,8 @@ def write_trace_csv(path, steps):
     fields = ["depth_mm", "status", "reference_offset_mm", "absolute_reference_offset_mm",
               "reference_s_mm", "gap_mm", "edge_alpha", "edge_nodes", "reference_point_mm",
               "current_point_mm", "knife_tip_mm", "nose_status", "nose_offset_intervals_mm"]
+    sa_fields = ["S_landing_mm","S_tip_mm","SA_signed_mm","SA_abs_mm","SA_intervals_mm","native_supported","branch_id","proximity_estimate"]
+    fields += ["sa_status", *sa_fields]
     temporary = path.with_suffix(path.suffix + ".tmp")
     with temporary.open("w", newline="", encoding="utf-8") as stream:
         writer = csv.DictWriter(stream, fieldnames=fields)
@@ -29,6 +31,8 @@ def write_trace_csv(path, steps):
         for step in steps:
             item = dict(step.get("tip_contact") or {}, depth_mm=step["depth_mm"])
             row = {key: item.get(key) for key in fields}
+            sa = step.get('sliding_amount', {})
+            row.update({k:sa.get(k) for k in sa_fields},sa_status=sa.get('status'))
             for key, value in row.items():
                 if isinstance(value, (list, dict)):
                     row[key] = json.dumps(value, separators=(",", ":"), allow_nan=False)
@@ -207,7 +211,7 @@ def accumulate_motion(tracker, motion, contact, prior_contact, prior_motion, cum
     return result
 
 
-def export_trace(source, output, *, qualified_prefix=False, audit_path=None, manifest_path=None):
+def export_trace(source, output, *, qualified_prefix=False, audit_path=None, manifest_path=None,checkpoint=None):
     """Read all selected accepted states. Never mutate or promote a source path."""
     source, output = Path(source).resolve(), Path(output).resolve()
     report_bytes = (source/'result.json').read_bytes()
@@ -242,6 +246,7 @@ def export_trace(source, output, *, qualified_prefix=False, audit_path=None, man
     time_from_initial = 0.
     first_valid = None
     for i, step in enumerate(steps):
+        if checkpoint:checkpoint()
         if (not np.isfinite(step['residual_n']) or not np.isfinite(step['min_j'])
                 or step['residual_n'] > min(report['force_tolerance_n'], 1e-4) or step['min_j'] <= 0):
             raise ValueError(f'State {i} has unaccepted reported diagnostics')
@@ -293,6 +298,23 @@ def export_trace(source, output, *, qualified_prefix=False, audit_path=None, man
             np.testing.assert_allclose(x[n:], zero_knife-[0., step['depth_mm']], atol=1e-9, rtol=0)
             ds = np.stack((x[triangles[:, 1]]-x[triangles[:, 0]], x[triangles[:, 2]]-x[triangles[:, 0]]), axis=2)
             jacobians = np.linalg.det(ds)/reference_det
+            if tracker is not None and i==0:
+                centroids=reference[triangles].mean(axis=1)
+                roi=(abs(centroids@tracker.es-tracker.origin)<=.5) & (centroids@tracker.en>=config['height_mm']-.5)
+                roi_dm_inv=np.linalg.inv(dm[roi])
+                roi_area=np.abs(reference_det[roi])/2
+            roi_statistics=None
+            if roi.any():
+                deformation_gradient=ds[roi]@roi_dm_inv
+                stretches=np.linalg.svd(deformation_gradient,compute_uv=False)
+                def quantiles(values):
+                    order=np.argsort(values)
+                    area_cdf=np.cumsum(roi_area[order])/roi_area.sum()
+                    return [float(values[order[np.searchsorted(area_cdf,q)]]) for q in (.05,.5,.95)]
+                roi_statistics=dict(reference_bounds_mm=[-.5,.5,-.5,0.],area_mm2=float(roi_area.sum()),
+                    F_area_mean=np.average(deformation_gradient,weights=roi_area,axis=0).tolist(),
+                    j_p05_p50_p95=quantiles(jacobians[roi]),max_stretch_p05_p50_p95=quantiles(stretches[:,0]),
+                    min_stretch_p05_p50_p95=quantiles(stretches[:,1]))
             min_j_element = int(np.argmin(jacobians))
             minimum_j = float(jacobians[min_j_element])
             if minimum_j <= 0:
@@ -310,6 +332,9 @@ def export_trace(source, output, *, qualified_prefix=False, audit_path=None, man
                 if 'elapsed_from_initial_s' in step['material']:
                     np.testing.assert_allclose(time_from_initial, step['material']['elapsed_from_initial_s'], atol=1e-11, rtol=1e-12)
             contact = tracker.observe(x, step['depth_mm'])
+            sa = tracker.sliding_amount(x, contact, step.get('nose_native_candidates'))
+            if step.get('sliding_amount',{}).get('method')==sa['method'] and sa != step['sliding_amount']:
+                raise ValueError(f'Online/offline sliding amount mismatch at state {i}')
             footprint = tracker.observe_footprint(x, step['depth_mm'])
             # Old observations used the same definitions. New metadata is not
             # silently inferred by display code, and parity covers full objects.
@@ -331,17 +356,44 @@ def export_trace(source, output, *, qualified_prefix=False, audit_path=None, man
             if maxwell and 'friction_regularization' in sig:
                 epsilon = sig['friction_regularization']['epsilon_v_mm_s']*dt
                 np.testing.assert_allclose(epsilon, float(state['epsilon_u_mm']),rtol=1e-13,atol=0)
-            observed.append(dict(index=i, depth_mm=step['depth_mm'], qualified=i < prefix,
+            work = dict(friction_work_n_mm=step.get('friction_work_n_mm'),
+                barrier_energy_n_mm=step.get('barrier_energy_n_mm'),**step.get('material',{}))
+            if i and maxwell and 'barrier_energy_n_mm' in steps[i-1] and 'barrier_energy_n_mm' in step:
+                last = steps[i-1]
+                work['tool_work_trapezoid_n_mm'] = .5*(step['reaction_fz_n']+last['reaction_fz_n'])*(step['depth_mm']-prior_depth)
+                work['discrete_gap_n_mm'] = (work['tool_work_trapezoid_n_mm'] -
+                    (work['stored_energy_n_mm']-last['material']['stored_energy_n_mm']) -
+                    (work['barrier_energy_n_mm']-last['barrier_energy_n_mm']) -
+                    work['viscous_dissipation_increment_n_mm']-work['friction_work_n_mm'])
+            kinematics = None
+            if dt and i and sa['status']=='native_nose_contact' and observed[-1]['sliding_amount']['status']=='native_nose_contact':
+                old_sa = observed[-1]['sliding_amount']
+                row = sa['selected']
+                edge = row['edge_nodes']
+                if edge == old_sa['selected']['edge_nodes']:
+                    a,b = edge
+                    tangent = previous[b]-previous[a]
+                    length = np.linalg.norm(tangent)
+                    tangent /= length
+                    u = row['edge_alpha']
+                    vm = ((1-u)*(x[a]-previous[a])+u*(x[b]-previous[b]))/dt
+                    vc = (np.array(row['tip_contact_point_mm'])-old_sa['selected']['tip_contact_point_mm'])/dt
+                    lhs = length/(tracker.s[b]-tracker.s[a])*(sa['S_tip_mm']-old_sa['S_tip_mm'])/dt
+                    kinematics = dict(material_velocity_mm_s=vm.tolist(),contact_velocity_mm_s=vc.tolist(),
+                        previous_edge_stretch_times_sa_rate_mm_s=float(lhs),
+                        closure_mm_s=float(lhs-(vc-vm)@tangent))
+            observed.append(dict(index=i,work=work,nose_kinematics=kinematics,
+                contact_accounting=step.get('contact_accounting'), depth_mm=step['depth_mm'], qualified=i < prefix,
                 time_from_initial_s=time_from_initial if dt is not None else None, dt_s=dt,
                 epsilon_u_mm=epsilon, epsilon_u_over_dt_mm_s=epsilon/dt if dt else None,
-                tip_contact=contact, pole_diagnostics=tracker.pole_diagnostics(contact),
-                deformation=dict(min_j=minimum_j, min_j_element=min_j_element,
+                sliding_amount=sa, tip_contact=contact, pole_diagnostics=tracker.pole_diagnostics(contact),
+                deformation=dict(reference_surface_roi=roi_statistics,min_j=minimum_j, min_j_element=min_j_element,
                     min_j_reference_centroid_mm=reference[triangles[min_j_element]].mean(axis=0).tolist(),
                     min_j_current_centroid_mm=x[triangles[min_j_element]].mean(axis=0).tolist(),
                     reference_area_weighted_mean_j=float(np.dot(jacobians, abs(reference_det))/np.sum(abs(reference_det)))),
                 blade_contact_footprint=footprint, relative_motion=motion,
                 fixed_material=tracker.fixed_material_motion(x, definition),
-                force={k: step.get(k) for k in ('reaction_fz_n', 'reaction_x_n', 'reaction_normal_fz_n', 'reaction_friction_fz_n')},
+                force={k: step.get(k) for k in ('reaction_fz_n', 'reaction_x_n', 'reaction_normal_fz_n', 'reaction_friction_fz_n','reaction_normal_fx_n','reaction_friction_fx_n')},
                 material_markers=dict(nodes=sorted(set(sum(definition['gauge_nodes'].values(), []))),
                     positions_mm=x[sorted(set(sum(definition['gauge_nodes'].values(), [])))].tolist())))
             if i in display_indices:
@@ -415,6 +467,7 @@ def write_kinematics_table(path, steps):
         row.update(pole_reason=pole.get('reason'), dhat_mm=pole.get('dhat_mm'),
                    gap_minus_dhat_mm=pole.get('gap_minus_dhat_mm'),
                    nearest_projections=pole.get('nearest_projections'))
+        row.update({'sa_'+k:v for k,v in step['sliding_amount'].items()})
         row.update(step.get('deformation', {}))
         row.update({k: step['relative_motion'].get(k) for k in ('raw_mm_s', 'transported_mm_s', 'transport_correction_mm_s', 'segment_id', 'break_reason', 'signed_segment_mm', 'absolute_segment_mm', 'local_edge_stretch', 'migration_rate_mm_s')})
         row.update(motion_valid=step['relative_motion']['valid'], motion_status=step['relative_motion']['status'])
@@ -448,10 +501,17 @@ def write_research_report(output, result):
     def numbers(values):
         return [np.nan if v is None else v for v in values]
     fig, axes = plt.subplots(4, 2, figsize=(12, 14), layout='constrained')
-    migration = numbers([s['tip_contact']['reference_offset_mm'] for s in steps])
+    migration = numbers([s['sliding_amount']['SA_signed_mm'] if s['sliding_amount']['status']=='native_nose_contact' else None for s in steps])
+    conditional=numbers([s['sliding_amount']['SA_signed_mm'] if s['sliding_amount']['status']=='conditional_nearest_nose' else None for s in steps])
+    axes[0,0].scatter(d,conditional,marker='x',s=12,color='purple',label='conditional nearest nose (mm)')
+    for si in steps:
+        for lo,hi in si['sliding_amount']['SA_intervals_mm']:
+            axes[0,0].vlines(si['depth_mm'],lo,hi,color='steelblue',alpha=.2)
+    prox = numbers([(s['sliding_amount']['proximity_estimate'] or {}).get('SA_signed_mm') for s in steps])
+    axes[0, 0].plot(d, prox, '--', color='gray',label='geometric estimate (mm)')
     connected = [np.nan if s['relative_motion'].get('break_reason') == 'nonadjacent_projection_jump' else v
                  for s, v in zip(steps, migration)]
-    line = axes[0, 0].plot(d, connected, label='M = S* - S_drop (mm)')[0]
+    line = axes[0, 0].plot(d, connected, label='native nose SA (mm)')[0]
     axes[0, 0].scatter(d, migration, s=12, color=line.get_color())
     gap_axis = axes[0, 0].twinx()
     gap_axis.plot(d, [s['tip_contact']['gap_mm'] for s in steps], color='tab:orange', label='pole gap (mm)')
