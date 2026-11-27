@@ -77,7 +77,7 @@ def close_performance(problem):
         problem._performance_backend = None
 
 
-def native_audit(make_native, out, report):
+def native_audit(make_native, out, report, *, deadline=None):
     """Reassemble the whole saved path on a separate unbatched native object."""
     import json
     from .material_case import signature, audit
@@ -87,7 +87,8 @@ def native_audit(make_native, out, report):
         raise ValueError('Independent audit requires an unbatched native problem')
     if json.loads(json.dumps(signature(problem))) != report['signature']:
         raise ValueError('Independent audit physical signature differs')
-    result = audit(problem, out, report)
+    options = dict(deadline=deadline, save_timed_prefix=True) if deadline is not None else {}
+    result = audit(problem, out, report, **options)
     report['independent_audit_policy'] = dict(material_batch_size=0,
         linear_backend='native', fresh_problem=True, states=result['states'],
         scope='Whole accepted path; exact dual histories, physical dt and dissipation chain')

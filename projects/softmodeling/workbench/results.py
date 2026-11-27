@@ -202,7 +202,7 @@ def _region_quality(ids, fields, shape, centroids, areas, energy):
 
 
 def export_case(source, output, *, max_frames=11, movie=False, audit_path=None, fps=8, trace_path=None,
-                dense_roi=False):
+                dense_roi=False, checkpoint=None):
     """Write curves.csv and a portable result.bundle.json, returning that bundle.
 
     Select actual saved frames, always including both qualified endpoints. All
@@ -297,7 +297,7 @@ def export_case(source, output, *, max_frames=11, movie=False, audit_path=None, 
             relative_motion=observation.get('relative_motion') if qualified else None,
             fixed_material=observation.get('fixed_material') if qualified else None))
     if signature.get('blade_landmarks') and prefix:
-        anchors=(.5,1.,1.5,2.)
+        anchors=(.25,.5,1.,1.5,2.)
         selected=np.unique(np.r_[selected,[i for i,d in enumerate(depths[:prefix])
             if any(abs(d-a)<1e-10 for a in anchors)]]).astype(int)
     if dense_roi:
@@ -306,6 +306,8 @@ def export_case(source, output, *, max_frames=11, movie=False, audit_path=None, 
     field_info = FIELD_INFO
     checks = []
     for index in selected:
+        if checkpoint:
+            checkpoint()
         index = int(index)
         path = source / "states" / f"{index:04d}.npz"
         sha = _digest(path)

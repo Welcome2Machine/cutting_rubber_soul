@@ -54,15 +54,22 @@ def stored_stress(F, A, ge, gv, bulk):
     return J[:,None,None]**(-2/3)*(ge*F+gv*FA-tr[:,None,None]*inv_t/3) + (bulk*J*(J-1))[:,None,None]*inv_t
 
 
-def history(folder, output, label):
+def history(folder, output, label, *, checkpoint=None, material_points=None, windows=WINDOWS, qualified_prefix=False):
     """Reconstruct physical nodal loads and the external-work balance from accepted checkpoint bytes."""
     report = read(folder/'result.json')
     audit = read(folder/'audit.json')
     result_hash = hashlib.sha256((folder/'result.json').read_bytes()).hexdigest()
-    assert audit['passed'] and audit['trajectory_checked'] and audit['source_result_sha256']==result_hash
+    if qualified_prefix:
+        from prototype.contact_trace import audit_coverage
+        count, _ = audit_coverage(folder, report)
+        if not count or not audit['trajectory_checked']:
+            raise ValueError('Energy export requires an authenticated trajectory prefix')
+    else:
+        assert audit['passed'] and audit['trajectory_checked'] and audit['source_result_sha256']==result_hash
+        count = len(report['steps'])
     settings = report['settings']
     p = make_problem(**{k:v for k,v in settings.items() if k in inspect.signature(make_problem).parameters})
-    p.ipc.set_num_threads(2)
+    p.ipc.set_num_threads(report.get('settings',{}).get('threads',2))
     tri = p.mesh.triangles
     areas, grad, dofs = p.mesh.bulk_data
     origin = local_to_lab(np.array([[p.config.drop_s_mm,p.config.height_mm]]),p.config)[0]
@@ -71,7 +78,26 @@ def history(folder, output, label):
     initial_force=np.zeros(2); prior_depth=p.start
     old_stored=old_barrier=work=visc=friction=0.
     out=[]
-    for i,(step,proof) in enumerate(zip(report['steps'],audit['rows'])):
+    displacement = []
+    if material_points is not None:
+        from matplotlib.tri import Triangulation
+        with np.load(material_points, allow_pickle=False) as z:
+            sn, weights = z['SN_mm'], z['reference_weights_mm2']
+        if sn.ndim != 2 or sn.shape[1] != 2 or weights.shape != (len(sn),) or not (np.isfinite(sn).all() and np.isfinite(weights).all() and (weights>0).all()):
+            raise ValueError('Invalid fixed reference material points')
+        local = p.mesh.local_sn
+        elem = Triangulation(*local.T,triangles=tri).get_trifinder()(*sn.T)
+        if (elem < 0).any():
+            raise ValueError('Material sample outside the reference mesh')
+        nodes = tri[elem]
+        corners = local[nodes]
+        edges = (corners[:,1:]-corners[:,:1]).transpose(0,2,1)
+        coeff = np.linalg.solve(edges,(sn-corners[:,0])[:,:,None])[:,:,0]
+        bary = np.column_stack((1-coeff.sum(axis=1),coeff))
+        np.testing.assert_allclose(np.einsum('pi,pij->pj',bary,corners), sn, atol=1e-12,rtol=0)
+    for i,(step,proof) in enumerate(zip(report['steps'][:count],audit['rows'])):
+        if checkpoint:
+            checkpoint()
         path=folder/'states'/f'{i:04d}.npz'
         raw=path.read_bytes(); checkpoint_hash=hashlib.sha256(raw).hexdigest()
         assert proof['passed'] and checkpoint_hash==proof['checkpoint_sha256'] and record_digest(step)==proof['accepted_record_sha256']
@@ -80,6 +106,8 @@ def history(folder, output, label):
             dt=float(state['material_dt_s'])
             if i==0:
                 np.testing.assert_array_equal(state['reference_xy'],p.rest);np.testing.assert_array_equal(state['triangles'],tri)
+        if material_points is not None:
+            displacement.append(np.einsum('pi,pij->pj', bary, (x[:p.n]-p.rest[:p.n])[nodes]))
         p.set_friction_dt(dt)
         F=np.eye(2)+np.einsum('eai,eaJ->eiJ',(x[:p.n]-p.rest[:p.n])[tri],grad)
         P=stored_stress(F,A,ge,gv,bulk)
@@ -115,10 +143,15 @@ def history(folder, output, label):
                         increment_energy_defect_Nmm=defect,stored_Nmm=stored,barrier_Nmm=barrier,external_work_Nmm=work,
                         viscous_Nmm=visc,friction_Nmm=friction,cumulative_defect_Nmm=work-stored-barrier-visc-friction))
         prior_depth=depth;initial_force=force;old_barrier=barrier;old_stored=stored
-    assert len(out)==audit['states']
+    assert len(out)==count
+    if material_points is not None:
+        np.savez_compressed(output/'fixed_material_points.npz',SN_mm=sn,reference_weights_mm2=weights,
+                            nodes=nodes,barycentric=bary,depth_mm=[r['depth_mm'] for r in out],
+                            displacement_xz_mm=np.asarray(displacement),
+                            checkpoint_sha256=[r['source_checkpoint_sha256'] for r in out])
     table(output/(label+'.csv'),out)
     results=[]
-    for lo,hi in WINDOWS:
+    for lo,hi in windows:
         rr=[r for r in out if lo-1e-10<=r['depth_mm']<=hi+1e-10]
         if len(rr)<2 or abs(rr[-1]['depth_mm']-hi)>1e-10:continue
         start=rr[0]; end=rr[-1]; work_scale=max(abs(end['external_work_Nmm']-start['external_work_Nmm']),.005)
@@ -659,7 +692,7 @@ def diagnose_failed_chord(folder, output):
         close_performance(p)
 
 
-def observe_sa(folder, protocol, max_depth):
+def observe_sa(folder, protocol, max_depth, *, qualified_prefix=False, checkpoint=None):
     """Read-only geometric observation on each SHA-bound original-material surface."""
     from prototype.contact_trace import geometry_metadata
     from prototype.tip_contact import TipContactTracker
@@ -667,7 +700,11 @@ def observe_sa(folder, protocol, max_depth):
     report = read(folder/'result.json')
     audit = read(folder/'audit.json')
     digest = hashlib.sha256((folder/'result.json').read_bytes()).hexdigest()
-    if not (audit['passed'] and audit['trajectory_checked'] and audit['source_result_sha256'] == digest):
+    count = len(report['steps'])
+    if qualified_prefix:
+        from prototype.contact_trace import audit_coverage
+        count, _ = audit_coverage(folder, report)
+    if not (count and (qualified_prefix or audit['passed']) and audit['trajectory_checked'] and audit['source_result_sha256'] == digest):
         raise ValueError('Accepted trajectory and audit do not match')
     config, physical_gap, facets, _ = geometry_metadata(report)
     narrow, wide = protocol['sensitivity_geometric_gaps_mm']
@@ -679,7 +716,9 @@ def observe_sa(folder, protocol, max_depth):
             config, gap, facets, report.get('signature',{}).get('blade_landmarks'))
             for key,gap in [('narrow',narrow), ('primary',primary), ('wide',wide)]}
     rows = []
-    for i, record in enumerate(report['steps']):
+    for i, record in enumerate(report['steps'][:count]):
+        if checkpoint:
+            checkpoint()
         depth = record['depth_mm']
         if depth > max_depth + 1.e-12:
             break

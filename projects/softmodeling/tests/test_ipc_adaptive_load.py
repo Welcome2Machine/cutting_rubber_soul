@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import numpy as np
 
-from prototype.ipc_reference import (IPCProblem, LoadStepFailure, adaptive_load_steps,
+from prototype.ipc_reference import (IPCProblem, IPCSolveTimeout, LoadStepFailure, adaptive_load_steps,
                                      parse_args, run, toolkit)
 
 
@@ -110,6 +110,91 @@ class AdaptiveLoadTests(unittest.TestCase):
             self.assertEqual(p.predictor, 'secant')
 
 
+
+    def test_local_deadline_rolls_back_real_history_and_halves(self):
+        p = FakeProblem(lambda *args: False)
+        p.material_metric = np.ones((1,1))
+        p.previous_material_metric = p.material_metric.copy()
+        p.material_dt, p.material_dissipation = .01, 0.
+        p.friction_smoothing_mm, p.friction = 1.e-5, object()
+        p.checkpoint_data = lambda: dict(material_metric=p.material_metric.copy(), material_dt_s=p.material_dt)
+        clock = [0.]
+        attempted = []
+        native_step = p.step
+
+        def step(x, old, target, limit):
+            attempted.append((old,target,p.predictor))
+            if target-old > .00501:
+                p.material_metric[:] = 999
+                p.material_dt, p.material_dissipation = 9., 9.
+                p.previous[:] = 123.
+                p._accepted_predictor_history.clear()
+                clock[0] = limit
+                raise IPCSolveTimeout('attempt')
+            np.testing.assert_allclose(p.material_metric, [[1.+old]],rtol=0,atol=1e-14)
+            self.assertAlmostEqual(p.material_dissipation, old)
+            p.material_metric += target-old
+            p.material_dissipation += target-old
+            p.material_dt = (target-old)/.2
+            return native_step(x,old,target,limit)
+
+        events = []
+        with patch.object(p,'step',step), patch('prototype.ipc_reference.time.monotonic',lambda: clock[0]):
+            result=list(adaptive_load_steps(p,np.array([[0.]]),0.,.01,100.,.0025,
+                                            events.append,attempt_seconds=5.))
+        self.assertEqual(attempted,[(0.,.01,'secant'),(0.,.005,'secant'),(.005,.01,'secant')])
+        self.assertEqual([v['depth_mm'] for _,v in result],[.005,.01])
+        self.assertEqual(events[0]['reason'],'attempt_wall_limit')
+
+    def test_geometry_subdivision_observes_the_local_deadline(self):
+        p=IPCProblem.__new__(IPCProblem)
+        p._load_attempt_deadline=5.
+        with patch('prototype.ipc_reference.time.monotonic',return_value=5.):
+            with self.assertRaisesRegex(IPCSolveTimeout,'physical path'):
+                p.safe_step(None,None)
+
+    def test_global_deadline_and_unrelated_timeouts_stop_at_the_first_attempt(self):
+        for err in (IPCSolveTimeout('global'),TimeoutError('IO')):
+            p=FakeProblem(lambda *args: False)
+            clock=[0.]
+            def fail(x, old, target, end):
+                clock[0]=end
+                raise err
+            with patch.object(p,'step',side_effect=fail) as attempt, patch('prototype.ipc_reference.time.monotonic',lambda: clock[0]):
+                with self.assertRaises(type(err)):
+                    list(adaptive_load_steps(p,np.array([[0.]]),0.,.01,1.,.0025,attempt_seconds=5.))
+                self.assertEqual(attempt.call_count,1)
+
+    def test_production_and_exploratory_launch_have_distinct_evidence(self):
+        from tools.run_material_queue import launch
+        from hashlib import sha256
+        with tempfile.TemporaryDirectory() as work:
+            root=Path(work)
+            cfg=root/'case.json'
+            cfg.write_text('{"run_purpose":"exploratory_long"}')
+            m=dict(target_mm=2.,case_config=str(cfg),jobs=[],observation_protocol='registered',
+                   input_sha256={str(cfg):sha256(cfg.read_bytes()).hexdigest()})
+            with self.assertRaisesRegex(ValueError,'Production needs'):
+                launch(root,m,foreground=True)
+            m['run_purpose']='exploratory_long'
+            with patch('tools.run_material_queue.verify_inputs',side_effect=RuntimeError('input check reached')):
+                with self.assertRaisesRegex(RuntimeError,'input check reached'):
+                    launch(root,m,foreground=True)
+            for extra in (dict(short_evidence_verified=True),dict(require_window_review=True),dict(jobs=[dict(requires_case='H1')])):
+                with self.assertRaisesRegex(ValueError,'Exploratory purpose'):
+                    launch(root,dict(m,**extra),foreground=True)
+
+    def test_exploratory_migration_checks_both_source_digests(self):
+        from prototype.material_case import resume_compatibility
+        from tools.qualify_intact_baseline import REVIEWED_LONG_RESUME
+        path, (before,after)=next(iter(REVIEWED_LONG_RESUME.items()))
+        old=dict(signature={'angle':33},source_sha256={path:before})
+        new=dict(signature=old['signature'],run_purpose='exploratory_long',source_sha256={path:after})
+        result=resume_compatibility(old,new,reviewed_sources=REVIEWED_LONG_RESUME)
+        self.assertEqual(result['reviewed_source_changes'],[path])
+        for wrong in (dict(source_sha256={path:'unknown'}),dict(run_purpose='production'),dict(signature={'angle':57})):
+            with self.assertRaises(ValueError):
+                resume_compatibility(old,dict(new,**wrong),reviewed_sources=REVIEWED_LONG_RESUME)
 
     def test_partial_substeps_are_yielded_before_later_failure(self):
         p = FakeProblem(lambda a, b, mode: b > .005)

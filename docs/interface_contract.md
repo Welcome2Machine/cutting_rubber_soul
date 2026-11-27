@@ -43,6 +43,8 @@ flowchart LR
 
 ## 共同FE原型输入与资格（2026-11-09）
 
+2026-11-28 的四条无断裂长轨迹在 case 配置绑定 `run_purpose=exploratory_long`。每案独立输出 `solve_status`、`audit_status`、`export_status`、实际接受深度和已审查前缀。该用途保留独立 SA 观测协议、真实加载增量、每态原力与完整父弦验收。终态目录含分窗能量账本、逐态 SA 候选、固定原材料点及检查点摘要。产出资格沿用原表，生产模式仍使用绑定的短证据。
+
 既有完整体/内聚入口显式传递drop_s、A-low完整夹角/厚度、速度、初始净空、dhat与位移摩擦正则；旧默认不变。
 输出`resolved_model`从实际构造读取材料、轮廓/网格SHA及时间/摩擦方式，`config`保留旧配置载体，不代表其所有历史字段均生效。
 内聚律以`cohesive_law`为准；`reaction_friction_assembled_fz_n`为独立装配摩擦分量，旧相减字段保留。

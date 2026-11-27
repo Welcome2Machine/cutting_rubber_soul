@@ -17,7 +17,7 @@ import traceback
 import numpy as np
 from threadpoolctl import threadpool_limits
 from run_support import source_hashes,write_json,save_npz,compute_process_policy
-from prototype.ipc_reference import BASELINE,adaptive_load_steps,record_tip_contact,export_contact_table
+from prototype.ipc_reference import BASELINE,IPCSolveTimeout,LoadStepFailure,adaptive_load_steps,record_tip_contact,export_contact_table
 from prototype.material_case import (make_problem, signature, audit, resume,
                                      resume_compatibility, load_force_csv, failure_checkpoint, resolved_model, bind_final_audit_result)
 from numerical_runtime import numerical_runtime
@@ -166,6 +166,13 @@ def main():
     parser.add_argument('--increment',type=float,default=.01)
     parser.add_argument('--seconds',type=float,default=21600.)
     parser.add_argument('--resume',type=Path)
+    parser.add_argument('--run-purpose', choices=('production','exploratory_long'), default='production')
+    parser.add_argument('--case-id')
+    parser.add_argument('--attempt-seconds', type=float)
+    parser.add_argument('--max-rejections', type=int)
+    parser.add_argument('--audit-seconds', type=float)
+    parser.add_argument('--finish-prefix', choices=('completed','failed','budget_exhausted'),
+                        help='Complete terminal audit/export after a cooperative pause')
     parser.add_argument('--threads',type=int,default=2)
     parser.add_argument('--friction-globalization',choices=('model-error','residual-merit'),default='model-error')
     parser.add_argument('--predictor',choices=('secant','affine'),default='secant')
@@ -213,7 +220,18 @@ def main():
     args=parser.parse_args()
     if not np.isfinite(args.mu) or args.mu < 0:
         parser.error('mu must be finite and nonnegative')
-    if not all(np.isfinite(v) and v>0 for v in (args.depth,args.increment,args.seconds)) or args.depth>3:
+    exploratory = args.run_purpose == 'exploratory_long'
+    if exploratory:
+        if not (args.case_id and args.enforce_physical_chord and args.parent_chord_search and
+                args.preparation_force_tolerance_n is not None and 0 < args.preparation_force_tolerance_n <= 1e-6 and
+                args.friction_velocity_mm_s and args.attempt_seconds and np.isfinite(args.attempt_seconds) and args.attempt_seconds > 0 and
+                args.max_rejections and args.max_rejections > 0 and args.audit_seconds and np.isfinite(args.audit_seconds) and args.audit_seconds > 0):
+            parser.error('Exploratory loading needs a strict case, physical timing and finite attempt/audit budgets')
+    elif any(v is not None for v in (args.attempt_seconds,args.max_rejections,args.finish_prefix)):
+        parser.error('Bounded exploratory controls require explicit run purpose')
+    if args.finish_prefix and not args.resume:
+        parser.error('Terminal processing needs its original accepted prefix')
+    if not (np.isfinite(args.seconds) and (args.seconds>0 or (args.seconds==0 and args.finish_prefix))) or not all(np.isfinite(v) and v>0 for v in (args.depth,args.increment)) or args.depth>3:
         parser.error('positive finite controls and target depth <= 3 mm required')
     if not np.isfinite(args.minimum_increment_mm) or args.minimum_increment_mm<=0 or args.minimum_increment_mm>args.increment:parser.error('Invalid minimum increment')
     if args.friction_velocity_mm_s is not None and not (np.isfinite(args.friction_velocity_mm_s) and args.friction_velocity_mm_s>0):parser.error('Invalid velocity threshold')
@@ -237,8 +255,19 @@ def main():
         performance=performance_policy(material_batch_size=args.material_batch_size,
             linear_backend=args.linear_backend,linear_threads=args.linear_threads,ipc_threads=args.threads)
     except ValueError as exc:parser.error(str(exc))
+    rejected_parent = None
     if args.resume:
         old=json.loads((args.resume/'result.json').read_text(encoding='utf-8'))
+        if args.finish_prefix and (old.get('solve_status') != args.finish_prefix or old.get('target_mm') != args.depth or
+                                   not old.get('steps') or old.get('case_id') != args.case_id or
+                                   (args.finish_prefix == 'completed' and abs(old['steps'][-1]['depth_mm']-args.depth)>1e-10)):
+            parser.error('Terminal processing requires the original case, solver outcome and target')
+        reason = old.get('error','')
+        known_rejection = reason.startswith(('LoadStepFailure:', 'IPCSolveTimeout:', 'TimeoutError: IPC friction pseudo-transient wall budget', 'TimeoutError: IPC reference wall budget'))
+        if exploratory and known_rejection and old.get('status') in ('failed','budget_exhausted'):
+            trial = old.get('failed_attempt') or {}
+            if trial.get('history_pairing') == 'actual_attempt_start':
+                rejected_parent = trial
         try:require_same_performance(old,performance)
         except ValueError as exc:parser.error(str(exc))
     if args.experiment:
@@ -261,6 +290,11 @@ def main():
         tip_contact_tracking=dict(errors=[]),settings=vars(args).copy(),performance_policy=performance,
         load_control=dict(mode='adaptive_bisection',minimum_increment_mm=args.minimum_increment_mm,
                           maximum_increment_mm=args.increment,output_grid_increment_mm=args.increment))
+    if exploratory:
+        report.update(run_purpose=args.run_purpose, case_id=args.case_id,
+                      attempt_policy=dict(attempt_seconds=args.attempt_seconds, max_rejections_per_output=args.max_rejections,
+                                          timed_out_splittable='bisect immediately', minimum_step_fallback='one bounded affine retry'),
+                      solve_status='initializing', audit_status='pending')
     if (args.friction_globalization,args.predictor,args.max_iterations)!=('model-error','secant',500):
         report['solver_policy'].update(friction_globalization=args.friction_globalization,
             predictor=args.predictor,max_iterations=args.max_iterations)
@@ -291,6 +325,7 @@ def main():
             def build_problem():
                 result=make_problem(**construction)
                 result.queue_checkpoint=checkpoint
+                result.native_force_acceptance=exploratory
                 return result
             p=build_problem()
             p.solver_diagnostics=args.diagnostics
@@ -305,7 +340,8 @@ def main():
             x=p.rest.copy();old=p.start
             if args.resume:
                 report['status']='resuming';write_json(out/'result.json',report)
-                x,old=resume(p,args.resume,out,report)
+                from tools.qualify_intact_baseline import REVIEWED_LONG_RESUME
+                x,old=resume(p,args.resume,out,report,reviewed_sources=REVIEWED_LONG_RESUME if exploratory else None)
             enable_performance(p,performance)
             print('PERFORMANCE_POLICY '+json.dumps(performance),flush=True)
             tracker=TipContactTracker(p.rest,p.mesh.triangles,p.n,p.config,p.dhat,p.nose_facets,p.blade_landmarks)
@@ -314,8 +350,21 @@ def main():
             targets=np.r_[0.,np.arange(args.increment,args.depth-1e-12,args.increment),args.depth]
             def rejected(event):
                 report['rejected_load_attempts'].append(event);write_json(out/'result.json',report)
-            for depth in targets[targets>old+1e-12]:
-                for x,record in adaptive_load_steps(p,x,old,float(depth),deadline,args.minimum_increment_mm,rejected):
+                if exploratory:
+                    rejects = sum(abs(v['nominal_target_mm']-event['nominal_target_mm'])<1e-12
+                                  for v in report['rejected_load_attempts'])
+                    if rejects >= args.max_rejections:
+                        raise LoadStepFailure(f'Maximum {args.max_rejections} rejections for output {event["nominal_target_mm"]} mm')
+            for depth in ([] if args.finish_prefix else targets[targets>old+1e-12]):
+                split = bool(rejected_parent and rejected_parent['from_depth_mm'] == old and
+                             abs(rejected_parent['attempted_depth_mm']-depth) < 1e-12)
+                if split:
+                    report['resume_cutback'] = dict(parent_mm=old, original_rejected_target_mm=float(depth),
+                        previous_result_sha256=hashlib.sha256((args.resume/'result.json').read_bytes()).hexdigest())
+                    print(f'RESUME_CUTBACK from_mm={old:.9g} rejected_target_mm={depth:.9g}',flush=True)
+                rejected_parent = None
+                for x,record in adaptive_load_steps(p,x,old,float(depth),deadline,args.minimum_increment_mm,rejected,
+                                                    attempt_seconds=args.attempt_seconds,split_first=split):
                     index=len(report['steps']);old=record['depth_mm']
                     save_npz(out/'states'/f'{index:04d}.npz',reference_xy=p.rest,
                         triangles=p.mesh.triangles,positions=x,previous_positions=p.previous,
@@ -331,26 +380,36 @@ def main():
                           f'residual_N={record["residual_n"]:.4g} target_mm={args.depth:.6f} '
                           f'utc={datetime.now(timezone.utc).isoformat()} '
                           f'loading_elapsed_s={time.monotonic()-solve_start:.3f}',flush=True)
-            report.update(status='completed',completed=True)
+            terminal = args.finish_prefix or 'completed'
+            report.update(status=terminal,completed=(terminal=='completed'))
+            if args.finish_prefix and terminal != 'completed':
+                parent = json.loads((args.resume/'result.json').read_bytes())
+                report['error'] = parent.get('error',terminal)
+                report['terminal_failure_source'] = str(args.resume)
         except QueuePaused:
             report.update(status='paused',phase='paused',audit_pending=True,active_solve_s=time.monotonic()-solve_start if 'solve_start' in locals() else 0.)
             write_json(out/'result.json',report)
             if p is not None:close_performance(p)
             return
         except Exception as exc:
-            report.update(status='budget_exhausted' if isinstance(exc,TimeoutError) else 'failed',
+            report.update(status='budget_exhausted' if isinstance(exc,IPCSolveTimeout if exploratory else TimeoutError) else 'failed',
                           error=f'{type(exc).__name__}: {exc}')
             traceback.print_exc(file=log)
-            if p is not None and x is not None and p.material_dt is not None:
+            if p is not None and x is not None and getattr(p,'failed_context',None) and (p.material_dt is not None or getattr(p,'failed_material_state',None)):
                 failed,context=failure_checkpoint(p,x)
                 save_npz(out/'failed_trial.npz',**failed)
                 report['failed_attempt']=context
                 if getattr(p,'ptc_state',None):
                     state=dict(p.ptc_state,previous_positions=failed['previous_positions'],
-                               **p.checkpoint_data())
+                               **(getattr(p,'failed_material_state',None) or p.checkpoint_data()))
                     save_npz(out/'last_ptc.npz',**state)
         report['elapsed_s']=time.monotonic()-started
+        report['solve_status']=report['status']
+        report['active_solve_s']=time.monotonic()-solve_start if 'solve_start' in locals() else 0.
         report['phase']='auditing'
+        report['audit_status']='running'
+        audit_start=time.monotonic()
+        audit_deadline=audit_start+args.audit_seconds if args.audit_seconds else None
         print(f'LOADING_END utc={datetime.now(timezone.utc).isoformat()} '
               f'status={report["status"]} accepted_depth_mm={report.get("last_depth_mm")} '
               f'target_mm={args.depth:.6f} elapsed_s={report["elapsed_s"]:.3f}',flush=True)
@@ -360,16 +419,23 @@ def main():
         try:
             if p is not None and report['steps']:
                 if args.material_batch_size or args.linear_backend!='native':
-                    native_audit(build_problem,out,report)
-                else:audit(p,out,report)
+                    checked=native_audit(build_problem,out,report,deadline=audit_deadline)
+                else:
+                    checked=audit(p,out,report,deadline=audit_deadline,save_timed_prefix=audit_deadline is not None)
+                report['audit_status']='completed' if checked['passed'] else checked.get('stop_reason','failed')
+                if not checked['passed']:
+                    report.update(status='audit_failed',completed=False,audit_error=report['audit_status'])
+            else:
+                report['audit_status']='no_accepted_states'
         except QueuePaused:
-            report.update(status='paused',phase='paused',audit_pending=True,active_solve_s=report['elapsed_s'])
+            report.update(status='paused',phase='paused',audit_pending=True,audit_status='paused',active_audit_s=time.monotonic()-audit_start)
             write_json(out/'result.json',report)
             return
         except Exception as exc:
-            report.update(status='audit_failed',completed=False,audit_error=f'{type(exc).__name__}: {exc}')
+            report.update(status='audit_failed',audit_status='failed',completed=False,audit_error=f'{type(exc).__name__}: {exc}')
             traceback.print_exc(file=log)
         finally:
+            report['active_audit_s']=time.monotonic()-audit_start
             report['phase']='finalizing'
             print(f'AUDIT_END utc={datetime.now(timezone.utc).isoformat()} '
                   f'status={report["status"]} audit_error={report.get("audit_error")}',flush=True)
@@ -392,7 +458,7 @@ def main():
     write_json(out/'result.json',report)
     bind_final_audit_result(out, report)
     write_json(out/'outcome.json',{k:report.get(k) for k in
-        ('status','completed','last_depth_mm','elapsed_s','error','audit_error','comparison_error')})
+        ('status','completed','last_depth_mm','elapsed_s','error','solve_status','audit_status','active_solve_s','active_audit_s','audit_error','comparison_error')})
     print(json.dumps({k:report.get(k) for k in ('status','last_depth_mm','elapsed_s','error')}))
 
 

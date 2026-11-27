@@ -49,6 +49,22 @@ class CumulativeReportingAuditTests(unittest.TestCase):
             self.assertEqual(result['qualified_prefix_states'],1)
             self.assertEqual(len(result['rows']),2)
 
+    def test_time_limited_audit_seals_only_the_checked_prefix(self):
+        from unittest.mock import patch
+        from prototype.material_case import bind_final_audit_result
+        from run_support import write_json
+        with tempfile.TemporaryDirectory() as temp:
+            directory=Path(temp)
+            host,report=self.fixture(directory)
+            write_json(directory/'result.json',report)
+            with patch('prototype.material_case.time') as clock:
+                clock.monotonic.side_effect=[0.,2.]
+                result=audit(host,directory,report,deadline=1.,save_timed_prefix=True)
+            self.assertFalse(result['passed'])
+            self.assertEqual(result['stop_reason'],'audit_wall_limit')
+            self.assertEqual((result['qualified_prefix_states'],result['states'],result['requested_states']),(1,1,2))
+            bind_final_audit_result(directory,report)
+
     def test_tampered_report_cumulative_value_is_rejected(self):
         for index in (0, 1):
             with self.subTest(index=index), tempfile.TemporaryDirectory() as temp:

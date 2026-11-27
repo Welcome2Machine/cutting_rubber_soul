@@ -1,11 +1,11 @@
 # Repository requirements
 
-## Current user task and ownership (2026-11-27)
+## Current user task and ownership (2026-11-28)
 
 Read [single current task](../../researchtopic/research_prototype_task.md), [current results](docs/research_status.md), [System B environment](../../docs/environment.md) and [Git rules](../../docs/git_workflow.md).
 The server is the sole execution owner on codex/deformation-sliding-baseline, under <USER_WORK_ROOT>; the local agent is paused. Prior 3mm/601-state and fracture tasks are historical.
 
-Preserve established source/data identities. The immediate task is the proven 57-degree parent-to-endpoint blade/surface crossing, strict preparation lineage, independent SA observation and short-window spatial qualification. Reuse completed B1-B6 evidence; numerical/compute repairs are authorized when supported by a concrete defect. Changes to physical constitutive/contact laws, specimen support or geometry need physical evidence.
+Preserve established source/data identities. The current batch runs four independently budgeted exploratory 2.000 mm histories at 33 and 57 degrees on H1 and H2. Preserve strict preparation, native force acceptance, continuous physical chords and independent SA observation. Track shallow accuracy per output. Reuse completed B1-B6 evidence; numerical/compute repairs are authorized when supported by a concrete defect. Changes to physical constitutive/contact laws, specimen support or geometry need physical evidence.
 
 ## Physical scope and interpretation
 

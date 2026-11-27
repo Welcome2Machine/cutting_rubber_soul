@@ -176,6 +176,15 @@ def pause(root):
     return status(root)
 
 
+def prefix_identity(folder, report):
+    """Bind the paused result and last material/friction checkpoint at worker exit."""
+    from hashlib import sha256
+    count=len(report['steps'])
+    return dict(states=count,depth_mm=report['steps'][-1]['depth_mm'],
+                result_sha256=sha256((folder/'result.json').read_bytes()).hexdigest(),
+                last_checkpoint_sha256=sha256((folder/'states'/f'{count-1:04d}.npz').read_bytes()).hexdigest())
+
+
 def restart(root, launch):
     """Preserve all old attempts. Earlier completed jobs remain referenced in state."""
     with control_lock(root):
@@ -204,9 +213,25 @@ def restart(root, launch):
             spent=old.get('active_wall_s',0.)
             job['remaining_wall_s']=job.get('remaining_wall_s',job['solve_seconds']+manifest['audit_allowance_s'])-spent
             job['solve_seconds']=max(0.,job['solve_seconds']-old.get('active_solve_s',0.))
-            if job['solve_seconds']==0 and abs(saved.get('last_depth_mm',-1)-job['target_mm'])<1e-10:
+            exploring=manifest.get('run_purpose')=='exploratory_long'
+            if exploring:
+                if saved.get('steps'):
+                    identity=prefix_identity(source,saved)
+                    if old.get('paused_prefix')!=identity or saved.get('case_id')!=job['case_id']:
+                        raise ValueError('Paused case or checkpoint identity changed')
+                    manifest['input_sha256'][str(source/'result.json')]=identity['result_sha256']
+                    manifest['input_sha256'][str(source/'states'/f"{identity['states']-1:04d}.npz")]=identity['last_checkpoint_sha256']
+                    job['paused_parent_binding']=identity
+                for phase in ('audit','export'):
+                    field=phase+'_seconds'
+                    job[field]=max(0.,job[field]-old.get('active_'+phase+'_s',0.))
+                if min(job['audit_seconds'],job['export_seconds'])<=0:
+                    raise RuntimeError('Terminal processing budget exhausted for '+job['name'])
+                if old.get('solve_status') in ('completed','budget_exhausted','failed') and saved.get('steps'):
+                    job['finish_prefix']=old['solve_status']
+            if not exploring and job['solve_seconds']==0 and abs(saved.get('last_depth_mm',-1)-job['target_mm'])<1e-10:
                 job['solve_seconds']=1.  # all targets already covered; runner performs audit and export only
-            if job['remaining_wall_s']<=0 or job['solve_seconds']<=0:
+            if job['remaining_wall_s']<=0 or (job['solve_seconds']<=0 and not job.get('finish_prefix')):
                 raise RuntimeError('Finite attempt budget exhausted for '+job['name'])
             job.update(output=str(dest/job['name']),status='queued',parent_attempt=str(prior))
         manifest.update(parent_attempt=str(prior),batch_root=str(root),case_state_path=str(dest/'queue_status.json'),

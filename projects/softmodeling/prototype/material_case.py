@@ -84,7 +84,7 @@ def failure_checkpoint(p, x):
     """
     data = dict(positions=getattr(p, 'trial', x),
                 previous_positions=getattr(p, 'failed_previous', p.previous),
-                **p.checkpoint_data())
+                **(getattr(p, 'failed_material_state', None) or p.checkpoint_data()))
     context = getattr(p, 'failed_context', {}).copy()
     context.update(history_pairing='actual_attempt_start',
                    phase_seconds=getattr(p, 'phase_seconds', {}).copy())
@@ -226,7 +226,7 @@ def make_problem(*,angle,equilibrium_shear,maxwell_shear,relaxation_s,loading_ra
         p.material=replace(p.material,mu_ov=(2*maxwell_shear/maxwell_alpha,),alpha_ov=(float(maxwell_alpha),))
     return p
 
-def audit(p,out,report,*,destination=None,progress=None,deadline=None,initial_state=None):
+def audit(p,out,report,*,destination=None,progress=None,deadline=None,initial_state=None,save_timed_prefix=False):
     from .contact_trace import record_digest
     rows=[];prior_x=p.rest;prior_metric=np.tile(np.eye(3),p.material_metric.shape[:1]+(1,1))
     prior_depth=p.start;total_dissipation=0.
@@ -243,7 +243,10 @@ def audit(p,out,report,*,destination=None,progress=None,deadline=None,initial_st
         prior_cohesive=initial_state['cohesive_maximum'].copy()
     for i,record in enumerate(report['steps']):
         if getattr(p,'queue_checkpoint',None):p.queue_checkpoint()
-        if deadline is not None and time.monotonic()>deadline:raise TimeoutError('Independent audit wall budget')
+        if deadline is not None and time.monotonic() >= deadline:
+            if save_timed_prefix:
+                break
+            raise TimeoutError('Independent audit wall budget')
         path=out/'states'/f'{i:04d}.npz'
         with np.load(path,allow_pickle=False) as archive:
             state={key:archive[key] for key in archive.files}
@@ -278,7 +281,7 @@ def audit(p,out,report,*,destination=None,progress=None,deadline=None,initial_st
         if progress:progress(row,len(rows),len(report['steps']))
         if len(rows)%25==0:print(f'AUDIT accepted_states={len(rows)}/{len(report["steps"])}',flush=True)
     prefix=next((i for i,row in enumerate(rows) if not row['passed']),len(rows))
-    result=dict(passed=bool(rows) and prefix==len(rows),states=len(rows),rows=rows,
+    result=dict(passed=bool(rows) and prefix==len(report['steps']),states=len(rows),rows=rows,
                 source_binding=dict(signature_sha256=record_digest(report.get('signature')),
                     producer_sources_sha256=record_digest(report.get('source_sha256')),
                     settings_sha256=record_digest(report.get('settings'))),
@@ -286,6 +289,8 @@ def audit(p,out,report,*,destination=None,progress=None,deadline=None,initial_st
                 endpoint_checks_passed=all(row.get('endpoint_passed',row['passed']) for row in rows),
                 trajectory_checked=bool(rows) and all('trajectory_passed' in row for row in rows),
                 scope='fresh force/geometry/history checks; cohesive paths also check each physical chord; not space/time or experimental convergence')
+    if len(rows) < len(report['steps']):
+        result.update(stop_reason='audit_wall_limit', requested_states=len(report['steps']))
     source_result = out/'result.json'
     if source_result.is_file():
         raw = source_result.read_bytes()
@@ -313,7 +318,10 @@ def bind_final_audit_result(out, report):
                        ('settings_sha256', 'settings')):
         if binding.get(field) != record_digest(report.get(key)):
             raise ValueError('Final audit input binding differs: '+field)
-    if len(checked['rows']) != len(report['steps']):
+    timed_prefix = (checked.get('stop_reason') == 'audit_wall_limit' and not checked['passed']
+                    and checked.get('requested_states') == len(report['steps'])
+                    and len(checked['rows']) < len(report['steps']))
+    if not timed_prefix and len(checked['rows']) != len(report['steps']):
         raise ValueError('Final result differs from the independently audited history')
     for row, record in zip(checked['rows'], report['steps']):
         if row.get('accepted_record_sha256') != record_digest(record):
@@ -325,8 +333,8 @@ def bind_final_audit_result(out, report):
     checked['result_binding_stage'] = 'run finalization; original independently audited numerical inputs and records rechecked after final IO metadata'
     write_json(path, checked)
 
-def resume_compatibility(old,report):
-    """An audited CLI/reporting revision may differ; physical sources may not."""
+def resume_compatibility(old,report,*,reviewed_sources=None):
+    """Check the entire source set and any explicitly reviewed exploration migration."""
     if old['signature']!=report['signature']:
         raise ValueError('Resume requires identical material, angle, mesh, contact and acceptance')
     for field in ('minimum_increment_mm','maximum_increment_mm','output_grid_increment_mm'):
@@ -338,15 +346,25 @@ def resume_compatibility(old,report):
     a,b=old['source_sha256'],report['source_sha256']
     changed=sorted(k for k in set(a)|set(b) if a.get(k)!=b.get(k))
     allowed={'tools/run_material_candidate.py'}
-    if set(a)!=set(b) or set(changed)-allowed:
+    if old.get('run_purpose') == 'exploratory_long':
+        if report.get('run_purpose') != 'exploratory_long' or old.get('attempt_policy') != report.get('attempt_policy'):
+            raise ValueError('Exploratory restart requires the same purpose and bounded attempt policy')
+    reviewed = []
+    if reviewed_sources and report.get('run_purpose') == 'exploratory_long':
+        reviewed = [k for k in changed if k in reviewed_sources and (a.get(k), b.get(k)) == reviewed_sources[k]]
+    if set(a)!=set(b) or set(changed)-allowed-set(reviewed):
         raise ValueError('Resume physical source fingerprints differ: '+', '.join(changed))
+    if reviewed:
+        return dict(changed_runner_files=sorted(set(changed)-set(reviewed)), reviewed_source_changes=reviewed,
+                    physical_sources_identical=False, previous_source_sha256=a,
+                    policy='Reviewed source pair for intact exploration; identical physical signature, actual prefix re-audited')
     return dict(changed_runner_files=changed,physical_sources_identical=True,
         previous_source_sha256=a,
         policy='Only explicitly listed CLI/reporting study runners may differ; exact signature and every physical source must match')
 
-def resume(p,source,out,report):
+def resume(p,source,out,report,*,reviewed_sources=None):
     old=json.loads((source/'result.json').read_text(encoding='utf-8'))
-    provenance=resume_compatibility(old,report)
+    provenance=resume_compatibility(old,report,reviewed_sources=reviewed_sources)
     root=Path(__file__).resolve().parents[1]
     for name,digest in report['source_sha256'].items():
         if hashlib.sha256((root/name).read_bytes()).hexdigest()!=digest:

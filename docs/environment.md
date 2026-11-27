@@ -24,7 +24,7 @@ System B（Laurel 3）为每节点双路 Xeon Platinum 8480+，112 物理核、5
 
 现场先查 `spartition`、`qgroup` 和自己的 `squeue`，确认候选队列 `<VERIFIED_B_PARTITION>`、DefTime/MaxTime、Rstd 与剩余额度。Rstd 是单作业上限，Rmax 是组队列并发总限；不能把整组额度视为个人可独占。不要套用 `pjsub` 或普通 Slurm 的 `#SBATCH --cpus-per-task/--mem/--nodes/--ntasks/--exclusive`，本站要求资源通过 `--rsc`。程序执行位置使用 `srun`。[批处理](https://web.kudpc.kyoto-u.ac.jp/manual/en/run/batch) · [站点限制](https://web.kudpc.kyoto-u.ac.jp/manual/en/run/tips)
 
-本轮对同一 33° H1 从准备到首个 0.0025 mm 做了 4/8/16 物理核比较。两步耗时分别为 33.521、33.639、33.276 秒，峰值 RSS 为 340.0、359.8、376.8 MiB，材料更新约占 19 秒。每档均用 IPC 1、BLAS 1，PARDISO 线程数等于所申请物理核数。浅窗批次据此使用一个进程、4 物理核、6 GiB。组内初期同时最多两项独立作业，且合计不超过 64 物理核、128 GiB 和现场组余额。
+本轮对同一 33° H1 从准备到首个 0.0025 mm 做了 4/8/16 物理核比较。两步耗时分别为 33.521、33.639、33.276 秒，峰值 RSS 为 340.0、359.8、376.8 MiB，材料更新约占 19 秒。每档均用 IPC 1、BLAS 1，PARDISO 线程数等于所申请物理核数。浅窗批次据此使用一个进程、4 物理核、6 GiB。当时短批次同时最多两项。本次启动前组内占用为 0/112 物理核。四条探索作业合计申请 16 物理核、24 GiB，每案一个前台进程。
 
 线程池按实际嵌套关系核验，避免 IPC/BLAS/PARDISO/后处理worker 超订阅。站点 `SLURM_CPUS_PER_TASK` 是逻辑核数，不能直接拿它作物理核预算；核对 `SLURM_DPC_CPUS`、cpuset、lscpu及NUMA。比较墙钟耗时和物理核时，不把申请核数称为利用率。[环境变量](https://web.kudpc.kyoto-u.ac.jp/manual/en/run/tips)
 
@@ -62,7 +62,7 @@ srun "$SOFTCUT_PYTHON" -m tools.run_material_queue \
 
 启动后只短时核实JobID、日志和一个新接受态（或有时限的诊断实际推进），然后汇报，不持续监控。
 
-从仓库根运行 `runs/server_intact/control.sh ANGLE status`、`log`、`pause` 或 `resume`。57 对应 `A57_passage`，4 物理核、6 GiB、2 h 20 min。33 对应 `A33_layer_window`，也是 4 物理核、6 GiB，墙钟 1 h；原 18 min 短窗对照在 `A33_layer`。33° 三档网格及两个角度的各段原始输出均保留各自目录。控制器只对已合作暂停且进程已收回的同一尝试执行恢复。Slurm 作业使用提交时冻结的脚本，若批内另调用共享 shell 文件，也应在该作业结束前保留其版本。作业号、采样时刻与日志见[实算状态](../projects/softmodeling/docs/research_status.md)。
+从仓库根执行 `runs/server_intact/control.sh CASE_ID status`、`log`、`pause` 或 `resume`。长批次的唯一 ID 为 `A33_H1_2mm`、`A33_H2_2mm`、`A57_H1_2mm`、`A57_H2_2mm`。每条有独立 manifest、源码摘要、预算、输出和 Slurm allocation，使用 `--no-requeue`。实际作业号存于 `runs/server_intact/long_validation/CASE_ID.jobid`。首次逐步日志在 `runs/server_intact/CASE_ID/CASE_ID/run.log`，Slurm stdout/stderr 在 `runs/server_intact/logs/rubber_CASE_ID.JOBID.out` 和同名 `.err`。控制入口跟随当前 attempt，重启前要有已收回的合作暂停回执。已消耗的求解、审查、导出和总墙钟均随 attempt 扣除。尚在排队的作业由该入口按提交回执执行 Slurm hold/release。原角度简写仅用于旧浅窗。
 
 ```bash
 squeue -j JOBID

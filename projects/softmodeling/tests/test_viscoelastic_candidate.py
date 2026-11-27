@@ -63,6 +63,34 @@ class QueueContinuationTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):control.restart(root,launch)
             self.assertEqual(launch.call_count,1)
 
+    def test_exploratory_resume_preserves_budget_and_paused_checkpoint(self):
+        from tools import material_queue_control as control
+        from run_support import write_json
+        for changed in (False,True):
+            with tempfile.TemporaryDirectory() as work:
+                root=Path(work)
+                folder=root/'case';(folder/'states').mkdir(parents=True)
+                job=dict(name='case',case_id='case',output=str(folder),solve_seconds=100.,audit_seconds=30.,
+                         export_seconds=20.,remaining_wall_s=160.,target_mm=2.)
+                write_json(root/'manifest.json',dict(jobs=[job],input_sha256={},audit_allowance_s=30.,run_purpose='exploratory_long'))
+                saved=dict(case_id='case',steps=[dict(depth_mm=0.)],solve_status='failed',target_mm=2.)
+                write_json(folder/'result.json',saved)
+                state=folder/'states/0000.npz';state.write_bytes(b'accepted')
+                receipt=control.prefix_identity(folder,saved)
+                old=dict(job,status='paused',active_solve_s=12.,active_audit_s=3.,active_export_s=2.,
+                         active_wall_s=19.,paused_prefix=receipt,solve_status='failed')
+                write_json(root/'queue_status.json',dict(status='paused',jobs=[old]))
+                if changed:
+                    state.write_bytes(b'different')
+                    with self.assertRaisesRegex(ValueError,'checkpoint identity changed'):
+                        control.restart(root,lambda *args: None)
+                else:
+                    control.restart(root,lambda *args: None)
+                    new=control.read(control.active(root)/'manifest.json')['jobs'][0]
+                    self.assertEqual((new['solve_seconds'],new['audit_seconds'],new['export_seconds'],new['remaining_wall_s']),(88.,27.,18.,141.))
+                    self.assertEqual(new['paused_parent_binding'],receipt)
+                    self.assertEqual(new['finish_prefix'],'failed')
+
 
 class MaxwellCandidateTests(unittest.TestCase):
     def test_repartition_preserves_bulk_geometry_and_positive_relaxation(self):

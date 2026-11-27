@@ -44,6 +44,10 @@ class LoadStepFailure(RuntimeError):
     """A rejected nonlinear solve that may be retried from accepted history."""
 
 
+class IPCSolveTimeout(TimeoutError):
+    """The deadline explicitly passed to the physical IPC solve was reached."""
+
+
 def residual_merit_decrease(norm, trial_norm, directional_slope, alpha):
     """Sufficient decrease of .5*||fresh residual||^2, not of friction energy.
 
@@ -423,6 +427,10 @@ class IPCProblem:
         return {}
 
     def safe_step(self, x, direction):
+        # One PTC trial can request many subdivided CCD/J certificates.
+        limit = getattr(self, '_load_attempt_deadline', None)
+        if limit is not None and time.monotonic() >= limit:
+            raise IPCSolveTimeout('IPC physical path attempt wall budget')
         phase_start = time.perf_counter()
         F = np.eye(2) + np.einsum(
             "eai,eaJ->eiJ", (x[: self.n] - self.mesh.reference_xy)[self.mesh.triangles], self.grad
@@ -511,7 +519,7 @@ class IPCProblem:
         for iteration in range(self.max_iterations+1):
             if getattr(self,'queue_checkpoint',None):self.queue_checkpoint()
             if time.monotonic() > deadline:
-                raise TimeoutError("IPC friction pseudo-transient wall budget")
+                raise IPCSolveTimeout("IPC friction pseudo-transient wall budget")
             self.trial = x.copy()
             phase_start = time.perf_counter()
             lag = self.lag(x)
@@ -545,7 +553,7 @@ class IPCProblem:
             self._record_phase('coupled_tangent', phase_start)
             for retry in range(18):
                 if time.monotonic() > deadline:
-                    raise TimeoutError("IPC friction pseudo-transient wall budget")
+                    raise IPCSolveTimeout("IPC friction pseudo-transient wall budget")
                 solve_start = time.perf_counter()
                 if linear is None:
                     du = self.linear_direction(A+shift*M, -r)
@@ -609,7 +617,7 @@ class IPCProblem:
                         # the Jacobian, metric or final force-balance criterion.
                         for halvings in range(1, model_backtracks+1):
                             if time.monotonic() > deadline:
-                                raise TimeoutError('IPC friction pseudo-transient wall budget')
+                                raise IPCSolveTimeout('IPC friction pseudo-transient wall budget')
                             alpha *= .5
                             trial = x+alpha*direction
                             if np.array_equal(trial, x):
@@ -976,7 +984,7 @@ class IPCProblem:
             if getattr(self,'queue_checkpoint',None):self.queue_checkpoint()
             self.trial = x.copy()
             if time.monotonic() > deadline:
-                raise TimeoutError("IPC reference wall budget")
+                raise IPCSolveTimeout("IPC reference wall budget")
             E, g, H, minj = self.evaluate(x, lag, projected=self.hessian_mode == "projected")
             norm = float(np.linalg.norm(g[self.free]))
             iterations += 1
@@ -1056,18 +1064,20 @@ class IPCProblem:
 
 
 def adaptive_load_steps(p, x, old, target, deadline, minimum_increment, on_reject=None,
-                        *, nominal_target=None, level=0):
+                        *, nominal_target=None, level=0, attempt_seconds=None, split_first=False):
     """Yield every accepted substep; never skip a requested output depth.
 
     Failed trials cannot become a friction or predictor history. A secant solve
-    first retries the same physical increment with the affine guess. Only then
-    is the load bisected. Substeps are real history updates, so they must all be
+    can retry at the same load with the affine guess. An exhausted local time
+    budget immediately bisects a splittable increment. Substeps are real history updates, so they must all be
     persisted by the caller and compared for loading-discretization sensitivity.
     Global timeouts and unexpected implementation/geometry errors are not hidden.
     """
     if (not np.isfinite(minimum_increment) or minimum_increment <= 0
             or not np.isfinite(old) or not np.isfinite(target) or target <= old):
         raise ValueError('Adaptive loading requires a positive minimum and increasing finite depths')
+    if attempt_seconds is not None and not (np.isfinite(attempt_seconds) and attempt_seconds > 0):
+        raise ValueError('Physical attempt wall budget must be positive and finite')
     nominal_target = target if nominal_target is None else nominal_target
     predictor = p.predictor
     globalization = getattr(p, 'friction_globalization', 'model-error')
@@ -1075,6 +1085,10 @@ def adaptive_load_steps(p, x, old, target, deadline, minimum_increment, on_rejec
     choices = [(predictor, globalization)]
     if predictor == 'secant' or globalization != 'model-error':
         choices.append(('affine', 'model-error'))
+    midpoint = .5*(old+target)
+    splittable = old >= 0 and .5*(target-old) >= minimum_increment*(1-1e-12) and old < midpoint < target
+    if split_first and splittable:
+        choices = []  # Same rejected parent/target independently authenticated on restart.
     failure = None
     for choice, friction_globalization in choices:
         p.attempted_depth = float(target)
@@ -1082,18 +1096,43 @@ def adaptive_load_steps(p, x, old, target, deadline, minimum_increment, on_rejec
         p.failed_context = dict(from_depth_mm=float(old), attempted_depth_mm=float(target),
             nominal_target_mm=float(nominal_target), subdivision_level=level, predictor=choice,
             friction_globalization=friction_globalization)
+        material_parent = None
+        if attempt_seconds and hasattr(p, 'material_metric'):
+            p.failed_material_state = None
+            material_parent = (p.material_metric.copy(), p.previous_material_metric, p.material_dissipation,
+                               p.material_dt, p.friction_smoothing_mm, p.friction)
         before_previous = p.previous.copy()
         before_history = [(d, state.copy()) for d, state in p._accepted_predictor_history]
         started = time.monotonic()
+        attempt_end = min(deadline, started + attempt_seconds) if attempt_seconds else deadline
+        if started >= deadline:
+            p.failed_context = {}
+            raise IPCSolveTimeout('Global loading wall budget')
+        previous_limit = getattr(p, '_load_attempt_deadline', None)
         try:
+            if attempt_seconds:
+                p._load_attempt_deadline = attempt_end
             p.predictor = choice
             p.friction_globalization = friction_globalization
             # A temporary plateau also occurs on known-successful affine paths.
             # Early termination applies only to the optional accelerated guess;
             # retain the full original solve budget for the conservative retry.
             p.stagnation_window = stagnation_window if choice == 'secant' else 0
-            value, record = p.step(x.copy(), old, target, deadline)
-        except LoadStepFailure as exc:
+            value, record = p.step(x.copy(), old, target, attempt_end)
+        except Exception as exc:
+            if material_parent is not None:
+                p.failed_material_state = p.checkpoint_data()
+                (p.material_metric, p.previous_material_metric, p.material_dissipation,
+                 p.material_dt, p.friction_smoothing_mm, p.friction) = material_parent
+            p.previous = before_previous
+            p._accepted_predictor_history = before_history
+            if not isinstance(exc, (LoadStepFailure, IPCSolveTimeout)):
+                raise
+            timed_out = isinstance(exc, IPCSolveTimeout)
+            if time.monotonic() >= deadline:
+                raise IPCSolveTimeout('Global loading wall budget') from exc
+            if timed_out and (attempt_end >= deadline or time.monotonic() < attempt_end):
+                raise
             failure = exc
             event = dict(from_depth_mm=float(old), attempted_depth_mm=float(target),
                          nominal_target_mm=float(nominal_target), subdivision_level=level,
@@ -1101,11 +1140,14 @@ def adaptive_load_steps(p, x, old, target, deadline, minimum_increment, on_rejec
                          friction_globalization=friction_globalization,
                          error=f'{type(exc).__name__}: {exc}',
                          phase_seconds=getattr(p, 'phase_seconds', {}).copy())
-            p.previous = before_previous
-            p._accepted_predictor_history = before_history
+            if attempt_seconds:
+                event.update(reason='attempt_wall_limit' if timed_out else 'nonlinear_rejection',
+                             attempt_budget_s=attempt_end-started)
             print('LOAD_REJECT '+json.dumps(event, sort_keys=True), flush=True)
             if on_reject is not None:
                 on_reject(event)
+            if timed_out and splittable:
+                break
         else:
             record['load_step'] = dict(previous_depth_mm=float(old),
                                       increment_mm=float(target-old),
@@ -1117,16 +1159,18 @@ def adaptive_load_steps(p, x, old, target, deadline, minimum_increment, on_rejec
             p.predictor = predictor
             p.friction_globalization = globalization
             p.stagnation_window = stagnation_window
+            if attempt_seconds:
+                p._load_attempt_deadline = previous_limit
             yield value, record
             return
         finally:
+            if attempt_seconds:
+                p._load_attempt_deadline = previous_limit
             p.predictor = predictor
             p.friction_globalization = globalization
             p.stagnation_window = stagnation_window
     # No negative-depth auxiliary states: initial equilibrium is a separate solve.
-    midpoint = .5*(old+target)
-    if (old < 0 or .5*(target-old) < minimum_increment*(1-1e-12)
-            or not old < midpoint < target):
+    if not splittable:
         raise LoadStepFailure(f'IPC adaptive load exhausted: from={old:g} to={target:g} mm, '
                               f'minimum_increment={minimum_increment:g} mm; {failure}') from failure
     print(f'LOAD_CUTBACK from_mm={old:.9g} target_mm={target:.9g} midpoint_mm={midpoint:.9g}',
@@ -1134,7 +1178,7 @@ def adaptive_load_steps(p, x, old, target, deadline, minimum_increment, on_rejec
     for endpoint in (midpoint, target):
         for value, record in adaptive_load_steps(p, x, old, endpoint, deadline, minimum_increment,
                                                 on_reject, nominal_target=nominal_target,
-                                                level=level+1):
+                                                level=level+1, attempt_seconds=attempt_seconds):
             x, old = value, record['depth_mm']
             yield value, record
 

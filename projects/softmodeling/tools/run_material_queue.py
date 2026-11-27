@@ -95,6 +95,12 @@ def make_command(manifest,job):
         '--mu',str(job.get('mu',manifest.get('mu',.35))),
         '--depth',str(job['target_mm']),'--increment',str(job.get('increment',manifest.get('increment',.01))),
         '--seconds',str(job.get('solve_seconds',manifest['solve_seconds_per_case'])),'--threads',str(manifest.get('threads',2))]
+    if manifest.get('run_purpose') == 'exploratory_long':
+        cmd += ['--run-purpose','exploratory_long','--case-id',job['case_id'],
+                '--attempt-seconds',str(job['attempt_seconds']),'--max-rejections',str(job['max_rejections']),
+                '--audit-seconds',str(job['audit_seconds'])]
+        if job.get('finish_prefix'):
+            cmd += ['--finish-prefix',job['finish_prefix']]
     if material.get('bulk_modulus') is not None:
         cmd+=['--bulk-modulus',str(material['bulk_modulus'])]
     for key in ('equilibrium_alpha','maxwell_alpha'):
@@ -137,6 +143,8 @@ def bind_short_paths(manifest,proof):
     for job in manifest['jobs']:
         folder=(proof.parent/paths[job['case_id']]).resolve()
         r=read(folder/'result.json')
+        if r.get('run_purpose') == 'exploratory_long':
+            raise ValueError('Exploratory histories do not carry production short-window qualification')
         actual=r.get('resolved_model',{})
         if actual!=job['resolved_model'] or r.get('performance_policy')!=manifest['performance_policy']:
             raise ValueError('Short evidence resolved model, solver policy or backend differs: '+job['name'])
@@ -187,6 +195,9 @@ def run_case(out,manifest,job,state,*,command_factory=None):
     job.update(status='starting',command=cmd,started_utc=now())
     write_json(out/'queue_status.json',state)
     started=time.monotonic();forced=None
+    exploratory=manifest.get('run_purpose')=='exploratory_long'
+    total_wall=job.get('remaining_wall_s',job.get('solve_seconds',manifest['solve_seconds_per_case'])+manifest['audit_allowance_s'])
+    end=started+total_wall
     if (out/'pause_requested.json').exists():return dict(status='paused',audit_pending=True)
     with (out/(job['name']+'.stdout.log')).open('xb') as stdout,\
          (out/(job['name']+'.stderr.log')).open('wb') as stderr:
@@ -197,7 +208,7 @@ def run_case(out,manifest,job,state,*,command_factory=None):
         try:import psutil
         except ImportError:psutil=None
         try:
-            deadline=time.monotonic()+job.get('remaining_wall_s',job.get('solve_seconds',manifest['solve_seconds_per_case'])+manifest['audit_allowance_s'])
+            deadline=end-(job['export_seconds'] if exploratory else 0)
             while child.poll() is None:
                 if 'case_id' in job and psutil is not None:
                     try:
@@ -205,6 +216,11 @@ def run_case(out,manifest,job,state,*,command_factory=None):
                         job['peak_solver_memory_bytes']=max(job.get('peak_solver_memory_bytes',0),getattr(usage,'peak_wset',usage.rss))
                     except psutil.Error:pass
                 state['heartbeat_utc']=now();write_json(out/'queue_status.json',state)
+                if exploratory and time.monotonic() >= deadline-job['audit_seconds']:
+                    path=Path(job['output'])/'result.json'
+                    phase=read(path).get('phase') if path.is_file() else None
+                    if phase not in ('auditing','finalizing','ended'):
+                        raise subprocess.TimeoutExpired(cmd,total_wall)
                 if time.monotonic()>=deadline:raise subprocess.TimeoutExpired(cmd,deadline-started)
                 try:
                     if 'case_id' not in job:write_snapshot(out,refresh=True)
@@ -225,8 +241,29 @@ def run_case(out,manifest,job,state,*,command_factory=None):
         rfile=Path(job['output'])/'result.json'
         r=read(rfile) if rfile.is_file() else {}
         return dict(status='paused',audit_pending=True,last_depth_mm=r.get('last_depth_mm'),
-            active_wall_s=time.monotonic()-started,active_solve_s=r.get('active_solve_s',r.get('elapsed_s',time.monotonic()-started)))
+            paused_prefix=control.prefix_identity(Path(job['output']),r) if exploratory and r.get('steps') else None,
+            active_wall_s=time.monotonic()-started,active_solve_s=r.get('active_solve_s',r.get('elapsed_s',time.monotonic()-started)),
+            active_audit_s=r.get('active_audit_s',0.),solve_status=r.get('solve_status'))
+    folder=Path(job['output'])
+    r=read(folder/'result.json') if (folder/'result.json').is_file() else {}
+    recovered_audit=None
+    if (exploratory and r.get('steps') and not (folder/'audit.json').exists() and
+            r.get('audit_status') in (None,'pending') and (forced or code)):
+        # A killed solve may never reach its own postlude. Audit its last atomic
+        # accepted result once, leaving the original result/failure bytes intact.
+        import inspect
+        from prototype.material_case import make_problem,audit
+        try:
+            host=make_problem(**{k:v for k,v in r['settings'].items() if k in inspect.signature(make_problem).parameters})
+            checked=audit(host,folder,r,deadline=min(time.monotonic()+job['audit_seconds'],end-job['export_seconds']),
+                          save_timed_prefix=True)
+            recovered_audit='completed' if checked['passed'] else checked.get('stop_reason','failed')
+        except Exception as exc:
+            recovered_audit=f'failed: {type(exc).__name__}: {exc}'
     result=summarize_case(job['output'],job,code,forced)
+    if exploratory:
+        result.update(run_purpose=manifest['run_purpose'],solve_status=forced or r.get('solve_status') or result['status'],
+                      audit_status=recovered_audit or r.get('audit_status','unavailable'),export_status='no_audited_prefix')
     if result['mechanics_completed']:
         try:
             from tools.qualify_intact_baseline import verify_case
@@ -260,16 +297,38 @@ def run_case(out,manifest,job,state,*,command_factory=None):
             if prefix:
                 from prototype.contact_trace import export_trace
                 from workbench.results import export_case
+                export_start=time.monotonic()
+                export_deadline=min(end,export_start+job['export_seconds']) if exploratory else math.inf
+                def check_export():
+                    control.checkpoint(out/'pause_requested.json')
+                    if time.monotonic() >= export_deadline:
+                        raise TimeoutError('Accepted-prefix export wall budget')
                 try:
+                    check_export()
+                    job['export_status']='running'
+                    write_json(out/'queue_status.json',state)
                     exports=out/'exports'/job['case_id']
                     trace=export_trace(folder,exports/'contact_trace',qualified_prefix=True,
-                        checkpoint=lambda:control.checkpoint(out/'pause_requested.json'))
-                    export_case(folder,exports/'presentation',trace_path=exports/'contact_trace/contact_trace.json')
+                        checkpoint=check_export)
+                    export_case(folder,exports/'presentation',trace_path=exports/'contact_trace/contact_trace.json',checkpoint=check_export)
                     if manifest.get('observation_protocol'):
                         from tools.verify_intact_numerics import compare_shallow_reference, history, observe_sa
-                        observations=observe_sa(folder,read(manifest['observation_protocol']),job['target_mm'])
+                        observations=observe_sa(folder,read(manifest['observation_protocol']),job['target_mm'],qualified_prefix=exploratory,checkpoint=check_export)
                         write_json(exports/'independent_sa.json',observations)
                         result['independent_sa_frames']=len(observations['rows'])
+                        if exploratory:
+                            last=trace['steps'][prefix-1]['depth_mm']
+                            ends=[v for v in manifest['diagnostic_depths_mm'] if v<=last+1e-10]
+                            if last>0 and (not ends or abs(ends[-1]-last)>1e-10):
+                                ends.append(last)
+                            spans=list(zip([0.]+ends,ends))
+                            ledger=history(folder,exports,'energy_balance',material_points=manifest['material_points'],
+                                           windows=spans,qualified_prefix=True,checkpoint=check_export)
+                            write_json(exports/'energy_balance.json',ledger)
+                            reached=[v for v in manifest['diagnostic_depths_mm'] if any(abs(s['depth_mm']-v)<1e-10 for s in observations['rows'])]
+                            write_json(exports/'diagnostic_depths.json',dict(target_mm=job['target_mm'],accepted_end_mm=last,
+                                       requested=manifest['diagnostic_depths_mm'],reached=reached,
+                                       purpose=manifest['run_purpose'],qualified_prefix=prefix))
                         if manifest.get('require_window_review') and result['mechanics_completed']:
                             if len(observations['rows'])!=len(audited['rows']):
                                 raise ValueError('Window review requires the complete audited trajectory')
@@ -313,12 +372,17 @@ def run_case(out,manifest,job,state,*,command_factory=None):
                         fx_2mm_n=final['force']['reaction_x_n'] if result['mechanics_completed'] and job['target_mm']==2. else None)
                     if trace.get('visualization',{}).get('status')!='completed':
                         raise ValueError(str(trace.get('visualization')))
+                    check_export()
+                    result['export_status']='completed'
                 except control.QueuePaused:
-                    return dict(status='paused',audit_pending=False,export_pending=True,
-                        active_solve_s=r.get('elapsed_s',0.) if result['mechanics_completed'] else result.get('solver_elapsed_s',0.),
+                    return dict(status='paused',audit_pending=False,export_pending=True,solve_status=r.get('solve_status'),
+                        paused_prefix=control.prefix_identity(folder,r) if exploratory else None,
+                        active_audit_s=r.get('active_audit_s',0.),active_export_s=time.monotonic()-export_start,
+                        active_solve_s=r.get('active_solve_s',result.get('solver_elapsed_s',0.)),
                         active_wall_s=time.monotonic()-started,last_depth_mm=result.get('last_depth_mm'))
                 except Exception as exc:
-                    result.update(status='export_failed',export_error=str(exc),full_delivery=False)
+                    result.update(status='export_failed',export_status='budget_exhausted' if isinstance(exc,TimeoutError) else 'failed',export_error=str(exc),full_delivery=False)
+                result['active_export_s']=time.monotonic()-export_start
             else:result.update(qualified_states=0,qualified_depth_mm=None)
     result.update(wall_elapsed_s=time.monotonic()-started,finished_utc=now())
     return result
@@ -327,7 +391,7 @@ def run_case(out,manifest,job,state,*,command_factory=None):
 def export_summary(out,state):
     """Keep only observed accepted curves; no interpolation of missing contact."""
     if any('case_id' in j for j in state['jobs']):
-        fields=['case_id','angle','mu','status','accepted_states','qualified_states','qualified_depth_mm',
+        fields=['case_id','angle','mu','status','run_purpose','solve_status','audit_status','export_status','accepted_states','qualified_states','qualified_depth_mm',
                 'sa_unique_states','sa_native_support_states','mechanics_completed','fresh_audit_passed','fz_2mm_n','fx_2mm_n','pole_last_mm',
                 'pole_last_depth_mm','pole_valid_fraction','pole_endpoint_status','wall_elapsed_s',
                 'error','export_error','output','result_sha256','audit_sha256','peak_solver_memory_bytes','min_j','fine_halfwidth_mm','contact_address_abs_max_mm','footprint_leaves_fine_band']
@@ -337,7 +401,7 @@ def export_summary(out,state):
             for job in state['jobs']:
                 row={k:job.get(k) for k in fields}
                 writer.writerow(dict(row,blade_shape=job['options']['blade_shape'],
-                    tip_radius=job['options']['tip_radius'],accuracy='short path screening only'))
+                    tip_radius=job['options']['tip_radius'],accuracy=('exploratory; separate space/time/SA qualification' if state.get('run_purpose')=='exploratory_long' else 'short path screening only')))
         return
     lines=['# Finite-Maxwell angle queue','',
         'Each case retains its accepted prefix even on failure. No fracture is enabled.',
@@ -383,7 +447,7 @@ def worker(out):
     with (out/'worker_started.json').open('x',encoding='utf-8') as f:
         json.dump(dict(pid=os.getpid(),started_utc=now(),identity=control.identity(os.getpid())),f)
     state=dict(status='running',worker_pid=os.getpid(),started_utc=now(),
-        target_mm=manifest['target_mm'],mu=manifest.get('mu',.35),jobs=manifest['jobs'],
+        target_mm=manifest['target_mm'],mu=manifest.get('mu',.35),run_purpose=manifest.get('run_purpose','production'),jobs=manifest['jobs'],
         reference_cases=manifest.get('reference_cases',[]))
     write_json(out/'queue_status.json',state)
     for job in state['jobs']:
@@ -490,6 +554,8 @@ def main():
     parser.add_argument('--linear-threads',type=int,default=4)
     parser.add_argument('--observation-protocol',type=Path,help='Frozen independent pole and nose gap bands for audited cases')
     parser.add_argument('--short-evidence',type=Path,help='Completed short-path screening evidence to bind in the manifest')
+    parser.add_argument('--run-purpose', choices=('production','exploratory_long'),
+                        help='Purpose declared by the frozen case configuration; default production')
     parser.add_argument('--case-config',type=Path,help='Explicit ordered case identities, options and budgets')
     parser.add_argument('--prepare-only',action='store_true')
     parser.add_argument('--launch-prepared',action='store_true')
@@ -569,6 +635,8 @@ def main():
                 resume_compatibility(old,expected)
                 inputs.update(verify_case(path));resumes[key]=str(path)
             except (ValueError,RuntimeError,OSError,KeyError) as exc:parser.error(str(exc))
+    if args.run_purpose == 'exploratory_long' and not args.case_config:
+        parser.error('Exploratory long runs require explicit case configurations')
     out.mkdir(parents=True,exist_ok=False)
     root=Path(__file__).resolve().parents[1]
     hashes=source_hashes(packages=('prototype','mechanics'))
@@ -584,6 +652,12 @@ def main():
         path=args.case_config.resolve()
         inputs[str(path)]=hashlib.sha256(path.read_bytes()).hexdigest()
         settings=read(path);jobs=[]
+        purpose=settings.get('run_purpose','production')
+        if purpose not in ('exploratory_long','production') or (args.run_purpose and args.run_purpose!=purpose):
+            parser.error('Run purpose must match the frozen case configuration')
+        exploratory=purpose=='exploratory_long'
+        if exploratory and (args.short_evidence or not args.observation_protocol or settings.get('require_window_review')):
+            parser.error('Exploration uses independent SA and separate accuracy qualification')
         allowed={'blade_shape','tip_radius','blade_thickness','blade_angle','dhat','nose_facets',
                  'local_spacing','surface_spacing','fine_halfwidth','coarse_spacing','contact_layer_depth','reference_layout','size_gradient','drop_s',
                  'preparation_clearance_mm','friction_velocity_mm_s','enforce_physical_chord',
@@ -594,6 +668,8 @@ def main():
             if not re.fullmatch(r'[A-Za-z0-9_]+',name) or any(j['name'].lower()==name.lower() for j in jobs):
                 raise ValueError('Case ID must be path-safe and unique')
             prerequisite=case.get('requires_case')
+            if exploratory and prerequisite:
+                parser.error('Each exploratory trajectory must have independent scheduling and history')
             if prerequisite and not any(j['name']==prerequisite and j['angle']==case['angle'] for j in jobs):
                 raise ValueError('Window prerequisite must name an earlier case at the same angle')
             review_reference=case.get('review_reference')
@@ -699,6 +775,14 @@ def main():
             free_disk_bytes_at_prepare=shutil.disk_usage(out).free,logical_cpus=os.cpu_count(),
             code_commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=root,text=True).strip(),
             case_state_path=str(out/'queue_status.json'),summary_path=str(out/'summary.csv'))
+        manifest['run_purpose']=purpose
+        if exploratory:
+            manifest['qualification']='exploratory trajectory; spatial, time and SA accuracy not established by completion'
+            grid=(args.case_config.resolve().parent/settings['material_points']).resolve()
+            manifest['material_points']=str(grid)
+            inputs[str(grid)]=hashlib.sha256(grid.read_bytes()).hexdigest()
+            checkpoints=(.25,.5,1.,1.5,2.)
+            manifest['diagnostic_depths_mm']=[v for v in checkpoints if v<=args.depth]
         manifest['require_window_review']=settings.get('require_window_review',False)
         if type(manifest['require_window_review']) is not bool or (manifest['require_window_review'] and
                 (not args.observation_protocol or args.depth!=.25)):
@@ -710,7 +794,21 @@ def main():
         if not math.isfinite(manifest['audit_allowance_s']) or manifest['audit_allowance_s']<=0 or manifest['minimum_free_bytes']<1:
             raise ValueError('Invalid audit or disk budget')
         from prototype.material_case import make_problem, resolved_model
-        for job in jobs:
+        for job,case in zip(jobs,settings['cases']):
+            if exploratory:
+                budgets=dict(attempt_seconds=case['attempt_seconds'],audit_seconds=manifest['audit_allowance_s'],
+                             export_seconds=settings['export_allowance_s'],setup_seconds=settings['setup_allowance_s'])
+                if not all(type(v) in (int,float) and math.isfinite(v) and v>0 for v in budgets.values()):
+                    raise ValueError('Finite positive attempt, audit, export and setup budgets required')
+                max_rejections=case['max_rejections']
+                if type(max_rejections) is not int or max_rejections<1:
+                    raise ValueError('Finite positive rejection count required')
+                job.update(**budgets,max_rejections=max_rejections,remaining_wall_s=job['solve_seconds']+
+                           budgets['audit_seconds']+budgets['export_seconds']+budgets['setup_seconds'])
+                if not job['options'].get('parent_chord_search') or not 0<job['options'].get('preparation_force_tolerance_n',math.inf)<=1e-6 or not job['options'].get('friction_velocity_mm_s'):
+                    raise ValueError('Strict preparation, parent path and physical friction time are required')
+                if any(abs(v/job['increment']-round(v/job['increment']))>1e-8 for v in manifest['diagnostic_depths_mm']):
+                    raise ValueError('Diagnostic depths must be actual output-grid anchors')
             options={k:v for k,v in job['options'].items() if k!='minimum_increment_mm'}
             host=make_problem(angle=job['angle'],mu=job['mu'],**material,**options)
             job['resolved_model']=json.loads(json.dumps(resolved_model(host)))
@@ -724,8 +822,22 @@ def main():
                 if old.get('resolved_model')!=job['resolved_model'] or old['settings']['increment']!=job['increment']:
                     raise ValueError('Resume-case geometry, material, solver policy or increment differs')
                 expected_sources={k:v for k,v in hashes.items() if k.startswith(('prototype/','mechanics/')) or k in ('run_support.py','tools/run_material_candidate.py','tools/material_queue_control.py','numerical_runtime.py')}
-                resume_compatibility(old,dict(signature=json.loads(json.dumps(signature(host))),
-                    solver_policy=old['solver_policy'],source_sha256=expected_sources))
+                from tools.qualify_intact_baseline import REVIEWED_LONG_RESUME
+                expected=dict(signature=json.loads(json.dumps(signature(host))),solver_policy=old['solver_policy'],
+                              source_sha256=expected_sources,run_purpose=purpose,
+                              load_control=dict(minimum_increment_mm=job['options'].get('minimum_increment_mm',old.get('load_control',{}).get('minimum_increment_mm')),
+                                                maximum_increment_mm=job['increment'],output_grid_increment_mm=job['increment']))
+                if exploratory:
+                    from prototype.contact_trace import audit_coverage
+                    prefix,_=audit_coverage(directory,old)
+                    if not prefix or prefix!=len(old['steps']) or old['steps'][-1]['depth_mm']>=args.depth:
+                        raise ValueError('Exploratory seed must have a complete bound prefix below the target')
+                    expected['attempt_policy']=dict(attempt_seconds=job['attempt_seconds'],max_rejections_per_output=job['max_rejections'],
+                        timed_out_splittable='bisect immediately',minimum_step_fallback='one bounded affine retry')
+                job['resume_binding']=resume_compatibility(old,expected,reviewed_sources=REVIEWED_LONG_RESUME if exploratory else None)
+                job['resume_binding'].update(states=len(old['steps']),depth_mm=old['steps'][-1]['depth_mm'],
+                    result_sha256=hashlib.sha256((directory/'result.json').read_bytes()).hexdigest(),
+                    audit_sha256=hashlib.sha256((directory/'audit.json').read_bytes()).hexdigest())
                 manifest['input_sha256'].update(verify_case(directory))
                 job['resume_source']=str(directory)
             import numpy as np
@@ -752,7 +864,17 @@ def launch(out,manifest,*,foreground=False):
     """Launch once; foreground workers stay in the scheduler's process session."""
     if os.environ.get('SLURM_JOB_ID') and not foreground:
         raise RuntimeError('Slurm queue launches require --foreground; detached workers outlive their job step')
-    if manifest.get('case_config') and manifest['target_mm']==2. and not manifest.get('short_evidence_verified'):
+    purpose=manifest.get('run_purpose','production')
+    if purpose not in ('production','exploratory_long'):
+        raise ValueError('Unknown run purpose')
+    if purpose=='exploratory_long':
+        config=Path(manifest['case_config'])
+        if (manifest.get('input_sha256',{}).get(str(config))!=hashlib.sha256(config.read_bytes()).hexdigest()
+                or read(config).get('run_purpose')!=purpose or manifest.get('require_window_review') or
+                manifest.get('short_evidence_verified') or not manifest.get('observation_protocol') or
+                any(j.get('requires_case') for j in manifest['jobs'])):
+            raise ValueError('Exploratory purpose and independence must match the frozen case inputs')
+    elif manifest.get('case_config') and manifest['target_mm']==2. and not manifest.get('short_evidence_verified'):
         raise ValueError('Production needs case-bound audited short evidence')
     verify_inputs(manifest)
     for name,digest in manifest['source_sha256'].items():

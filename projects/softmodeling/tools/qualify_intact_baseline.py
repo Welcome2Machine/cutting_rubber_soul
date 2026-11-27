@@ -27,6 +27,27 @@ from tools.render_solver_dashboard import atomic_write, shell, stamp
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = ROOT / 'prototype/intact_2mm_baseline.json'
 
+# Exact c4611869 -> exploratory control/audit revision. Physical equations,
+# geometry, material evolution, friction and the accepted chord are identical.
+# Every reused checkpoint and transition is reassembled on the destination.
+REVIEWED_LONG_RESUME = {
+    'prototype/ipc_reference.py': (
+        '1b405898d24349eb26c31c2a26ba3226ff6db0228b159f38ec9234c573bb5e40',
+        '9f0b05ed2344fc3321aad870e6864029c0656b6a74ff23b8e074ae7229f5839f'),
+    'prototype/ipc_viscoelastic.py': (
+        '1c3c56c68e809f4040fddba906b1472de5a8b46636485c5878d9f4043061ea21',
+        '58d6d4f2ba22079da87660389591cc0d8a184c8180c7353ae2d61dec59f15ec9'),
+    'prototype/material_case.py': (
+        'dd5e5ddda315ff0793211ed8104c831e282f2f7b43760879fc33491645c7c85a',
+        '80ca631aceb97f58857a11c05d530703f784b4d6f4e091a14d7696ed27a2f09c'),
+    'prototype/material_performance.py': (
+        '61dc46f89dca58b1c039783a722f329cb0a5bd78c885963cf1d340e67b9f4e42',
+        'c0641f009684725b189ef81bbb5b38871c9686b5f47a5d3554102187d4a46cb4'),
+    'tools/material_queue_control.py': (
+        '1f0e90e7b6abd7f99a83032b019291a58b95b398e4db8f546153bd6ef1332463',
+        '93f48daa720a7c2fbd6fa7bf7d021a77db76a051facab940a63b432eba9c42da'),
+}
+
 
 def sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()

@@ -1,6 +1,6 @@
 # Integration workspace
 
-Current task (2026-11-27): server-only intact A/R20 numerical refinement on Kyoto System B.
+Current task (2026-11-28): four independent intact A/R20 exploratory 2.000 mm trajectories on Kyoto System B.
 Active branch: codex/deformation-sliding-baseline. Work root: <USER_WORK_ROOT>.
 The local agent is paused. Read the single task and docs/environment.md; historical fracture/server
 rounds are references, not active instructions. Numerical repairs are authorized; physics changes need evidence.

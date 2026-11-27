@@ -90,8 +90,14 @@ class ViscoelasticProblem(IPCProblem):
         return r,k,dofs,float(volumes@q['incremental_potential']),float(q['J'].min())
 
     def acceptance(self,x,depth,iterations,outer_iterations):
-        accepted=super().acceptance(x,depth,iterations,outer_iterations)
-        return self.material_acceptance(x,depth,accepted)
+        original_batch = getattr(self, 'material_batch_size', 0)
+        try:
+            if getattr(self, 'native_force_acceptance', False):
+                self.material_batch_size = 0
+            accepted = super().acceptance(x, depth, iterations, outer_iterations)
+            return self.material_acceptance(x, depth, accepted)
+        finally:
+            self.material_batch_size = original_batch
 
     def material_acceptance(self,x,depth,accepted):
         """Attach the same material audit to an independently accepted contact state."""
