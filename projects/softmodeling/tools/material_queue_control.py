@@ -82,6 +82,8 @@ def status(root):
     receipt=read(out/'launch.json') if (out/'launch.json').exists() else {}
     state['directory']=str(out)
     owner=receipt.get('identity') or {}
+    if not owner and state['status']=='running' and (out/'worker_started.json').is_file():
+        owner=read(out/'worker_started.json').get('identity') or {}
     state['owner']={k:owner.get(k) for k in ('hostname','slurm_job_id','pid','created_epoch','python')}
     exit_file=out/'worker_exit.json'
     exited=read(exit_file) if exit_file.exists() else {}
@@ -190,7 +192,7 @@ def restart(root, launch):
         previous={j['name']:j for j in state['jobs']}
         for job in manifest['jobs']:
             old=previous[job['name']]
-            if old.get('status') in ('completed','failed','budget_exhausted','export_failed','evidence_failed','process_timeout'):
+            if old.get('status') in ('completed','failed','budget_exhausted','export_failed','evidence_failed','process_timeout','prerequisite_failed'):
                 job.update(old);job['reused']=True
                 continue
             if old.get('status') not in ('paused','queued','pending'):

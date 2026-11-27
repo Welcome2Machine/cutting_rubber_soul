@@ -625,3 +625,25 @@ def test_remote_pause_binds_to_attempt_without_inspecting_local_pid(tmp_path, mo
         control.restart(tmp_path,None)
     write_json(tmp_path/'worker_exit.json',dict(identity=owner,directory=str(tmp_path),returncode=0))
     assert control.status(tmp_path)['worker_reaped']
+
+
+def test_mesh_prerequisite_holds_finer_cases_when_h1_review_fails(tmp_path):
+    from unittest.mock import patch
+    from tools import run_material_queue as queue
+    from run_support import write_json
+    jobs=[dict(name=name,angle=33,status='queued',output=str(tmp_path/name)) for name in ('H1','H0','H2')]
+    for job in jobs[1:]:job['requires_case']='H1'
+    write_json(tmp_path/'manifest.json',dict(target_mm=.25,mu=.35,jobs=jobs))
+    with patch.object(queue,'run_case',return_value=dict(status='export_failed',mechanics_completed=True)) as run, \
+            patch.object(queue,'export_summary'),patch.object(queue,'write_snapshot'):
+        queue.worker(tmp_path)
+    assert run.call_count==1
+    assert [j['status'] for j in queue.read(tmp_path/'queue_status.json')['jobs']]==[
+        'export_failed','prerequisite_failed','prerequisite_failed']
+
+
+def test_material_interval_distance_includes_interior_gap_and_missing():
+    import pytest
+    from tools.verify_intact_numerics import interval_distance_mm
+    assert interval_distance_mm([[0.,1.]],[[0.,.2],[.6,1.]])==pytest.approx(.2)
+    assert interval_distance_mm([],[[0.,1.]]) is None

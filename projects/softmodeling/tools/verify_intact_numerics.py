@@ -710,6 +710,60 @@ def observe_sa(folder, protocol, max_depth):
                 original_top_edges=len(tracker.edges), nose_facets=facets, rows=rows)
 
 
+def interval_distance_mm(a, b):
+    """Hausdorff distance between two sorted unions of closed material intervals."""
+    if not len(a) or not len(b):
+        return None
+
+    def directed(left, right):
+        left, right = np.asarray(left, float), np.asarray(right, float)
+        # Distance is piecewise linear, with possible interior maxima at gap midpoints.
+        mid = (right[:-1,1]+right[1:,0])/2
+        inside = np.any((left[:,0,None]<=mid) & (mid<=left[:,1,None]),axis=0)
+        query = np.r_[left.ravel(), mid[inside]][:,None]
+        return np.maximum(0.,np.maximum(right[:,0]-query,query-right[:,1])).min(axis=1).max()
+
+    return float(max(directed(a,b),directed(b,a)))
+
+
+def compare_shallow_reference(report, observations, reference):
+    """Pair measured forces and independent primary SA on common accepted depths."""
+    if (reference['protocol']!=observations['protocol'] or
+            reference['angle']!=report['signature']['config']['inclination_deg']):
+        raise ValueError('Reference angle or observation protocol differs')
+    if len(report['steps'])!=len(observations['rows']):
+        raise ValueError('Incomplete current observation coverage')
+    previous={round(row['depth_mm'],12):row for row in reference['rows']}
+    rows=[]
+    for step,obs in zip(report['steps'],observations['rows']):
+        if record_digest(step)!=obs['accepted_record_sha256']:
+            raise ValueError('Observation is not bound to this accepted record')
+        depth=step['depth_mm']
+        old=previous.get(round(depth,12))
+        if old is None:continue
+        a=obs['observations']['primary']; b=old['observations']['primary']
+        left=a['nose_offset_intervals_mm']; right=b['nose_offset_intervals_mm']
+        pole=(a['pole_offset_mm']-b['pole_offset_mm'] if a['pole_status']==b['pole_status']=='unique' else None)
+        rows.append(dict(depth_mm=depth,current_sha256=obs['checkpoint_sha256'],reference_sha256=old['checkpoint_sha256'],
+            Fz_N=step['reaction_fz_n'],reference_Fz_N=old['Fz_N'],Fx_N=step['reaction_x_n'],reference_Fx_N=old['Fx_N'],
+            SA_set_distance_mm=interval_distance_mm(left,right),branches=[len(left),len(right)],
+            same_existence=bool(left)==bool(right),pole_status=[a['pole_status'],b['pole_status']],unique_pole_difference_mm=pole))
+    if not rows or abs(rows[0]['depth_mm'])>1.e-10 or abs(rows[-1]['depth_mm']-report['target_mm'])>1.e-10:
+        raise ValueError('Reference does not cover the requested shallow window')
+    metrics={}
+    for quantity,floor in [('Fz',.5),('Fx',.2)]:
+        ref=np.array([r['reference_'+quantity+'_N'] for r in rows])
+        error=np.array([r[quantity+'_N'] for r in rows])-ref
+        scale=max(floor,float(np.mean(ref**2)**.5))
+        rms=float(np.mean(error**2)**.5); maximum=float(np.max(abs(error)))
+        metrics[quantity]=dict(rms_N=rms,max_N=maximum,scale_N=scale,rms_fraction=rms/scale,max_fraction=maximum/scale)
+    return dict(rows=rows,forces=metrics,reference_result_sha256=reference['result_sha256'],
+        reference_dhat_mm=reference['physical_dhat_mm'],current_dhat_mm=observations['physical_dhat_mm'],
+        SA_set_max_mm=max((r['SA_set_distance_mm'] for r in rows if r['SA_set_distance_mm'] is not None),default=None),
+        identical_depth_schedule=([round(r['depth_mm'],12) for r in observations['rows']]==list(previous)),
+        interpretation='Joint contact, preparation and loading-history sensitivity on common saved depths')
+
+
 def check_preparation(folder, output):
     """Start a distinct two-state history and bind its zero and first child to their own parents."""
     from contextlib import redirect_stdout

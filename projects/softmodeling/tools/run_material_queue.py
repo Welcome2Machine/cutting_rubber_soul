@@ -260,10 +260,27 @@ def run_case(out,manifest,job,state,*,command_factory=None):
                         checkpoint=lambda:control.checkpoint(out/'pause_requested.json'))
                     export_case(folder,exports/'presentation',trace_path=exports/'contact_trace/contact_trace.json')
                     if manifest.get('observation_protocol'):
-                        from tools.verify_intact_numerics import observe_sa
+                        from tools.verify_intact_numerics import compare_shallow_reference, history, observe_sa
                         observations=observe_sa(folder,read(manifest['observation_protocol']),job['target_mm'])
                         write_json(exports/'independent_sa.json',observations)
                         result['independent_sa_frames']=len(observations['rows'])
+                        if manifest.get('require_window_review') and result['mechanics_completed']:
+                            if len(observations['rows'])!=len(audited['rows']):
+                                raise ValueError('Window review requires the complete audited trajectory')
+                            if job.get('review_reference'):
+                                comparison=compare_shallow_reference(read(folder/'result.json'),observations,
+                                                                     read(job['review_reference']))
+                                write_json(exports/'contact_comparison.json',comparison)
+                            ledger=history(folder,exports,'window_balance')
+                            write_json(exports/'window_balance.json',ledger)
+                            window=next((w for w in ledger['windows'] if w['window_mm']==[0.,job['target_mm']]),None)
+                            if window is None:
+                                raise ValueError('Missing full-window energy and reaction reconstruction')
+                            result['window_review_passed']=(window['max_free_L2_N']<=1.e-4 and
+                                window['max_force_fraction']<=.001 and window['max_moment_fraction']<=.001 and
+                                window['max_window_energy_fraction']<=.01 and window['end_cumulative_energy_fraction']<=.01)
+                            if not result['window_review_passed']:
+                                raise ValueError('Full-window reaction, moment or energy review exceeded budget')
                     eligible=[s for s in trace['steps'] if s['qualified']]
                     valid=[s for s in eligible if s['tip_contact']['status']=='unique']
                     final=eligible[-1]
@@ -369,6 +386,16 @@ def worker(out):
         if (out/'pause_requested.json').is_file():
             state.update(status='paused',audit_pending=True);write_json(out/'queue_status.json',state);return
         if job.get('reused'):continue
+        prerequisite=job.get('requires_case')
+        if prerequisite:
+            parent=next(j for j in state['jobs'] if j['name']==prerequisite)
+            if not (parent.get('status')=='completed' and parent.get('mechanics_completed') and
+                    parent.get('window_review_passed')):
+                job.update(status='prerequisite_failed',mechanics_completed=False,
+                           error='Missing complete reviewed window for '+prerequisite)
+                write_json(out/'queue_status.json',state)
+                export_summary(out,state)
+                continue
         print(f"START angle={job['angle']} output={job['output']}",flush=True)
         if 'case_id' in job:
             try:
@@ -562,6 +589,16 @@ def main():
             name=case['case_id']
             if not re.fullmatch(r'[A-Za-z0-9_]+',name) or any(j['name'].lower()==name.lower() for j in jobs):
                 raise ValueError('Case ID must be path-safe and unique')
+            prerequisite=case.get('requires_case')
+            if prerequisite and not any(j['name']==prerequisite and j['angle']==case['angle'] for j in jobs):
+                raise ValueError('Window prerequisite must name an earlier case at the same angle')
+            review_reference=case.get('review_reference')
+            if review_reference:
+                reference_path=(path.parent/review_reference).resolve()
+                inputs[str(reference_path)]=hashlib.sha256(reference_path.read_bytes()).hexdigest()
+                review_reference=str(reference_path)
+            if prerequisite and not next(j for j in jobs if j['name']==prerequisite).get('review_reference'):
+                raise ValueError('Prerequisite needs a bound contact comparison')
             opts=dict(settings['common'])
             opts.update(case.get('options',{}))
             profile=case.get('profile')
@@ -602,7 +639,7 @@ def main():
                 opts['reference_layout']=str(layout_path)
             jobs.append(dict(case_id=name,name=name,profile=profile,angle=case['angle'],mu=case['mu'],options=opts,
                 increment=case.get('increment',args.increment),solve_seconds=case['seconds'],
-                required_short_depth_mm=required_depth,
+                required_short_depth_mm=required_depth,requires_case=prerequisite,review_reference=review_reference,
                 output=str(out/name),target_mm=args.depth,status='queued'))
         if not jobs:raise ValueError('Case list is empty')
         for relative in ('run_support.py','workbench/results.py','workbench/config.py','tools/material_queue_control.py'):
@@ -658,6 +695,12 @@ def main():
             free_disk_bytes_at_prepare=shutil.disk_usage(out).free,logical_cpus=os.cpu_count(),
             code_commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=root,text=True).strip(),
             case_state_path=str(out/'queue_status.json'),summary_path=str(out/'summary.csv'))
+        manifest['require_window_review']=settings.get('require_window_review',False)
+        if type(manifest['require_window_review']) is not bool or (manifest['require_window_review'] and
+                (not args.observation_protocol or args.depth!=.25)):
+            raise ValueError('The shallow window review requires an observation protocol and target 0.25 mm')
+        if any(j.get('requires_case') for j in jobs) and not manifest['require_window_review']:
+            raise ValueError('Dependent mesh cases require full-window review')
         manifest['audit_allowance_s']=float(settings.get('audit_allowance_s',7200))
         manifest['minimum_free_bytes']=int(settings.get('minimum_free_bytes',8*1024**3))
         if not math.isfinite(manifest['audit_allowance_s']) or manifest['audit_allowance_s']<=0 or manifest['minimum_free_bytes']<1:
