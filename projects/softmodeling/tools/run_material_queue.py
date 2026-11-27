@@ -165,6 +165,12 @@ def verify_inputs(manifest):
             raise RuntimeError('Frozen comparison input changed: '+name)
 
 
+def passes_window_balance(window):
+    limits = {'max_free_L2_N': 1.e-4, 'max_force_fraction': .001, 'max_moment_fraction': .001,
+              'max_window_energy_fraction': .01, 'end_cumulative_energy_fraction': .01}
+    return all(0. <= window[name] <= limit for name, limit in limits.items())
+
+
 def run_case(out,manifest,job,state,*,command_factory=None):
     verify_inputs(manifest)
     for name,digest in manifest['source_sha256'].items():
@@ -276,9 +282,7 @@ def run_case(out,manifest,job,state,*,command_factory=None):
                             window=next((w for w in ledger['windows'] if w['window_mm']==[0.,job['target_mm']]),None)
                             if window is None:
                                 raise ValueError('Missing full-window energy and reaction reconstruction')
-                            result['window_review_passed']=(window['max_free_L2_N']<=1.e-4 and
-                                window['max_force_fraction']<=.001 and window['max_moment_fraction']<=.001 and
-                                window['max_window_energy_fraction']<=.01 and window['end_cumulative_energy_fraction']<=.01)
+                            result['window_review_passed']=passes_window_balance(window)
                             if not result['window_review_passed']:
                                 raise ValueError('Full-window reaction, moment or energy review exceeded budget')
                     eligible=[s for s in trace['steps'] if s['qualified']]
@@ -287,7 +291,7 @@ def run_case(out,manifest,job,state,*,command_factory=None):
                     halfwidth=job['options']['fine_halfwidth']
                     intervals=[pair for step in eligible for pair in
                         step['blade_contact_footprint']['reference_offset_intervals_mm']]
-                    extent=max((abs(v) for pair in intervals for v in pair),default=None)
+                    extent=max((float(abs(v)) for pair in intervals for v in pair),default=None)
                     result.update(contact_address_abs_max_mm=extent,
                         fine_halfwidth_mm=halfwidth,footprint_leaves_fine_band=extent>halfwidth if extent is not None else None,
                         min_j=min(step['deformation']['min_j'] for step in eligible),
@@ -784,7 +788,14 @@ def wait_for_worker(out,process):
     receipt=read(out/'launch.json')
     write_json(out/'worker_exit.json',dict(identity=receipt['identity'],directory=str(out),
                returncode=code,ended_utc=now()))
-    if code:return code if code>0 else 128-code
+    if code:
+        status_path=out/'queue_status.json'
+        state=read(status_path) if status_path.exists() else {'jobs':[]}
+        if state.get('status') in (None,'running'):
+            state.update(status='system_error',worker_returncode=code,finished_utc=now(),
+                         error='Worker exited before recording its terminal queue state')
+            write_json(status_path,state)
+        return code if code>0 else 128-code
     try:state=read(out/'queue_status.json')
     except (OSError,ValueError):return 1
     if state.get('status')=='paused':return 2

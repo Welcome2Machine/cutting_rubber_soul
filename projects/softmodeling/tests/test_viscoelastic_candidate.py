@@ -642,6 +642,30 @@ def test_mesh_prerequisite_holds_finer_cases_when_h1_review_fails(tmp_path):
         'export_failed','prerequisite_failed','prerequisite_failed']
 
 
+def test_numpy_window_balance_is_serializable_at_the_gate():
+    import json
+    import numpy as np
+    from tools.run_material_queue import passes_window_balance
+    row=dict(max_free_L2_N=np.float64(1.e-4), max_force_fraction=.001, max_moment_fraction=.001,
+             max_window_energy_fraction=.01, end_cumulative_energy_fraction=np.float64(.01))
+    assert json.dumps(passes_window_balance(row))=='true'
+    row['end_cumulative_energy_fraction']=np.nextafter(.01,1.)
+    assert passes_window_balance(row) is False
+
+
+def test_crashed_foreground_worker_persists_terminal_status(tmp_path):
+    from unittest.mock import Mock
+    from tools import run_material_queue as queue
+    from run_support import write_json
+    write_json(tmp_path/'launch.json',dict(identity={'pid':123}))
+    write_json(tmp_path/'queue_status.json',dict(status='running',jobs=[{'name':'H1'}]))
+    process=Mock()
+    process.wait.return_value=1
+    assert queue.wait_for_worker(tmp_path,process)==1
+    state=queue.read(tmp_path/'queue_status.json')
+    assert state['status']=='system_error' and state['jobs']==[{'name':'H1'}]
+
+
 def test_material_interval_distance_includes_interior_gap_and_missing():
     import pytest
     from tools.verify_intact_numerics import interval_distance_mm
