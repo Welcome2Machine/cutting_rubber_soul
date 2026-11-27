@@ -3,6 +3,8 @@ from contextlib import contextmanager
 from pathlib import Path
 import json
 import os
+import socket
+import sys
 import time
 import uuid
 
@@ -54,12 +56,17 @@ def active(root):
 
 def identity(pid):
     p = psutil.Process(pid)
-    return dict(pid=pid,created_epoch=p.create_time(),executable=p.exe(),command=p.cmdline(),cwd=p.cwd())
+    return dict(pid=pid,created_epoch=p.create_time(),executable=p.exe(),command=p.cmdline(),cwd=p.cwd(),
+                hostname=socket.gethostname(),slurm_job_id=os.environ.get('SLURM_JOB_ID'),
+                python=sys.executable)
 
 
 def matches(entry):
     if not entry:
         return False
+    if ((entry.get('hostname') and entry['hostname'] != socket.gethostname()) or
+            entry.get('slurm_job_id') != os.environ.get('SLURM_JOB_ID')):
+        return None  # A PID is meaningful only on its original host and allocation.
     try:
         current=identity(entry['pid'])
     except psutil.NoSuchProcess:
@@ -74,7 +81,13 @@ def status(root):
     state=read(out/'queue_status.json') if (out/'queue_status.json').exists() else {'status':'prepared','jobs':[]}
     receipt=read(out/'launch.json') if (out/'launch.json').exists() else {}
     state['directory']=str(out)
-    state['worker_identity_matches']=matches(receipt.get('identity'))
+    owner=receipt.get('identity') or {}
+    state['owner']={k:owner.get(k) for k in ('hostname','slurm_job_id','pid','created_epoch','python')}
+    exit_file=out/'worker_exit.json'
+    exited=read(exit_file) if exit_file.exists() else {}
+    reaped=bool(owner and exited.get('identity')==owner and exited.get('directory')==str(out))
+    state['worker_reaped']=reaped
+    state['worker_identity_matches']=False if reaped else matches(owner)
     state['pause_requested']=(out/'pause_requested.json').is_file()
     for job in state['jobs']:
         source=Path(job['output']);result=source/'result.json'
@@ -90,9 +103,10 @@ def status(root):
                 valid.append(row)
             job['last_audited_depth_mm']=valid[-1]['depth_mm'] if valid else None
         if job.get('process_identity'):
-            job['child_identity_matches']=matches(job['process_identity'])
-    if state['status']=='running' and not state['worker_identity_matches']:
-        state['status']='worker_missing'
+            job['child_identity_matches']=(False if reaped and exited['returncode']==0
+                                           else matches(job['process_identity']))
+    if state['status']=='running' and state['worker_identity_matches'] is not True:
+        state['status']='remote_reported_running' if state['worker_identity_matches'] is None else 'worker_missing'
     return state
 
 
@@ -102,10 +116,18 @@ def pause(root):
         state=status(root)
         if state['status'] in ('paused','finished','system_error'):
             return state
-        if not state['worker_identity_matches']:
+        remote=state['worker_identity_matches'] is None
+        if remote:
+            receipt=read(out/'launch.json')
+            if (not state['owner']['slurm_job_id'] or not receipt.get('foreground') or
+                    receipt.get('manifest')!=str(out/'manifest.json')):
+                raise RuntimeError('Cannot bind remote pause to this Slurm attempt')
+        elif not state['worker_identity_matches']:
             raise RuntimeError('Cannot confirm active worker identity')
         marker=out/'pause_requested.json'
-        if not marker.exists():write_json(marker,dict(requested_epoch=time.time()))
+        if not marker.exists():write_json(marker,dict(requested_epoch=time.time(),owner=state['owner']))
+        if remote:
+            return status(root)  # Cooperative request; the owning worker acknowledges exit.
     deadline=time.monotonic()+60
     while time.monotonic()<deadline:
         state=status(root)
@@ -156,7 +178,11 @@ def restart(root, launch):
     """Preserve all old attempts. Earlier completed jobs remain referenced in state."""
     with control_lock(root):
         prior=active(root);state=status(root)
-        if state['status']!='paused' or state['worker_identity_matches'] or any(j.get('child_identity_matches') for j in state['jobs']):
+        old_job=state['owner'].get('slurm_job_id')
+        if old_job and (not state['worker_reaped'] or os.environ.get('SLURM_JOB_ID') in (None,old_job)):
+            raise RuntimeError('Slurm resume requires the reaped paused worker and a new allocation')
+        if state['status']!='paused' or state['worker_identity_matches'] is not False or any(
+                j.get('process_identity') and j.get('child_identity_matches') is not False for j in state['jobs']):
             raise RuntimeError('Resume requires an exited, identified paused attempt')
         manifest=read(prior/'manifest.json')
         dest=root/'attempts'/uuid.uuid4().hex

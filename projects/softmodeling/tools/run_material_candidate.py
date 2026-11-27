@@ -270,7 +270,7 @@ def main():
         report['experiment_sha256']=hashlib.sha256(args.experiment.read_bytes()).hexdigest()
         report['loading_rate_status']='matches speed_um_s in authorized experimental export'
     with (out/'run.log').open('w',encoding='utf-8') as log,contextlib.redirect_stdout(log),\
-         numerical_runtime(args.threads,1,args.physical_core_affinity) as runtime,\
+         numerical_runtime(args.threads,1,args.physical_core_affinity,linear_threads=performance['linear_threads']) as runtime,\
          (threadpool_limits(limits=1,user_api='blas') if performance['blas_threads']==1
           else contextlib.nullcontext()),compute_process_policy() as policy:
         report['runtime_process_policy']=policy

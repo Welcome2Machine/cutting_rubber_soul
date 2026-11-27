@@ -101,6 +101,7 @@ def make_command(manifest,job):
         if key in material:
             cmd+=['--'+key.replace('_','-'),str(material[key])]
     policy=manifest.get('performance_policy', performance_policy())
+    if manifest.get('physical_core_affinity'):cmd.append('--physical-core-affinity')
     cmd += ['--material-batch-size',str(policy['material_batch_size']),
             '--linear-backend',policy['linear_backend'],'--linear-threads',str(policy['linear_threads'] or 4)]
     if manifest.get('diagnostics'):cmd+=['--diagnostics']
@@ -440,6 +441,7 @@ def main():
     parser.add_argument('--loading-rate',type=float,default=.2)
     parser.add_argument('--mu',type=float,default=.35)
     parser.add_argument('--threads',type=int,default=2)
+    parser.add_argument('--physical-core-affinity',action='store_true')
     parser.add_argument('--diagnostics',action='store_true')
     parser.add_argument('--blade-spacing',type=float)
     parser.add_argument('--trial-map',type=Path,help='Explicit trial_id/case_id, experimental conditions, units and comparison windows')
@@ -610,6 +612,7 @@ def main():
         runtime_path=str(root)+os.pathsep+str(Path(os.environ.get('SOFTMODELING_IPC_RUNTIME',root/'.runtime/ipc-python'))),
         minimum_free_bytes=8*1024**3,pardiso_runtime=str(Path(os.environ.get('SOFTMODELING_PARDISO_RUNTIME',root/'.runtime/pardiso'))),target_mm=args.depth,increment=args.increment,
         mu=args.mu,threads=args.threads,performance_policy=policy,diagnostics=args.diagnostics,
+        physical_core_affinity=args.physical_core_affinity,
         blade_spacing=args.blade_spacing,
         solve_seconds_per_case=args.seconds,audit_allowance_s=1800.,jobs=jobs,
         material=material,input_sha256=inputs,experiments=experiments,
@@ -698,6 +701,8 @@ def launch(out,manifest,*,foreground=False):
     if (out/'worker_started.json').exists() or (out/'launch.json').exists():
         raise RuntimeError('Queue already launched')
     frozen=Path(manifest['source'])
+    if os.path.abspath(sys.executable)!=os.path.abspath(manifest['python']):
+        raise RuntimeError('Launch using the prepared Python interpreter')
     command=[sys.executable,'-X','utf8','-u','-m','tools.run_material_queue','--output',str(out),'--worker']
     env=os.environ.copy();env['PYTHONPATH']=manifest['runtime_path']
     env['OMP_NUM_THREADS']='1';env['OPENBLAS_NUM_THREADS']='1'
@@ -707,7 +712,7 @@ def launch(out,manifest,*,foreground=False):
         startup=subprocess.STARTUPINFO();startup.dwFlags|=subprocess.STARTF_USESHOWWINDOW;startup.wShowWindow=subprocess.SW_HIDE
         flags=subprocess.DETACHED_PROCESS|subprocess.CREATE_NEW_PROCESS_GROUP
     with (out/'launch_claim.json').open('x',encoding='utf8') as claim:
-        json.dump(dict(pid=os.getpid(),time=now()),claim)
+        json.dump(dict(identity=control.identity(os.getpid()),directory=str(out),time=now()),claim)
     with (out/'worker.stdout.log').open('xb') as stdout,(out/'worker.stderr.log').open('wb') as stderr:
         process=subprocess.Popen(command,cwd=frozen,env=env,stdin=subprocess.DEVNULL,stdout=stdout,stderr=stderr,
             startupinfo=startup,creationflags=flags,start_new_session=os.name!='nt' and not foreground)
@@ -720,6 +725,9 @@ def launch(out,manifest,*,foreground=False):
 def wait_for_worker(out,process):
     """Expose worker failures and incomplete mechanics to a batch scheduler."""
     code=process.wait()
+    receipt=read(out/'launch.json')
+    write_json(out/'worker_exit.json',dict(identity=receipt['identity'],directory=str(out),
+               returncode=code,ended_utc=now()))
     if code:return code if code>0 else 128-code
     try:state=read(out/'queue_status.json')
     except (OSError,ValueError):return 1

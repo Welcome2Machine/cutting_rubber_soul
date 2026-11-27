@@ -65,13 +65,14 @@ srun "$SOFTCUT_PYTHON" -m tools.run_material_queue \
 ```bash
 squeue -j JOBID
 sacct -j JOBID --format=JobID,State,Elapsed,TotalCPU,AllocCPUS,MaxRSS,ExitCode
-# 以下两条仅在与worker同一计算节点且已核验身份时使用；
-# 跨节点适配完成前，登录节点只用Slurm与共享日志/manifest：
+# 在 FE 项目目录读取共享状态并请求当前 attempt 合作暂停
 "$SOFTCUT_PYTHON" -m tools.run_material_queue --output "$SOFTCUT_BATCH" --status
 "$SOFTCUT_PYTHON" -m tools.run_material_queue --output "$SOFTCUT_BATCH" --pause
 ```
 
-当前控制器主要通过本机psutil识别PID，尚缺Slurm节点身份；新agent须先在既有控制器补齐跨节点识别与合作暂停，不能把登录节点worker_missing当作计算结束。适配前优先在同节点执行现有安全暂停；跨节点进程身份不能确认时，通过明确JobID结束自己的作业，保留已完成检查点并在恢复前重审。必要时 `scancel JOBID` 仅取消指定本任务；不用按用户/队列批量取消，也不对其他节点PID盲目kill。恢复通过新Slurm作业内的 `--resume-queue --foreground` 和已有身份检查；失败不是授权无限重启。需自动依赖时，仅在真实验收成功且退出码为0后放行，不能只看“程序已经退出”。
+状态中的 `owner` 给出 JobID、节点、解释器、PID 和启动时间。跨节点显示 `remote_reported_running` 时用 `squeue` 核对调度状态。暂停标志只写入该批次当前 attempt，待 `status=paused` 和 `worker_reaped=true` 后，才能在新的 allocation 中以前台 `--resume-queue --foreground` 恢复。原检查点、求解及审查剩余预算均保留。强制取消或节点丢失须先独立核对现场，缺少正常退出回执时不能通过普通暂停恢复重开。作业依赖仅在相应数值验收通过后放行。
+
+`--physical-core-affinity` 可从队列传给求解器。线程上限为 IPC×BLAS 与独立 PARDISO 调用线程数中的较大值，在 Slurm 内同时检查 cpuset 的实际 socket/core 对。用 `SOFTCUT_THREAD_BUDGET` 指定作业的物理核申请数。
 
 ## 5. 存储与节点边界
 

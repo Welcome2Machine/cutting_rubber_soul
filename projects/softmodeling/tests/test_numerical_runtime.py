@@ -48,3 +48,14 @@ def test_continuation_thread_options_cannot_bypass_source_identity(tmp_path):
     with pytest.raises(ValueError,match='identical-source'):
         continue_run(tmp_path,tmp_path/'new',30,ipc_threads=1,blas_threads=1)
     assert toolkit().get_num_threads()==old and not (tmp_path/'new').exists()
+
+
+def test_pardiso_and_physical_cpuset_constrain_separate_solve(monkeypatch):
+    monkeypatch.setenv('SOFTCUT_THREAD_BUDGET','4')
+    with pytest.raises(ValueError,match='budget'):
+        with numerical_runtime(1,1,linear_threads=8): pass
+    monkeypatch.setenv('SLURM_JOB_ID','123')
+    monkeypatch.setattr('numerical_runtime.core_topology',
+                        lambda cpus: [dict(cpu=c,socket=0,core=0) for c in cpus])
+    with pytest.raises(ValueError,match='physical cores'):
+        with numerical_runtime(1,1,linear_threads=2): pass

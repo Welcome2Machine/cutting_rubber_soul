@@ -605,3 +605,23 @@ class FrictionlessEntryTests(unittest.TestCase):
         for mu in (-1., float('nan'), float('inf')):
             with self.assertRaises(ValueError):
                 ViscoelasticProblem(maxwell_shear=1.24, relaxation_s=1.7, loading_rate=.2, mu=mu)
+
+
+def test_remote_pause_binds_to_attempt_without_inspecting_local_pid(tmp_path, monkeypatch):
+    import pytest
+    import os
+    from tools import material_queue_control as control
+    from run_support import write_json
+    owner=dict(pid=os.getpid(),created_epoch=1.,hostname='remote-compute-node',
+               slurm_job_id='456',python='/env/bin/python')
+    write_json(tmp_path/'launch.json',dict(identity=owner,foreground=True,manifest=str(tmp_path/'manifest.json')))
+    write_json(tmp_path/'queue_status.json',dict(status='running',jobs=[]))
+    monkeypatch.setattr(control,'identity',lambda pid: pytest.fail('remote PID inspected'))
+    assert control.status(tmp_path)['status']=='remote_reported_running'
+    assert control.pause(tmp_path)['pause_requested']
+    assert control.read(tmp_path/'pause_requested.json')['owner']['slurm_job_id']=='456'
+    write_json(tmp_path/'queue_status.json',dict(status='paused',jobs=[]))
+    with pytest.raises(RuntimeError,match='reaped'):
+        control.restart(tmp_path,None)
+    write_json(tmp_path/'worker_exit.json',dict(identity=owner,directory=str(tmp_path),returncode=0))
+    assert control.status(tmp_path)['worker_reaped']

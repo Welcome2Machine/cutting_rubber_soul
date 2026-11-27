@@ -38,11 +38,14 @@ def core_topology(cpus):
 
 
 @contextmanager
-def numerical_runtime(ipc_threads=2, blas_threads=2, physical_core_affinity=False):
+def numerical_runtime(ipc_threads=2, blas_threads=2, physical_core_affinity=False, *, linear_threads=None):
     if any(type(n) is not int or not 1 <= n <= 64 for n in (ipc_threads, blas_threads)):
         raise ValueError('Explicit IPC/BLAS counts must be integers in 1..64')
     # Conservative bound also covers a BLAS call nested in a native worker.
-    bound = ipc_threads*blas_threads
+    if linear_threads is not None and (type(linear_threads) is not int or not 1 <= linear_threads <= 64):
+        raise ValueError('Explicit PARDISO count must be an integer in 1..64')
+    # PARDISO is a separate linear solve after assembly.
+    bound = max(ipc_threads*blas_threads, linear_threads or 1)
     budget = int(os.environ.get('SOFTCUT_THREAD_BUDGET', '64'))
     if bound > budget:
         raise ValueError('Possible nested compute threads exceed this process budget')
@@ -51,6 +54,9 @@ def numerical_runtime(ipc_threads=2, blas_threads=2, physical_core_affinity=Fals
     previous_ipc = ipc.get_num_threads()
     affinity = sorted(os.sched_getaffinity(0)) if hasattr(os, 'sched_getaffinity') else []
     topology = core_topology(affinity)
+    physical = {(c['socket'], c['core']) for c in topology if c['core'] is not None}
+    if os.environ.get('SLURM_JOB_ID') and (not physical or bound > len(physical)):
+        raise ValueError('Thread request exceeds verified physical cores in the Slurm cpuset')
     selected = affinity
     changed = {}
     if physical_core_affinity:
@@ -67,6 +73,7 @@ def numerical_runtime(ipc_threads=2, blas_threads=2, physical_core_affinity=Fals
         conservative_nested_thread_bound=bound, thread_budget=budget,
         affinity_before=affinity, affinity_effective=selected, allocated_topology=topology,
         one_hardware_thread_per_core=physical_core_affinity,
+        physical_cores_in_cpuset=len(physical), pardiso_threads=linear_threads,
         host=platform.node(), pid=os.getpid(),
         slurm={k:v for k,v in os.environ.items() if k.startswith('SLURM_')
                and any(s in k for s in ('JOB_ID','ARRAY','CPUS','NTASK','MEM','NODELIST','PROCID'))})
