@@ -62,7 +62,7 @@ srun "$SOFTCUT_PYTHON" -m tools.run_material_queue \
 
 启动后只短时核实JobID、日志和一个新接受态（或有时限的诊断实际推进），然后汇报，不持续监控。
 
-从仓库根使用 `runs/server_intact/control.sh ANGLE status`、`log`、`pause` 或 `resume`，ANGLE 取 33 或 57。33° 对应已复用 H1 的 11 小时网格批次，57° 对应 2 小时 H1 事件作业。两者均申请 4 物理核、6 GiB，恢复前核对暂停回执及剩余预算。现场作业号、采样时刻和日志见[实算状态](../projects/softmodeling/docs/research_status.md)。旧暂停/恢复实测的四份检查点已逐字节比对。
+从仓库根运行 `runs/server_intact/control.sh ANGLE status`、`log`、`pause` 或 `resume`。57 对应 `A57_passage`，4 物理核、6 GiB、2 h 20 min。33 对应 `A33_layer_window`，也是 4 物理核、6 GiB，墙钟 1 h；原 18 min 短窗对照在 `A33_layer`。33° 三档网格及两个角度的各段原始输出均保留各自目录。控制器只对已合作暂停且进程已收回的同一尝试执行恢复。Slurm 作业使用提交时冻结的脚本，若批内另调用共享 shell 文件，也应在该作业结束前保留其版本。作业号、采样时刻与日志见[实算状态](../projects/softmodeling/docs/research_status.md)。
 
 ```bash
 squeue -j JOBID

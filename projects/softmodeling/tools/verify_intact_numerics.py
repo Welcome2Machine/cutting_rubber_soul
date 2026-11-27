@@ -17,7 +17,7 @@ from scipy.sparse.linalg import spsolve
 from mechanics.finite_strain import Material, elastic_response, response
 from prototype import material as body_material
 from prototype.contact_trace import record_digest
-from prototype.ipc_reference import IPCProblem, boundary_balance
+from prototype.ipc_reference import IPCProblem, LoadStepFailure, boundary_balance
 from prototype.material_case import make_problem
 from prototype.model_config import FEMConfig, FEMMesh, local_to_lab
 
@@ -393,14 +393,15 @@ def friction_reference():
                     friction_work_Nmm=work,is_request_stick=False))
     return rows
 
-def failed_increment(folder):
+def failed_increment(folder, *, use_production_backend=True):
     """Restore the actual parent, predictor pair and failed material increment."""
     from prototype.material_performance import enable_performance
 
     report = read(folder/'result.json')
     audit = read(folder/'audit.json')
     rows = report['steps']
-    if (report['status'] != 'failed' or len(rows) < 2 or audit['states'] != len(rows)
+    if (report['status'] not in ('failed', 'budget_exhausted') or not report.get('failed_attempt')
+            or len(rows) < 2 or audit['states'] != len(rows)
             or not audit['trajectory_checked'] or audit['qualified_prefix_states'] != len(rows)):
         raise ValueError('A failed run with a complete independently audited parent is required')
     if not audit['passed'] or audit['source_result_sha256'] != hashlib.sha256((folder/'result.json').read_bytes()).hexdigest():
@@ -411,7 +412,8 @@ def failed_increment(folder):
             raise ValueError('Production source identity differs: '+name)
     settings = report['settings']
     problem = make_problem(**{k:v for k,v in settings.items() if k in inspect.signature(make_problem).parameters})
-    enable_performance(problem, report['performance_policy'])
+    if use_production_backend:
+        enable_performance(problem, report['performance_policy'])
     problem.solver_diagnostics = settings['diagnostics']
     return restore_failed_pair(problem, folder, report, audit)
 
@@ -565,7 +567,7 @@ def diagnose_failed_chord(folder, output):
     from tools.audit_virtual_chord import separated_ev_prefix, verify_witness
     from virtual_path_geometry import ev_crossing_witnesses
 
-    p, report, x, y = failed_increment(folder)
+    p, report, x, y = failed_increment(folder, use_production_backend=False)
     try:
         p.solver_diagnostics = True
         delta = y-x
@@ -603,15 +605,13 @@ def diagnose_failed_chord(folder, output):
             if w['original_top_edge']:
                 w['material_edge_S_mm'] = tracker.s[[i,j]].tolist()
                 w['interpolated_material_offset_mm_estimate'] = float((1-beta)*tracker.s[i]+beta*tracker.s[j]-tracker.origin)
-        prefix = None
-        if witnesses:
-            limit = witnesses[0]['bracket'][0]
-            checks = []
-            for cand in candidates.ev_candidates:
-                ids = p.surface[[*edges[cand.edge_id],cand.vertex_id]].tolist()
-                checks.append(dict(vertices_global=ids,**separated_ev_prefix(x,y,ids,limit)))
-            ev_only = all(len(getattr(candidates,kind+'_candidates')) == 0 for kind in ('vv','ee','fv','pv'))
-            prefix = dict(limit=limit,all_swept_candidates_are_ev=ev_only,
+        limit = witnesses[0]['bracket'][0] if witnesses else 1.
+        checks = []
+        for cand in candidates.ev_candidates:
+            ids = p.surface[[*edges[cand.edge_id],cand.vertex_id]].tolist()
+            checks.append(dict(vertices_global=ids,**separated_ev_prefix(x,y,ids,limit)))
+        ev_only = all(len(getattr(candidates,kind+'_candidates')) == 0 for kind in ('vv','ee','fv','pv'))
+        separation = dict(limit=limit,all_swept_candidates_are_ev=ev_only,
                           all_separated=ev_only and all(item['separated'] for item in checks),checks=checks)
         tri = p.mesh.triangles
         f = np.eye(2)+np.einsum('eai,eaJ->eiJ',(x[:p.n]-p.mesh.reference_xy)[tri],p.grad)
@@ -627,7 +627,16 @@ def diagnose_failed_chord(folder, output):
             path_min=float(minima[e]), element=e, node_ids=tri[e].tolist(), time_fraction=float(t[e]),
             reference_centroid_xy_mm=p.rest[tri[e]].mean(axis=0).tolist(), min_nonpositive=int((minima<=0).sum()))
         target = report['failed_attempt']['attempted_depth_mm']
-        endpoint = p.acceptance(y,target,0,0)
+        try:
+            endpoint = p.acceptance(y,target,0,0)
+            endpoint_passed = True
+        except LoadStepFailure as exc:
+            # A rejected force check is itself an observation on this saved trial.
+            _, gradient, _, min_j = p.evaluate(y, p.lag(y), tangent=False)
+            norm = float(np.linalg.norm(gradient[p.free]))
+            endpoint = dict(depth_mm=target, residual_n=norm if np.isfinite(norm) else None,
+                            min_j=float(min_j) if np.isfinite(min_j) else None, error=str(exc))
+            endpoint_passed = False
         response = p.material_response(y)
         metric = response['metric']
         np.savez_compressed(output/'reassembled_uncommitted_material.npz',metric=metric)
@@ -635,7 +644,10 @@ def diagnose_failed_chord(folder, output):
         if witnesses:
             fractions += witnesses[0]['bracket']
         samples = [dict(time_fraction=z,intersections=bool(p.ipc.has_intersections(p.cmesh,(y if z==1. else x+z*delta)[p.surface]))) for z in sorted(fractions)]
-        result = dict(certificate=certificate,limits=limits,determinant=determinant, cross_witnesses=witnesses, exact_pre_crossing_prefix=prefix,
+        result = dict(certificate=certificate,limits=limits,determinant=determinant, cross_witnesses=witnesses,
+            exact_pre_crossing_prefix=separation if witnesses else None,
+            exact_full_chord_ev_separation=None if witnesses else separation,
+            source_status=report['status'], endpoint_checks_passed=endpoint_passed, endpoint_assembly='fresh_native_unbatched',
             broad_phase_counts={kind:len(getattr(candidates,kind+'_candidates')) for kind in ('ev','vv','ee','fv','pv')},
             static_intersection_samples=samples, endpoint=endpoint, dt_s=p.material_dt, epsilon_u_mm=p.friction_smoothing_mm,
             parent_committed_history_identical_to_both_saved_failed_metrics=True,
